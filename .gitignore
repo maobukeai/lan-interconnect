@@ -25,12 +25,6 @@ build.log
 .DS_Store
 Thumbs.db
 .lingma/
-
-# Mobile / Android build cache
-mobile/node_modules/
-mobile/dist/
-mobile/build/
-mobile/android/.gradle/
-mobile/android/app/build/
-mobile/android/build/
-LanDiskMobile/node_modules/
+# Runtime Data Files
+blocked_ips.json
+device_aliases.json

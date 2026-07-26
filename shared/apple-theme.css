@@ -1,0 +1,610 @@
+/* ==========================================================================
+   Apple Design System 3.5 - High-Precision Aesthetic & Responsive Framework
+   iOS 18 & macOS Sequoia Ultra-Refined Controls & Layout System
+   ========================================================================== */
+
+:root {
+    /* 色彩系统 - Apple Color Palette */
+    --apple-system-blue: #007aff;
+    --apple-system-purple: #af52de;
+    --apple-system-pink: #ff2d55;
+    --apple-system-green: #34c759;
+    --apple-system-orange: #ff9500;
+    --apple-system-red: #ff3b30;
+    --apple-system-teal: #30b0c7;
+    --apple-system-indigo: #5856d6;
+    
+    /* 基础背景 */
+    --apple-bg-base: #06080e;
+    --apple-bg-dark: #0c0e17;
+    --apple-bg-card: rgba(255, 255, 255, 0.04);
+    --apple-bg-card-hover: rgba(255, 255, 255, 0.08);
+    --apple-bg-card-active: rgba(255, 255, 255, 0.12);
+    
+    /* 玻璃边框与光影 */
+    --apple-border: rgba(255, 255, 255, 0.1);
+    --apple-border-strong: rgba(255, 255, 255, 0.18);
+    --apple-glow-blue: rgba(0, 122, 255, 0.35);
+    --apple-glow-purple: rgba(175, 82, 222, 0.35);
+    --apple-glow-green: rgba(52, 199, 89, 0.35);
+    --apple-shadow-card: 0 16px 40px rgba(0, 0, 0, 0.5), 0 1px 0 rgba(255, 255, 255, 0.1) inset;
+    
+    /* 排版文字 */
+    --apple-text-main: #f8fafc;
+    --apple-text-muted: #94a3b8;
+    --apple-text-subtle: #64748b;
+    --apple-font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+    
+    /* 圆角 System */
+    --apple-radius-large: 24px;
+    --apple-radius-medium: 14px;
+    --apple-radius-small: 10px;
+    --apple-radius-pill: 9999px;
+    
+    /* 贝塞尔过渡物理曲线 */
+    --apple-transition: all 0.25s cubic-bezier(0.25, 1, 0.5, 1);
+    --apple-transition-bounce: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* 全局重置与平滑渲染 */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: var(--apple-font);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-tap-highlight-color: transparent;
+}
+
+body {
+    background-color: var(--apple-bg-base);
+    color: var(--apple-text-main);
+    line-height: 1.5;
+    overflow-x: hidden;
+}
+
+/* 背景弥散光球 */
+.apple-bg-orbs {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.apple-orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(110px);
+    opacity: 0.4;
+    animation: floatOrb 25s ease-in-out infinite alternate;
+}
+
+.apple-orb-1 {
+    width: 500px;
+    height: 500px;
+    background: var(--apple-system-blue);
+    top: -120px;
+    left: -120px;
+}
+
+.apple-orb-2 {
+    width: 450px;
+    height: 450px;
+    background: var(--apple-system-purple);
+    bottom: -120px;
+    right: -120px;
+    animation-delay: -7s;
+}
+
+.apple-orb-3 {
+    width: 380px;
+    height: 380px;
+    background: var(--apple-system-teal);
+    top: 35%;
+    left: 25%;
+    animation-delay: -14s;
+    opacity: 0.2;
+}
+
+@keyframes floatOrb {
+    0% { transform: translate(0, 0) scale(1); }
+    50% { transform: translate(60px, 40px) scale(1.08); }
+    100% { transform: translate(-30px, 70px) scale(0.95); }
+}
+
+/* 苹果毛玻璃卡片 */
+.apple-glass-card {
+    background: var(--apple-bg-card);
+    backdrop-filter: blur(30px) saturate(190%);
+    -webkit-backdrop-filter: blur(30px) saturate(190%);
+    border: 1px solid var(--apple-border);
+    border-radius: var(--apple-radius-large);
+    padding: 24px;
+    box-shadow: var(--apple-shadow-card);
+    transition: var(--apple-transition);
+    position: relative;
+    overflow: hidden;
+}
+
+.apple-glass-card:hover {
+    border-color: var(--apple-border-strong);
+    box-shadow: 0 20px 48px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.15) inset;
+}
+
+/* 防换行卡片标题栏 */
+.apple-card-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--apple-text-main);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 18px;
+    letter-spacing: -0.2px;
+    flex-wrap: wrap;
+}
+
+.apple-card-title-text {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.apple-card-title svg {
+    color: var(--apple-system-blue);
+    flex-shrink: 0;
+}
+
+.apple-card-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+/* 苹果系统按钮体系 - 高精极简重构 */
+.apple-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 9px 18px;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: var(--apple-radius-medium);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: var(--apple-transition);
+    outline: none;
+    user-select: none;
+    white-space: nowrap;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    width: auto;
+    height: auto;
+}
+
+.apple-btn-primary {
+    background: linear-gradient(135deg, var(--apple-system-blue), #0056b3);
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 4px 16px var(--apple-glow-blue);
+}
+
+.apple-btn-primary:hover {
+    background: linear-gradient(135deg, #0088ff, #0066cc);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 22px var(--apple-glow-blue);
+}
+
+.apple-btn-primary:active {
+    transform: scale(0.97);
+}
+
+.apple-btn-glass {
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--apple-border);
+    color: var(--apple-text-main);
+}
+
+.apple-btn-glass:hover {
+    background: rgba(255, 255, 255, 0.16);
+    border-color: var(--apple-border-strong);
+    color: #ffffff;
+}
+
+.apple-btn-glass:active {
+    transform: scale(0.97);
+}
+
+.apple-btn-danger {
+    background: rgba(255, 59, 48, 0.2);
+    border: 1px solid rgba(255, 59, 48, 0.4);
+    color: #ff453a;
+}
+
+.apple-btn-danger:hover {
+    background: var(--apple-system-red);
+    color: white;
+    box-shadow: 0 4px 16px rgba(255, 59, 48, 0.4);
+}
+
+.apple-btn-icon {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--apple-border);
+    color: var(--apple-text-main);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: var(--apple-transition);
+    flex-shrink: 0;
+    font-size: 16px;
+}
+
+.apple-btn-icon:hover {
+    background: rgba(255, 255, 255, 0.16);
+    border-color: rgba(255, 255, 255, 0.25);
+    transform: translateY(-1px);
+}
+
+/* macOS Finder 磁盘驱动器 网格卡片 */
+.apple-drive-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 16px;
+    padding: 6px 0;
+}
+
+.apple-drive-card {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--apple-border);
+    border-radius: var(--apple-radius-medium);
+    padding: 18px 20px;
+    cursor: pointer;
+    transition: var(--apple-transition-bounce);
+    user-select: none;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.apple-drive-card:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: var(--apple-system-blue);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px var(--apple-glow-blue);
+}
+
+.apple-drive-icon-box {
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, rgba(0, 122, 255, 0.2), rgba(175, 82, 222, 0.2));
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    flex-shrink: 0;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* iMessage 实时聊天容器与气泡 */
+.apple-chat-container {
+    height: 380px;
+    min-height: 320px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--apple-border);
+    border-radius: var(--apple-radius-medium);
+    padding: 16px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 16px;
+    scroll-behavior: smooth;
+}
+
+.msg-bubble {
+    max-width: 75%;
+    padding: 10px 16px;
+    border-radius: 18px;
+    font-size: 14px;
+    line-height: 1.5;
+    word-break: break-word;
+    position: relative;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    animation: fadeInMsg 0.2s ease-out;
+}
+
+@keyframes fadeInMsg {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.msg-left {
+    align-self: flex-start;
+    background: rgba(255, 255, 255, 0.12);
+    color: var(--apple-text-main);
+    border-bottom-left-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.msg-right {
+    align-self: flex-end;
+    background: linear-gradient(135deg, #007aff, #0051a8);
+    color: #ffffff;
+    border-bottom-right-radius: 4px;
+}
+
+.msg-time {
+    font-size: 10px;
+    opacity: 0.65;
+    margin-top: 4px;
+    text-align: right;
+}
+
+/* 输入框 & 精美下拉框 */
+.apple-input-box {
+    display: flex;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--apple-border);
+    border-radius: var(--apple-radius-medium);
+    padding: 8px 14px;
+    transition: var(--apple-transition);
+    white-space: nowrap;
+}
+
+.apple-input-box:focus-within {
+    border-color: var(--apple-system-blue);
+    box-shadow: 0 0 0 3px var(--apple-glow-blue);
+}
+
+.apple-input {
+    width: 100%;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--apple-text-main);
+    font-size: 13px;
+}
+
+.apple-select {
+    width: 100%;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--apple-text-main);
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.apple-select option {
+    background: #0f111a;
+    color: white;
+    padding: 8px;
+}
+
+.apple-input::placeholder {
+    color: var(--apple-text-subtle);
+}
+
+/* 开关 Toggle Switch (iOS 样式) */
+.apple-switch {
+    position: relative;
+    display: inline-block;
+    width: 46px;
+    height: 26px;
+    flex-shrink: 0;
+}
+
+.apple-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.apple-slider {
+    position: absolute;
+    cursor: pointer;
+    inset: 0;
+    background-color: rgba(255, 255, 255, 0.15);
+    border: 1px solid var(--apple-border);
+    transition: .3s cubic-bezier(0.25, 1, 0.5, 1);
+    border-radius: 34px;
+}
+
+.apple-slider:before {
+    position: absolute;
+    content: "";
+    height: 20px;
+    width: 20px;
+    left: 2px;
+    bottom: 2px;
+    background-color: white;
+    transition: .3s cubic-bezier(0.25, 1, 0.5, 1);
+    border-radius: 50%;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+input:checked + .apple-slider {
+    background-color: var(--apple-system-green);
+    border-color: var(--apple-system-green);
+}
+
+input:checked + .apple-slider:before {
+    transform: translateX(20px);
+}
+
+/* 防换行 Label 标签 */
+.apple-label-nowrap {
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--apple-text-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+/* 状态 Badge */
+.apple-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: var(--apple-radius-pill);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.apple-badge-success {
+    background: rgba(52, 199, 89, 0.15);
+    color: var(--apple-system-green);
+    border: 1px solid rgba(52, 199, 89, 0.3);
+}
+
+.apple-badge-info {
+    background: rgba(0, 122, 255, 0.15);
+    color: var(--apple-system-blue);
+    border: 1px solid rgba(0, 122, 255, 0.3);
+}
+
+.apple-badge-warning {
+    background: rgba(255, 149, 0, 0.15);
+    color: var(--apple-system-orange);
+    border: 1px solid rgba(255, 149, 0, 0.3);
+}
+
+.apple-badge-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 8px currentColor;
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.35);
+}
+
+/* 底部批量操作悬浮条 */
+.apple-floating-batch-bar {
+    position: fixed;
+    bottom: calc(85px + env(safe-area-inset-bottom));
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 250;
+    background: rgba(20, 25, 40, 0.92);
+    backdrop-filter: blur(25px) saturate(180%);
+    -webkit-backdrop-filter: blur(25px) saturate(180%);
+    border: 1px solid var(--apple-border-strong);
+    border-radius: var(--apple-radius-pill);
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.7);
+    animation: slideUpBar 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+    white-space: nowrap;
+}
+
+@keyframes slideUpBar {
+    from { opacity: 0; transform: translate(-50%, 20px); }
+    to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* 拖拽上传 Highlight Zone */
+.apple-file-grid.drag-over {
+    border: 2px dashed var(--apple-system-blue) !important;
+    background: rgba(0, 122, 255, 0.08) !important;
+    border-radius: 16px;
+}
+
+/* Apple 风格多选 Checkbox */
+.apple-checkbox {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--apple-border-strong);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.05);
+    cursor: pointer;
+    position: relative;
+    outline: none;
+    transition: var(--apple-transition);
+    flex-shrink: 0;
+}
+
+.apple-checkbox:checked {
+    background: var(--apple-system-blue);
+    border-color: var(--apple-system-blue);
+    box-shadow: 0 0 10px var(--apple-glow-blue);
+}
+
+.apple-checkbox:checked::after {
+    content: "✓";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    font-weight: bold;
+    font-size: 13px;
+}
+
+/* 手机画廊 Modal 交互样式 */
+.apple-gallery-nav-btn {
+    background: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    cursor: pointer;
+    transition: var(--apple-transition);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    user-select: none;
+}
+
+.apple-gallery-nav-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: scale(1.05);
+}
+

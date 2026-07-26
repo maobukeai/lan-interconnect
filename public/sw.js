@@ -34,6 +34,20 @@ self.addEventListener('fetch', (event) => {
     }
 });
 
+const MAX_VIDEO_CACHE_ITEMS = 60;
+
+async function trimVideoCache(cache) {
+    try {
+        const keys = await cache.keys();
+        if (keys.length > MAX_VIDEO_CACHE_ITEMS) {
+            // 删除最早的 15 项切片，防止占用磁盘过量
+            for (let i = 0; i < 15; i++) {
+                if (keys[i]) await cache.delete(keys[i]);
+            }
+        }
+    } catch(e) {}
+}
+
 async function handleVideoRangeRequest(request, event) {
     const cache = await caches.open(CACHE_NAME);
     const rangeHeader = request.headers.get('range');
@@ -57,8 +71,10 @@ async function handleVideoRangeRequest(request, event) {
             // 复制一份响应放入缓存，不阻塞原响应返回给播放器
             const responseToCache = networkResponse.clone();
             
-            // 异步存入缓存
-            event.waitUntil(cache.put(cacheKey, responseToCache));
+            // 异步存入缓存并检查切片总量上限
+            event.waitUntil(
+                cache.put(cacheKey, responseToCache).then(() => trimVideoCache(cache))
+            );
         }
         
         return networkResponse;

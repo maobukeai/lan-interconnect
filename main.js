@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const QRCode = require('qrcode');
 const { startServer, stopServer } = require('./server.js');
 const os = require('os');
@@ -18,20 +19,15 @@ function createWindow() {
         },
         autoHideMenuBar: true,
         resizable: true,
-        title: '局域网互联 - 高级控制中心',
+        title: '猫步互联 - 高级控制中心',
         icon: path.join(__dirname, 'icon.png'),
-        frame: false, // 无边框窗口更高级
-        titleBarStyle: 'hidden',
-        titleBarOverlay: {
-            color: '#0f172a',
-            symbolColor: '#ffffff'
-        }
+        frame: false // 自定义 macOS / Windows 标题栏
     });
     mainWindow.loadFile('gui.html');
 
     // 拦截关闭事件实现最小化到托盘
     mainWindow.on('close', (event) => {
-        if (!app.isQuiting) {
+        if (!app.isQuitting) {
             event.preventDefault();
             mainWindow.hide();
         }
@@ -49,9 +45,9 @@ app.whenReady().then(() => {
         const contextMenu = Menu.buildFromTemplate([
             { label: '显示主面板', click: () => mainWindow.show() },
             { type: 'separator' },
-            { label: '退出', click: () => { app.isQuiting = true; app.quit(); } }
+            { label: '退出', click: () => { app.isQuitting = true; app.quit(); } }
         ]);
-        tray.setToolTip('局域网互联 Pro');
+        tray.setToolTip('猫步互联 Pro');
         tray.setContextMenu(contextMenu);
         tray.on('double-click', () => mainWindow.show());
     } catch(e) {
@@ -65,7 +61,7 @@ app.whenReady().then(() => {
 });
 
 app.on('before-quit', () => {
-    app.isQuiting = true;
+    app.isQuitting = true;
     stopServer(); // 确保在退出前停止服务器，释放端口和资源
 });
 
@@ -117,22 +113,68 @@ ipcMain.handle('select-folder', async () => {
 ipcMain.handle('get-sys-info', async () => {
     let diskSpace = '未知';
     try {
-        // 尝试获取 C 盘剩余空间（仅 Windows 示例，实际可更复杂）
+        // 尝试获取 C 盘剩余空间（优先 PowerShell Get-CimInstance，回退 wmic / fs.statfsSync）
         if (process.platform === 'win32') {
             const { execSync } = require('child_process');
-            const output = execSync('wmic logicaldisk get size,freespace,caption').toString();
-            const lines = output.split('\n').filter(l => l.trim().length > 0);
-            if (lines.length > 1) {
-                // 找 C 盘
-                const cLine = lines.find(l => l.includes('C:'));
-                if (cLine) {
-                    const parts = cLine.trim().split(/\s+/);
-                    if (parts.length >= 3) {
-                        const free = (parseInt(parts[1]) / 1024 / 1024 / 1024).toFixed(1);
-                        const total = (parseInt(parts[2]) / 1024 / 1024 / 1024).toFixed(1);
-                        diskSpace = `${free} GB 可用 / 共 ${total} GB`;
+            let output = '';
+            try {
+                output = execSync('powershell -NoProfile -Command "Get-CimInstance Win32_LogicalDisk | Select-Object Caption, Size, FreeSpace"').toString();
+            } catch (psErr) {
+                try {
+                    output = execSync('wmic logicaldisk get size,freespace,caption').toString();
+                } catch (wmicErr) {
+                    output = '';
+                }
+            }
+
+            if (output) {
+                const lines = output.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                if (lines.length > 1) {
+                    // 找 C 盘
+                    const cLine = lines.find(l => l.includes('C:'));
+                    if (cLine) {
+                        const parts = cLine.split(/\s+/);
+                        if (parts.length >= 3) {
+                            const headerLine = lines[0].toLowerCase();
+                            const num1 = parseInt(parts[1], 10);
+                            const num2 = parseInt(parts[2], 10);
+                            if (!isNaN(num1) && !isNaN(num2)) {
+                                let freeBytes = 0;
+                                let totalBytes = 0;
+                                if (headerLine.includes('freespace') && headerLine.indexOf('freespace') < headerLine.indexOf('size')) {
+                                    // wmic: Caption, FreeSpace, Size
+                                    freeBytes = num1;
+                                    totalBytes = num2;
+                                } else {
+                                    // powershell: Caption, Size, FreeSpace
+                                    totalBytes = num1;
+                                    freeBytes = num2;
+                                }
+                                const free = (freeBytes / 1024 / 1024 / 1024).toFixed(1);
+                                const total = (totalBytes / 1024 / 1024 / 1024).toFixed(1);
+                                diskSpace = `${free} GB 可用 / 共 ${total} GB`;
+                            }
+                        }
                     }
                 }
+            }
+
+            if (diskSpace === '未知' && fs.statfsSync) {
+                try {
+                    const stats = fs.statfsSync('C:\\');
+                    const free = ((stats.bsize * stats.bfree) / 1024 / 1024 / 1024).toFixed(1);
+                    const total = ((stats.bsize * stats.blocks) / 1024 / 1024 / 1024).toFixed(1);
+                    diskSpace = `${free} GB 可用 / 共 ${total} GB`;
+                } catch (fsErr) {}
+            }
+        } else {
+            if (fs.statfsSync) {
+                try {
+                    const stats = fs.statfsSync('/');
+                    const free = ((stats.bsize * stats.bfree) / 1024 / 1024 / 1024).toFixed(1);
+                    const total = ((stats.bsize * stats.blocks) / 1024 / 1024 / 1024).toFixed(1);
+                    diskSpace = `${free} GB 可用 / 共 ${total} GB`;
+                } catch (fsErr) {}
             }
         }
     } catch (e) {
@@ -140,7 +182,8 @@ ipcMain.handle('get-sys-info', async () => {
     }
 
     return {
-        cpu: os.cpus()[0].model,
+        cpu: (os.cpus() && os.cpus()[0]) ? os.cpus()[0].model : 'Central Processor',
+        cpuUsage: getCpuUsage(),
         memTotal: (os.totalmem() / 1024 / 1024 / 1024).toFixed(2),
         memFree: (os.freemem() / 1024 / 1024 / 1024).toFixed(2),
         uptime: os.uptime(),
@@ -148,6 +191,33 @@ ipcMain.handle('get-sys-info', async () => {
         diskSpace: diskSpace
     };
 });
+
+let lastCpuTimes = null;
+function getCpuUsage() {
+    try {
+        const cpus = os.cpus();
+        if (!cpus || !cpus.length) return 0;
+        let idle = 0;
+        let total = 0;
+        for (const cpu of cpus) {
+            for (const type in cpu.times) {
+                total += cpu.times[type];
+            }
+            idle += cpu.times.idle;
+        }
+        if (!lastCpuTimes) {
+            lastCpuTimes = { idle, total };
+            return 0;
+        }
+        const idleDiff = idle - lastCpuTimes.idle;
+        const totalDiff = total - lastCpuTimes.total;
+        lastCpuTimes = { idle, total };
+        const usage = totalDiff > 0 ? Math.round(100 * (1 - idleDiff / totalDiff)) : 0;
+        return Math.min(100, Math.max(0, usage));
+    } catch(e) {
+        return 0;
+    }
+}
 
 // IPC 通信：获取网络接口信息
 ipcMain.handle('get-network-info', () => {
@@ -165,20 +235,26 @@ ipcMain.handle('get-network-info', () => {
 
 // IPC 通信：执行定时关机/取消关机
 ipcMain.handle('schedule-shutdown', async (event, minutes) => {
-    try {
-        const { exec } = require('child_process');
+    const { exec } = require('child_process');
+    return new Promise((resolve) => {
         if (minutes > 0) {
-            // 设置定时关机 (Windows: shutdown -s -t 秒数)
-            exec(`shutdown -s -t ${minutes * 60}`);
-            return { success: true, message: `已设置在 ${minutes} 分钟后关机` };
+            exec(`shutdown -s -t ${minutes * 60}`, (error) => {
+                if (error) {
+                    resolve({ success: false, error: error.message });
+                } else {
+                    resolve({ success: true, message: `已设置在 ${minutes} 分钟后关机` });
+                }
+            });
         } else {
-            // 取消关机 (Windows: shutdown -a)
-            exec('shutdown -a');
-            return { success: true, message: '已取消定时关机' };
+            exec('shutdown -a', (error) => {
+                if (error) {
+                    resolve({ success: false, error: error.message });
+                } else {
+                    resolve({ success: true, message: '已取消定时关机' });
+                }
+            });
         }
-    } catch (e) {
-        return { success: false, error: e.message };
-    }
+    });
 });
 
 // IPC 通信：开机自启控制
@@ -224,6 +300,21 @@ ipcMain.handle('minimize-window', () => {
     if (mainWindow) mainWindow.minimize();
 });
 
+ipcMain.handle('maximize-window', () => {
+    if (mainWindow) {
+        if (mainWindow.isMaximized()) {
+            mainWindow.unmaximize();
+        } else {
+            mainWindow.maximize();
+        }
+    }
+});
+
 ipcMain.handle('close-window', () => {
-    if (mainWindow) mainWindow.close(); // 会触发 close 事件，隐藏到托盘
+    if (mainWindow) mainWindow.close(); // 隐藏到托盘
+});
+
+ipcMain.handle('quit-app', () => {
+    app.isQuitting = true;
+    app.quit();
 });

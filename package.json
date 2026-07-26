@@ -1,7 +1,7 @@
 {
   "name": "lan-disk",
   "version": "1.0.0",
-  "description": "局域网文件共享与跨设备通信工具",
+  "description": "猫步互联 - 局域网文件共享与跨设备通信工具",
   "author": "Developer",
   "main": "main.js",
   "scripts": {
@@ -12,7 +12,7 @@
   },
   "build": {
     "appId": "com.landisk.app",
-    "productName": "局域网互联 Pro",
+    "productName": "猫步互联 Pro",
     "directories": {
       "output": "release"
     },
@@ -56,6 +56,8 @@
   },
   "devDependencies": {
     "electron": "^41.0.3",
-    "electron-builder": "^25.1.8"
+    "electron-builder": "^25.1.8",
+    "electron-rebuild": "^3.2.9",
+    "rimraf": "^5.0.0"
   }
 }
