@@ -1,0 +1,1264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>局域网互联 - 高级控制中心</title>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --primary-glow: rgba(99, 102, 241, 0.5);
+            --danger: #ef4444;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --bg-base: #020617;
+            --glass-bg: rgba(255, 255, 255, 0.02);
+            --glass-border: rgba(255, 255, 255, 0.06);
+            --glass-shadow: 0 16px 40px 0 rgba(0, 0, 0, 0.4);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --sidebar-bg: rgba(15, 23, 42, 0.5);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; }
+        
+        body { 
+            background-color: var(--bg-base); color: var(--text-main); height: 100vh; overflow: hidden; display: flex; flex-direction: column;
+        }
+
+        /* 标题栏 */
+        .titlebar {
+            height: 44px; background: rgba(2, 6, 23, 0.6); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 500;
+            color: var(--text-muted); border-bottom: 1px solid var(--glass-border); z-index: 1000;
+        }
+        .titlebar-drag { flex: 1; height: 100%; -webkit-app-region: drag; display: flex; align-items: center; padding-left: 20px; gap: 8px; }
+        .titlebar-controls { display: flex; height: 100%; -webkit-app-region: no-drag; }
+        .window-btn { width: 46px; height: 100%; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; color: var(--text-muted); }
+        .window-btn:hover { background: rgba(255, 255, 255, 0.1); color: white; }
+        .window-btn.close-btn:hover { background: #e81123; color: white; }
+
+        /* 背景 */
+        .bg-orbs { position: absolute; inset: 0; overflow: hidden; z-index: -1; pointer-events: none; }
+        .orb { position: absolute; border-radius: 50%; filter: blur(100px); opacity: 0.4; animation: float 25s infinite alternate ease-in-out; }
+        .orb-1 { background: var(--primary); width: 600px; height: 600px; top: -200px; left: -200px; }
+        .orb-2 { background: #ec4899; width: 500px; height: 500px; bottom: -100px; right: -100px; animation-delay: -5s; }
+        .orb-3 { background: #0ea5e9; width: 400px; height: 400px; top: 40%; left: 30%; animation-delay: -10s; opacity: 0.3; }
+
+        @keyframes float { 0% { transform: translate(0, 0) scale(1); } 100% { transform: translate(100px, 80px) scale(1.1); } }
+
+        .app-container { display: flex; flex: 1; height: calc(100vh - 44px); }
+
+        /* 侧边栏 */
+        .sidebar {
+            width: 240px; background: var(--sidebar-bg); backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px);
+            border-right: 1px solid var(--glass-border); padding: 24px 12px; display: flex; flex-direction: column; gap: 6px;
+        }
+        .nav-category { font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 1px; margin: 12px 0 4px 12px; }
+        .nav-item {
+            padding: 12px 16px; border-radius: 12px; cursor: pointer; display: flex; align-items: center; gap: 12px;
+            color: var(--text-muted); font-size: 14px; font-weight: 500; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); border: 1px solid transparent; position: relative; overflow: hidden;
+        }
+        .nav-item:hover { background: rgba(255, 255, 255, 0.05); color: var(--text-main); }
+        .nav-item.active {
+            background: linear-gradient(90deg, rgba(255,255,255,0.1), transparent); color: white; border-color: rgba(255,255,255,0.1); font-weight: 600;
+        }
+        .nav-item.active::before { content: ''; position: absolute; left: 0; top: 20%; bottom: 20%; width: 4px; background: var(--primary); border-radius: 0 4px 4px 0; box-shadow: 0 0 10px var(--primary-glow); }
+        
+        .sidebar-footer { margin-top: auto; padding: 15px; border-radius: 16px; background: rgba(0,0,0,0.2); border: 1px solid var(--glass-border); display: flex; align-items: center; gap: 10px; }
+        .pulse-dot { width: 10px; height: 10px; background: var(--text-muted); border-radius: 50%; box-shadow: 0 0 0 0 rgba(148, 163, 184, 0.4); }
+        .pulse-dot.active { background: var(--success); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); animation: pulsing 2s infinite; }
+        @keyframes pulsing { 0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); } 70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); } 100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
+
+        /* 主内容区 */
+        .main-content { flex: 1; padding: 32px 40px; overflow-y: auto; position: relative; }
+        .main-content::-webkit-scrollbar { width: 8px; }
+        .main-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+        .main-content::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+        .tab-pane { display: none; animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; opacity: 0; transform: translateY(20px); }
+        .tab-pane.active { display: block; }
+        @keyframes slideUp { to { opacity: 1; transform: translateY(0); } }
+
+        h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; letter-spacing: -0.5px; }
+        .subtitle { color: var(--text-muted); font-size: 14px; margin-bottom: 32px; }
+        h2 { font-size: 18px; font-weight: 600; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+        
+        /* 玻璃卡片 */
+        .glass-card {
+            background: linear-gradient(145deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%);
+            backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+            border: 1px solid var(--glass-border); border-radius: 20px; padding: 24px;
+            box-shadow: var(--glass-shadow); margin-bottom: 24px; position: relative; overflow: hidden;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .glass-card::before {
+            content: ""; position: absolute; top: 0; left: -100%; width: 50%; height: 100%;
+            background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.03), transparent);
+            transform: skewX(-20deg); transition: all 0.7s ease; pointer-events: none;
+        }
+        .glass-card:hover { transform: translateY(-4px); border-color: rgba(255, 255, 255, 0.12); box-shadow: 0 20px 48px 0 rgba(0, 0, 0, 0.5); }
+        .glass-card:hover::before { left: 150%; }
+
+        /* Grid */
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+        .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+
+        /* 统计卡片 */
+        .stat-box { display: flex; align-items: center; gap: 16px; padding: 16px; background: rgba(0,0,0,0.2); border-radius: 16px; border: 1px solid rgba(255,255,255,0.03); }
+        .stat-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.05); color: var(--primary); font-size: 24px; }
+        .stat-info { flex: 1; }
+        .stat-label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+        .stat-val { font-size: 20px; font-weight: 700; line-height: 1; }
+
+        /* 表单与按钮 */
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 500; color: #cbd5e1; }
+        input[type="text"], input[type="number"], select, textarea {
+            width: 100%; padding: 12px 16px; background: rgba(0, 0, 0, 0.2); border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px; color: white; font-size: 14px; outline: none; transition: all 0.3s; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+        }
+        input:focus, select:focus, textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); background: rgba(0, 0, 0, 0.4); }
+        select option { background: #0f172a; color: white; }
+
+        .btn {
+            padding: 12px 24px; border: none; border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer;
+            display: inline-flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.3s; color: white; position: relative; overflow: hidden;
+        }
+        .btn:active { transform: scale(0.96); }
+        
+        .btn-primary { background: linear-gradient(135deg, var(--primary), var(--primary-hover)); box-shadow: 0 4px 15px var(--primary-glow); }
+        .btn-primary:hover:not(:disabled) { box-shadow: 0 8px 25px var(--primary-glow); transform: translateY(-2px); }
+        
+        .btn-danger { background: linear-gradient(135deg, var(--danger), #b91c1c); box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3); }
+        .btn-danger:hover:not(:disabled) { box-shadow: 0 8px 25px rgba(239, 68, 68, 0.5); transform: translateY(-2px); }
+        
+        .btn-outline { background: rgba(255, 255, 255, 0.03); border: 1px solid var(--glass-border); }
+        .btn-outline:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(255,255,255,0.2); }
+        
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+
+        /* 开关 */
+        .switch-container { display: flex; align-items: center; justify-content: space-between; padding: 16px; background: rgba(0,0,0,0.2); border-radius: 16px; border: 1px solid rgba(255,255,255,0.03); margin-bottom: 12px; }
+        .switch-label { flex: 1; }
+        .switch-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+        .switch-desc { font-size: 12px; color: var(--text-muted); }
+        .switch { position: relative; display: inline-block; width: 50px; height: 26px; flex-shrink: 0; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(255,255,255,0.1); transition: .4s; border-radius: 26px; }
+        .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+        input:checked + .slider { background-color: var(--primary); }
+        input:checked + .slider:before { transform: translateX(24px); }
+
+        /* 二维码与链接 */
+        .qr-wrapper { background: white; padding: 16px; border-radius: 20px; display: inline-block; margin-bottom: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        .qr-wrapper img { width: 180px; height: 180px; display: block; }
+        .qr-placeholder { width: 180px; height: 180px; display: flex; align-items: center; justify-content: center; color: #94a3b8; border: 2px dashed #cbd5e1; border-radius: 12px; }
+        .link-text { color: var(--primary); font-family: monospace; background: rgba(99, 102, 241, 0.1); padding: 8px 16px; border-radius: 8px; border: 1px solid rgba(99, 102, 241, 0.2); transition: all 0.3s; word-break: break-all; font-size: 14px; cursor: pointer; display: inline-block; }
+        .link-text:hover { background: rgba(99, 102, 241, 0.2); color: white; }
+
+        /* 进度条 */
+        .progress-wrap { margin-top: 10px; }
+        .progress-bar { height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden; }
+        .progress-fill { height: 100%; background: var(--primary); width: 0%; transition: width 0.5s ease; border-radius: 3px; box-shadow: 0 0 10px var(--primary-glow); }
+        .progress-labels { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+
+        /* 列表项 (网络/设备) */
+        .list-box { background: rgba(0,0,0,0.2); border-radius: 16px; border: 1px solid rgba(255,255,255,0.03); overflow: hidden; }
+        .list-item { display: flex; justify-content: space-between; align-items: center; padding: 16px; border-bottom: 1px solid rgba(255,255,255,0.03); }
+        .list-item:last-child { border-bottom: none; }
+        .badge { background: rgba(16, 185, 129, 0.1); color: var(--success); padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; font-family: monospace; }
+
+        /* 日志 */
+        .log-box { background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 16px; padding: 20px; height: 500px; overflow-y: auto; font-family: 'Consolas', monospace; font-size: 13px; line-height: 1.6; }
+        .log-line { margin-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.02); padding-bottom: 8px; }
+        .log-time { color: #64748b; margin-right: 12px; }
+        .log-info { color: #e2e8f0; }
+        .log-success { color: #34d399; }
+        .log-warn { color: #fbbf24; }
+        .log-error { color: #f87171; }
+
+        /* 聊天室 PC端 */
+        .chat-container { display: flex; flex-direction: column; height: 500px; background: rgba(0,0,0,0.2); border-radius: 16px; border: 1px solid rgba(255,255,255,0.05); }
+        .chat-messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 15px; }
+        .chat-bubble { max-width: 70%; padding: 12px 16px; border-radius: 16px; font-size: 14px; position: relative; word-break: break-word; }
+        .chat-left { align-self: flex-start; background: rgba(255,255,255,0.1); border-bottom-left-radius: 4px; }
+        .chat-right { align-self: flex-end; background: var(--primary); border-bottom-right-radius: 4px; }
+        .chat-time { font-size: 10px; opacity: 0.5; margin-top: 5px; text-align: right; }
+        .chat-input-area { padding: 16px; border-top: 1px solid rgba(255,255,255,0.05); display: flex; gap: 10px; background: rgba(0,0,0,0.3); border-bottom-left-radius: 16px; border-bottom-right-radius: 16px; }
+
+        /* 主题色块 */
+        .color-picker { display: flex; gap: 16px; margin-bottom: 24px; }
+        .color-btn { width: 48px; height: 48px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: 0.2s; }
+        .color-btn:hover { transform: scale(1.1); }
+        .color-btn.active { border-color: white; box-shadow: 0 0 15px currentColor; }
+    </style>
+</head>
+<body>
+
+    <div class="titlebar">
+        <div class="titlebar-drag">
+            <svg width="16" height="16" fill="var(--primary)" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            局域网互联 Pro
+        </div>
+        <div class="titlebar-controls">
+            <div class="window-btn" onclick="window.api.minimizeWindow()">
+                <svg width="12" height="12" viewBox="0 0 12 12"><path fill="currentColor" d="M11 6H1V5h10v1z"/></svg>
+            </div>
+            <div class="window-btn close-btn" onclick="window.api.closeWindow()">
+                <svg width="12" height="12" viewBox="0 0 12 12"><path fill="currentColor" d="M11.83 1.58L10.42.17 6 4.59 1.58.17.17 1.58 4.59 6 .17 10.42l1.41 1.41L6 7.41l4.42 4.42 1.41-1.41L7.41 6l4.42-4.42z"/></svg>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-orbs">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
+    </div>
+
+    <div class="app-container">
+        <!-- 侧边栏 -->
+        <div class="sidebar">
+            <div class="nav-category">概览</div>
+            <div class="nav-item active" data-target="dashboard">
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+                控制大盘
+            </div>
+            
+            <div class="nav-category">功能</div>
+            <div class="nav-item" data-target="files">
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
+                文件与共享
+            </div>
+            <div class="nav-item" data-target="chat">
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                跨端通信
+            </div>
+            <div class="nav-item" data-target="devices">
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+                设备管理
+            </div>
+
+            <div class="nav-category">系统</div>
+            <div class="nav-item" data-target="monitor">
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                性能与进程
+            </div>
+            <div class="nav-item" data-target="terminal">
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                Web终端
+            </div>
+
+            <div class="nav-category">设置</div>
+            <div class="nav-item" data-target="security">
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                安全与网络
+            </div>
+            <div class="nav-item" data-target="tools">
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                高级工具
+            </div>
+            <div class="nav-item" data-target="theme">
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"></path></svg>
+                外观设置
+            </div>
+            <div class="nav-item" data-target="logs">
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h8m-8 6h16"></path></svg>
+                运行日志
+            </div>
+
+            <div class="sidebar-footer">
+                <div class="pulse-dot" id="sidebar-status-dot"></div>
+                <div>
+                    <div style="font-size: 13px; font-weight: 600; color: white;" id="sidebar-status-text">已停止</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">v2.0 Ultimate</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 主内容区 -->
+        <div class="main-content">
+            
+            <!-- 控制大盘 -->
+            <div id="dashboard" class="tab-pane active">
+                <h1>控制大盘</h1>
+                <div class="subtitle">全面掌握局域网互联状态与系统资源。</div>
+
+                <div class="grid-2">
+                    <!-- 左侧：快速操作与监控 -->
+                    <div>
+                        <div class="glass-card">
+                            <h2>🚀 服务控制</h2>
+                            <div class="form-group">
+                                <label>工作模式 (可在设置中更改)</label>
+                                <select id="home-mode" disabled>
+                                    <option value="full">💻 电脑全盘访问 (拥有最高权限)</option>
+                                    <option value="shared">📁 仅互传文件 (受限安全目录)</option>
+                                </select>
+                            </div>
+                            <div style="display: flex; gap: 16px; margin-top: 24px;">
+                                <button id="btn-start" class="btn btn-primary" style="flex: 2; height: 48px; font-size: 16px;">一键启动服务</button>
+                                <button id="btn-stop" class="btn btn-danger" style="flex: 1; height: 48px;" disabled>停止</button>
+                            </div>
+                        </div>
+
+                        <div class="glass-card">
+                            <h2>📊 性能监控</h2>
+                            <div class="stat-box" style="margin-bottom: 16px;">
+                                <div class="stat-icon"><svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path></svg></div>
+                                <div class="stat-info">
+                                    <div class="stat-label">CPU 型号</div>
+                                    <div class="stat-val" id="sys-cpu" style="font-size: 14px;">加载中...</div>
+                                </div>
+                            </div>
+                            
+                            <div class="progress-wrap" style="margin-bottom: 20px;">
+                                <div class="progress-labels">
+                                    <span>内存占用</span>
+                                    <span id="sys-mem-text">-- / -- GB</span>
+                                </div>
+                                <div class="progress-bar" style="margin-top: 8px;"><div class="progress-fill" id="sys-mem-bar"></div></div>
+                            </div>
+
+                            <div class="progress-wrap">
+                                <div class="progress-labels">
+                                    <span>系统盘空间</span>
+                                    <span id="sys-disk-text">加载中...</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 右侧：连接与网络 -->
+                    <div>
+                        <div class="glass-card" style="text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 280px;">
+                            <h2 style="margin-bottom: 24px; justify-content: center;">📱 扫码连接</h2>
+                            <div class="qr-wrapper">
+                                <div class="qr-placeholder" id="qr-placeholder">服务未启动</div>
+                                <img id="qrcode" src="" style="display: none;">
+                            </div>
+                            <div id="url-display" class="link-text" style="display: none;" onclick="copyUrl()">http://--:--</div>
+                            <p style="color: var(--text-muted); font-size: 13px; margin-top: 16px;">手机连接同一 WiFi 后扫码或浏览器访问</p>
+                        </div>
+
+                        <div class="grid-2" style="gap: 16px;">
+                            <div class="stat-box" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+                                <div class="stat-label" style="color: var(--success);">⬆️ 实时上传</div>
+                                <div class="stat-val" id="sys-tx-speed" style="color: var(--success);">0 B/s</div>
+                            </div>
+                            <div class="stat-box" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+                                <div class="stat-label" style="color: var(--primary);">⬇️ 实时下载</div>
+                                <div class="stat-val" id="sys-rx-speed" style="color: var(--primary);">0 B/s</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 文件与共享 -->
+            <div id="files" class="tab-pane">
+                <h1>文件与共享</h1>
+                <div class="subtitle">管理您的共享目录及本地文件快捷访问。</div>
+                <div class="glass-card">
+                    <h2>当前互传目录</h2>
+                    <div style="display: flex; gap: 16px; align-items: center; margin-bottom: 24px;">
+                        <input type="text" id="config-dir" placeholder="留空则使用默认 shared 目录" readonly style="flex: 1;">
+                        <button class="btn btn-outline" id="btn-select-dir">更改目录</button>
+                    </div>
+                    <button class="btn btn-primary" style="width: 100%;" onclick="window.api.openRoot()">
+                        <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
+                        在资源管理器中打开当前目录
+                    </button>
+                </div>
+                <div class="glass-card">
+                    <h2>快速打开</h2>
+                    <div class="grid-2">
+                        <button class="btn btn-outline" onclick="window.api.invoke('open-root')">打开 C 盘</button>
+                        <button class="btn btn-outline" onclick="window.api.invoke('open-url', 'https://www.baidu.com')">打开浏览器测试</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 跨端通信 -->
+            <div id="chat" class="tab-pane">
+                <h1>跨端通信</h1>
+                <div class="subtitle">与连接的移动设备实时同步剪贴板和文本消息。</div>
+                <div class="glass-card" style="display: flex; flex-direction: column;">
+                        <h2>💬 实时聊天室</h2>
+                        <div class="chat-container">
+                            <div class="chat-messages" id="chat-messages">
+                                <div style="text-align:center; color: var(--text-muted); font-size: 12px; margin-top: 20px;">服务未启动或暂无消息</div>
+                            </div>
+                            <div class="chat-input-area">
+                                <label for="pc-chat-image" style="cursor:pointer; display:flex; align-items:center; justify-content:center; width:36px; height:36px; background:rgba(255,255,255,0.1); border-radius:50%; margin-right:10px; margin-bottom:0;" title="发送图片">
+                                    <svg width="18" height="18" fill="none" stroke="white" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                </label>
+                                <input type="file" id="pc-chat-image" accept="image/*" style="display:none;" onchange="sendChatImagePC(this)">
+                                <button id="btn-voice-pc" onclick="toggleVoiceRecordPC()" style="cursor:pointer; display:flex; align-items:center; justify-content:center; width:36px; height:36px; background:rgba(16, 185, 129, 0.2); border-radius:50%; margin-right:10px; border:none; color: var(--success);" title="点击开始/停止录音">
+                                    <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
+                                </button>
+                                <button class="btn-icon" onclick="clearChatPC()" style="cursor:pointer; display:flex; align-items:center; justify-content:center; width:36px; height:36px; background:rgba(239, 68, 68, 0.1); border-radius:50%; margin-right:10px; border:none; color: var(--danger);" title="清空聊天">
+                                    <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                </button>
+                                <input type="text" id="chat-input" placeholder="输入要发送的内容 (支持拖拽图片到聊天区)..." style="flex: 1; border-radius: 20px; background: rgba(255,255,255,0.05); border: none; color: white; padding: 0 15px; outline: none;" onkeypress="if(event.key==='Enter') sendChatMessage()">
+                                <button class="btn btn-primary" style="padding: 0 20px; border-radius: 20px;" onclick="sendChatMessage()">发送</button>
+                            </div>
+                        </div>
+                    </div>
+            </div>
+
+            <!-- 设备管理 -->
+            <div id="devices" class="tab-pane">
+                <h1>设备管理</h1>
+                <div class="subtitle">查看和管理当前连接到局域网互联的设备。</div>
+                <div class="glass-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <h2>在线设备</h2>
+                        <button class="btn btn-outline" onclick="loadDevices()">刷新</button>
+                    </div>
+                    <div class="list-box" id="device-list">
+                        <div style="padding: 30px; text-align: center; color: var(--text-muted);">服务未启动或无设备连接</div>
+                    </div>
+                </div>
+                <button class="btn btn-danger" style="width: 100%; padding: 16px;" onclick="kickDevices()">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    强制断开所有设备
+                </button>
+            </div>
+
+            <!-- 性能与进程 -->
+            <div id="monitor" class="tab-pane">
+                <h1>性能与进程</h1>
+                <div class="subtitle">深度监控系统资源和管理后台进程。</div>
+                <div class="glass-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <h2>🖥️ 进程管理器</h2>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <input type="text" id="pc-process-search" placeholder="搜索进程..." style="padding: 6px 12px; border-radius: 8px; border: 1px solid var(--glass-border); background: rgba(0,0,0,0.3); color: white;" oninput="renderProcessesPC()">
+                            <select id="pc-process-sort" onchange="renderProcessesPC()" style="padding: 6px 12px; border-radius: 8px; border: 1px solid var(--glass-border); background: rgba(0,0,0,0.3); color: white;">
+                                <option value="mem">内存 (从大到小)</option>
+                                <option value="name">名称 (A-Z)</option>
+                                <option value="pid">PID (从大到小)</option>
+                            </select>
+                            <label style="display: flex; align-items: center; gap: 5px; color: var(--text-muted); font-size: 14px; cursor: pointer;">
+                                <input type="checkbox" id="pc-process-auto" onchange="toggleAutoRefreshPC()"> 自动刷新
+                            </label>
+                            <button class="btn btn-outline" onclick="loadProcessesPC()">刷新</button>
+                        </div>
+                    </div>
+                    <div class="list-box" id="pc-process-list" style="max-height: 400px; overflow-y: auto;">
+                        <div style="padding: 20px; text-align: center; color: var(--text-muted);">点击刷新获取进程列表</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Web终端 -->
+            <div id="terminal" class="tab-pane">
+                <h1>Web终端</h1>
+                <div class="subtitle">内置命令行工具，方便执行系统命令与脚本。</div>
+                <div class="glass-card" style="display: flex; flex-direction: column; height: 500px;">
+                    <div id="pc-terminal-output" style="flex: 1; background: rgba(0,0,0,0.5); color: #10b981; font-family: 'Consolas', monospace; font-size: 13px; padding: 15px; border-radius: 12px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 15px;">Ready...</div>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="pc-terminal-input" style="flex: 1; background: rgba(0,0,0,0.3); border: 1px solid var(--glass-border); border-radius: 12px; padding: 12px 15px; color: white; outline: none; font-family: 'Consolas', monospace;" placeholder="输入系统命令..." onkeypress="if(event.key === 'Enter') executePCTerminal()">
+                        <button class="btn btn-primary" onclick="executePCTerminal()">执行</button>
+                        <button class="btn btn-outline" onclick="document.getElementById('pc-terminal-output').innerHTML='Ready...'">清空</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 安全与网络 -->
+            <div id="security" class="tab-pane">
+                <h1>安全与网络</h1>
+                <div class="subtitle">配置服务器端口、访问权限及系统防火墙。</div>
+                <div class="glass-card">
+                    <h2>访问控制</h2>
+                    <div class="form-group">
+                        <label>访问模式</label>
+                        <select id="config-mode" onchange="syncMode()">
+                            <option value="full">💻 电脑全盘访问 (推荐个人独享使用)</option>
+                            <option value="shared">📁 仅互传文件 (推荐公共环境使用)</option>
+                        </select>
+                    </div>
+                    <div class="grid-2">
+                        <div class="form-group">
+                            <label>安全密码 (PIN码)</label>
+                            <input type="text" id="config-pin" placeholder="留空为免密访问，建议设置4-6位数字">
+                        </div>
+                        <div class="form-group">
+                            <label>服务端口号</label>
+                            <input type="number" id="config-port" value="3000">
+                        </div>
+                    </div>
+                    <div class="switch-container" style="margin-top: 10px;">
+                        <div class="switch-label">
+                            <div class="switch-title">IP 白名单模式</div>
+                            <div class="switch-desc">开启后，仅允许下方指定的 IP 地址访问您的网盘</div>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="config-whitelist-mode" onchange="document.getElementById('config-whitelist-ips').disabled = !this.checked">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <input type="text" id="config-whitelist-ips" placeholder="输入允许的 IP，多个用逗号分隔，如: 192.168.1.10, 192.168.1.20" disabled>
+                    </div>
+                    <button class="btn btn-primary" style="width: 100%; margin-top: 10px;" onclick="saveConfig()">保存并应用配置 (重启服务生效)</button>
+                </div>
+
+                <div class="glass-card">
+                    <h2>本机网络接口</h2>
+                    <div class="list-box" id="network-list" style="margin-bottom: 20px;">
+                        <div style="padding: 20px; text-align: center; color: var(--text-muted);">加载中...</div>
+                    </div>
+                    <button class="btn btn-outline" style="width: 100%;" onclick="window.api.openFirewall()">
+                        <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                        打开系统防火墙设置
+                    </button>
+                </div>
+            </div>
+
+            <!-- 高级工具 -->
+            <div id="tools" class="tab-pane">
+                <h1>高级工具</h1>
+                <div class="subtitle">提供实用的系统维护和自动化工具。</div>
+                <div class="grid-2">
+                    <div class="glass-card">
+                        <h2>系统与自动化</h2>
+                        <div class="switch-container">
+                            <div class="switch-label">
+                                <div class="switch-title">开机自动启动</div>
+                                <div class="switch-desc">随系统启动并在后台静默运行</div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="autostart-toggle">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="switch-container">
+                            <div class="switch-label">
+                                <div class="switch-title">自动开启服务</div>
+                                <div class="switch-desc">软件打开后无需手动点击“启动”</div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="auto-serve-toggle">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        
+                        <h3 style="font-size: 14px; margin: 20px 0 10px; color: var(--text-muted);">定时关机</h3>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="number" id="shutdown-minutes" placeholder="分钟" style="width: 100px;">
+                            <button class="btn btn-outline" style="flex: 1;" onclick="scheduleShutdown()">执行关机</button>
+                            <button class="btn btn-outline" style="flex: 1; color: var(--danger); border-color: rgba(239,68,68,0.3);" onclick="cancelShutdown()">取消</button>
+                        </div>
+                    </div>
+                    
+                    <div class="glass-card">
+                        <h2>清理与维护</h2>
+                        <button class="btn btn-outline" style="width: 100%; margin-bottom: 16px; justify-content: flex-start;" onclick="testPing()">
+                            <span style="font-size: 20px; margin-right: 10px;">🌐</span> 测试外网连通性
+                        </button>
+                        <button class="btn btn-outline" style="width: 100%; margin-bottom: 16px; justify-content: flex-start; color: var(--warning); border-color: rgba(245,158,11,0.3);" onclick="cleanLinks()">
+                            <span style="font-size: 20px; margin-right: 10px;">🔗</span> 清理过期的分享链接
+                        </button>
+                        <button class="btn btn-outline" style="width: 100%; justify-content: flex-start; color: var(--danger); border-color: rgba(239,68,68,0.3);" onclick="document.getElementById('log-box').innerHTML=''">
+                            <span style="font-size: 20px; margin-right: 10px;">🗑️</span> 清空运行日志
+                        </button>
+                    </div>
+                </div>
+
+                <div class="glass-card" style="margin-top: 24px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <h2>🧰 开发者选项</h2>
+                    </div>
+                    <button class="btn btn-outline" style="width: 100%; justify-content: flex-start;" onclick="window.api.invoke('open-dev-tools')">
+                        <span style="font-size: 20px; margin-right: 10px;">🛠️</span> 开启调试工具 (DevTools)
+                    </button>
+                </div>
+            </div>
+
+            <!-- 外观设置 -->
+            <div id="theme" class="tab-pane">
+                <h1>外观设置</h1>
+                <div class="subtitle">个性化定制您的控制中心视觉体验。</div>
+                <div class="glass-card">
+                    <h2>主题色彩</h2>
+                    <div class="color-picker">
+                        <div class="color-btn active" style="background: #6366f1; color: #6366f1;" onclick="setTheme('#6366f1', '#4f46e5', this)"></div>
+                        <div class="color-btn" style="background: #ec4899; color: #ec4899;" onclick="setTheme('#ec4899', '#db2777', this)"></div>
+                        <div class="color-btn" style="background: #10b981; color: #10b981;" onclick="setTheme('#10b981', '#059669', this)"></div>
+                        <div class="color-btn" style="background: #f59e0b; color: #f59e0b;" onclick="setTheme('#f59e0b', '#d97706', this)"></div>
+                        <div class="color-btn" style="background: #8b5cf6; color: #8b5cf6;" onclick="setTheme('#8b5cf6', '#7c3aed', this)"></div>
+                        <div class="color-btn" style="background: #ef4444; color: #ef4444;" onclick="setTheme('#ef4444', '#dc2626', this)"></div>
+                    </div>
+                    
+                    <h2 style="margin-top: 30px;">视觉特效</h2>
+                    <div class="switch-container">
+                        <div class="switch-label">
+                            <div class="switch-title">动态流光背景</div>
+                            <div class="switch-desc">开启炫酷的悬浮光球动画，可能稍微增加 GPU 使用</div>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="anim-bg-toggle" checked onchange="toggleAnimBg(this.checked)">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 运行日志 -->
+            <div id="logs" class="tab-pane">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h1 style="margin: 0;">运行日志</h1>
+                    <div style="display: flex; gap: 10px;">
+                        <select id="log-filter" onchange="filterLogs()" style="width: auto; padding: 8px 16px;">
+                            <option value="all">所有级别</option>
+                            <option value="info">仅信息</option>
+                            <option value="warn">仅警告</option>
+                            <option value="error">仅错误</option>
+                        </select>
+                        <button class="btn btn-outline" onclick="exportLogs()">导出日志</button>
+                    </div>
+                </div>
+                <div class="subtitle">监控系统底层运行状态和所有请求活动。</div>
+                <div class="log-box" id="log-box">
+                    <div class="log-line" data-level="info"><span class="log-time">[系统]</span><span class="log-info">全新高级控制中心初始化完成...</span></div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // Tab 切换
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.addEventListener('click', () => {
+                document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+                document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+                
+                item.classList.add('active');
+                const targetId = item.dataset.target;
+                const targetPane = document.getElementById(targetId);
+                if (targetPane) {
+                    targetPane.classList.add('active');
+                }
+                
+                if (targetId === 'chat') {
+                    const chatEl = document.getElementById('chat-messages');
+                    if (chatEl) chatEl.scrollTop = chatEl.scrollHeight;
+                }
+            });
+        });
+
+        // 状态变量
+        let isRunning = false;
+        let currentUrl = '';
+        let currentPin = '';
+        let deviceId = 'pc_admin';
+        
+        async function apiFetch(path, options = {}) {
+            const url = path.startsWith('http') ? path : currentUrl + path;
+            const headers = options.headers || {};
+            if (currentPin) headers['x-pin'] = currentPin;
+            options.headers = headers;
+            return fetch(url, options);
+        }
+
+        // 日志功能
+        const logBox = document.getElementById('log-box');
+        function addLog(msg, type = 'info') {
+            const time = new Date().toLocaleTimeString([], { hour12: false });
+            const line = document.createElement('div');
+            line.className = 'log-line';
+            line.dataset.level = type;
+            line.innerHTML = `<span class="log-time">[${time}]</span><span class="log-${type}">${msg}</span>`;
+            logBox.appendChild(line);
+            filterLogs();
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+
+        function filterLogs() {
+            const level = document.getElementById('log-filter').value;
+            document.querySelectorAll('.log-line').forEach(line => {
+                line.style.display = (level === 'all' || line.dataset.level === level) ? 'block' : 'none';
+            });
+        }
+
+        function exportLogs() {
+            let text = '';
+            document.querySelectorAll('.log-line').forEach(line => { text += line.innerText + '\n'; });
+            const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `lan-disk-logs-${Date.now()}.txt`;
+            a.click();
+            URL.revokeObjectURL(a.href);
+        }
+
+        function copyUrl() {
+            if (!currentUrl) return;
+            navigator.clipboard.writeText(currentUrl).then(() => addLog('已复制链接到剪贴板', 'success'));
+        }
+
+        // 配置管理
+        const modeSelect = document.getElementById('config-mode');
+        const dirInput = document.getElementById('config-dir');
+        const pinInput = document.getElementById('config-pin');
+        const portInput = document.getElementById('config-port');
+        const whitelistMode = document.getElementById('config-whitelist-mode');
+        const whitelistIps = document.getElementById('config-whitelist-ips');
+        const homeModeSelect = document.getElementById('home-mode');
+
+        function loadConfig() {
+            modeSelect.value = localStorage.getItem('lan_disk_mode_setting') || 'full';
+            dirInput.value = localStorage.getItem('lan_disk_dir_setting') || '';
+            pinInput.value = localStorage.getItem('lan_disk_pin_setting') || '';
+            portInput.value = localStorage.getItem('lan_disk_port_setting') || '3000';
+            whitelistMode.checked = localStorage.getItem('lan_disk_whitelist_mode') === 'true';
+            whitelistIps.value = localStorage.getItem('lan_disk_whitelist_ips') || '';
+            whitelistIps.disabled = !whitelistMode.checked;
+            syncMode();
+        }
+
+        function syncMode() {
+            homeModeSelect.value = modeSelect.value;
+        }
+
+        function saveConfig() {
+            localStorage.setItem('lan_disk_mode_setting', modeSelect.value);
+            localStorage.setItem('lan_disk_dir_setting', dirInput.value);
+            localStorage.setItem('lan_disk_pin_setting', pinInput.value);
+            localStorage.setItem('lan_disk_port_setting', portInput.value);
+            localStorage.setItem('lan_disk_whitelist_mode', whitelistMode.checked);
+            localStorage.setItem('lan_disk_whitelist_ips', whitelistIps.value);
+            addLog('配置已保存并同步', 'success');
+            document.querySelector('.nav-item[data-target="dashboard"]').click();
+        }
+
+        document.getElementById('btn-select-dir').addEventListener('click', async () => {
+            const folder = await window.api.selectFolder();
+            if (folder) dirInput.value = folder;
+        });
+
+        // 启动/停止
+        const btnStart = document.getElementById('btn-start');
+        const btnStop = document.getElementById('btn-stop');
+        const qrPlaceholder = document.getElementById('qr-placeholder');
+        const qrcodeImg = document.getElementById('qrcode');
+        const urlDisplay = document.getElementById('url-display');
+        const sidebarDot = document.getElementById('sidebar-status-dot');
+        const sidebarText = document.getElementById('sidebar-status-text');
+
+        btnStart.addEventListener('click', async () => {
+            btnStart.disabled = true;
+            btnStart.textContent = '启动中...';
+            
+            const config = {
+                mode: modeSelect.value, customDir: dirInput.value, pin: pinInput.value.trim(),
+                port: parseInt(portInput.value) || 3000, whitelistMode: whitelistMode.checked,
+                whitelistIps: whitelistIps.value.split(',').map(ip => ip.trim()).filter(ip => ip)
+            };
+            
+            addLog(`正在启动服务 (端口: ${config.port})...`, 'warn');
+            const res = await window.api.startServer(config);
+            
+            if (res.success) {
+                isRunning = true; currentUrl = res.url; currentPin = config.pin;
+                btnStart.style.display = 'none'; btnStop.disabled = false;
+                qrPlaceholder.style.display = 'none'; qrcodeImg.src = res.qrDataUrl; qrcodeImg.style.display = 'block';
+                urlDisplay.textContent = res.url; urlDisplay.style.display = 'inline-block';
+                sidebarDot.classList.add('active'); sidebarText.textContent = '运行中';
+                addLog(`启动成功！服务地址: ${res.url}`, 'success');
+                initChatStream();
+            } else {
+                btnStart.disabled = false; btnStart.textContent = '一键启动服务';
+                addLog(`启动失败: ${res.error}`, 'error'); alert('启动失败: ' + res.error);
+            }
+        });
+
+        btnStop.addEventListener('click', async () => {
+            await window.api.stopServer();
+            isRunning = false; currentUrl = '';
+            if (chatEventSource) chatEventSource.close();
+            btnStop.disabled = true; btnStart.style.display = 'flex'; btnStart.disabled = false; btnStart.textContent = '一键启动服务';
+            qrcodeImg.style.display = 'none'; qrPlaceholder.style.display = 'flex'; urlDisplay.style.display = 'none';
+            sidebarDot.classList.remove('active'); sidebarText.textContent = '已停止';
+            document.getElementById('sys-tx-speed').textContent = '0 B/s';
+            document.getElementById('sys-rx-speed').textContent = '0 B/s';
+            addLog('服务已停止', 'warn');
+        });
+
+        // 系统与网络监控
+        async function updateSysInfo() {
+            try {
+                const info = await window.api.getSysInfo();
+                document.getElementById('sys-cpu').textContent = info.cpu;
+                document.getElementById('sys-disk-text').textContent = info.diskSpace;
+                const percent = ((info.memTotal - info.memFree) / info.memTotal) * 100;
+                document.getElementById('sys-mem-text').textContent = `${(info.memTotal - info.memFree).toFixed(1)} / ${info.memTotal} GB`;
+                document.getElementById('sys-mem-bar').style.width = `${percent}%`;
+                document.getElementById('sys-mem-bar').style.background = percent > 85 ? 'var(--danger)' : 'var(--primary)';
+                document.getElementById('sys-mem-bar').style.boxShadow = `0 0 10px ${percent > 85 ? 'rgba(239,68,68,0.5)' : 'var(--primary-glow)'}`;
+            } catch(e){}
+        }
+
+        async function loadNetworkInfo() {
+            try {
+                const ips = await window.api.getNetworkInfo();
+                const list = document.getElementById('network-list');
+                if(ips.length === 0) { list.innerHTML = '<div style="padding:20px; text-align:center;">未找到可用的局域网IP</div>'; return; }
+                list.innerHTML = ips.map(i => `
+                    <div class="list-item">
+                        <span style="color:var(--text-muted);">${i.name}</span>
+                        <span class="badge" style="cursor:pointer;" onclick="navigator.clipboard.writeText('${i.ip}')">${i.ip}</span>
+                    </div>
+                `).join('');
+            } catch(e) {}
+        }
+
+        function formatSpeed(bytesPerSec) {
+            if (bytesPerSec === 0) return '0 B/s';
+            const k = 1024; const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
+            const i = Math.floor(Math.log(bytesPerSec) / Math.log(k));
+            return parseFloat((bytesPerSec / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        async function loadDevices() {
+            if (!isRunning || !currentUrl) {
+                document.getElementById('device-list').innerHTML = '<div style="padding:30px; text-align:center; color:var(--text-muted);">服务未启动</div>';
+                return;
+            }
+            try {
+                const res = await apiFetch('/api/devices');
+                const data = await res.json();
+                if (data.stats) {
+                    document.getElementById('sys-tx-speed').textContent = formatSpeed(data.stats.txSpeed);
+                    document.getElementById('sys-rx-speed').textContent = formatSpeed(data.stats.rxSpeed);
+                }
+                const list = document.getElementById('device-list');
+                if (data.devices.length === 0) {
+                    list.innerHTML = '<div style="padding:30px; text-align:center; color:var(--text-muted);">暂无设备连接</div>'; return;
+                }
+                list.innerHTML = data.devices.map(d => {
+                    const timeAgo = Math.floor((Date.now() - d.lastSeen) / 1000);
+                    return `
+                    <div class="list-item" style="flex-direction:column; align-items:flex-start; gap:8px;">
+                        <div style="display:flex; justify-content:space-between; width:100%;">
+                            <span class="badge">${d.ip}</span>
+                            <span style="font-size:12px; color:var(--success);">${timeAgo}秒前活跃</span>
+                        </div>
+                        <div style="font-size:12px; color:var(--text-muted);">${d.userAgent}</div>
+                    </div>`
+                }).join('');
+            } catch(e) {}
+        }
+
+        // 聊天功能 (升级版 SSE 实时流)
+        let chatEventSource = null;
+
+        function initChatStream() {
+            if (chatEventSource) chatEventSource.close();
+            if (!isRunning || !currentUrl) return;
+            
+            chatEventSource = new EventSource(`${currentUrl}/api/chat/stream?pin=${currentPin}`);
+            chatEventSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'init') {
+                        renderChatMessages(data.messages);
+                    } else if (data.type === 'new') {
+                        appendChatMessage(data.message);
+                        // 系统通知
+                        if (data.message.sender !== deviceId && Notification.permission === 'granted') {
+                            new Notification('局域网互联新消息', { body: data.message.type === 'image' ? '[图片]' : data.message.text });
+                        }
+                    }
+                } catch (e) {}
+            };
+            
+            // 请求通知权限
+            if (Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+                Notification.requestPermission();
+            }
+        }
+
+        const chatEl = document.getElementById('chat-messages');
+
+        function renderChatMessages(msgs) {
+            if (msgs.length === 0) {
+                chatEl.innerHTML = '<div style="text-align:center; color:var(--text-muted); font-size:12px; margin-top:20px;">暂无消息</div>'; return;
+            }
+            let html = '<div style="text-align:center; color:var(--text-muted); font-size:12px; margin-bottom:10px;">消息已同步</div>';
+            msgs.forEach(msg => { html += createMessageHTML(msg); });
+            chatEl.innerHTML = html;
+            chatEl.scrollTop = chatEl.scrollHeight;
+        }
+
+        function appendChatMessage(msg) {
+            if (msg.type === 'clear') {
+                chatEl.innerHTML = '<div style="text-align:center; color:var(--text-muted); font-size:12px; margin-top:20px;">' + msg.text + '</div>';
+                return;
+            }
+            if (chatEl.children.length === 1 && chatEl.children[0].textContent.includes('暂无消息')) {
+                chatEl.innerHTML = '<div style="text-align:center; color:var(--text-muted); font-size:12px; margin-bottom:10px;">消息已同步</div>';
+            }
+            chatEl.insertAdjacentHTML('beforeend', createMessageHTML(msg));
+            chatEl.scrollTop = chatEl.scrollHeight;
+        }
+
+        function createMessageHTML(msg) {
+            const isMe = msg.sender === deviceId;
+            const time = new Date(msg.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            let contentHtml = '';
+            if (msg.type === 'image') {
+                contentHtml = `<img src="${msg.text}" style="max-width:100%; border-radius:8px;">`;
+            } else if (msg.type === 'audio') {
+                contentHtml = `<audio controls src="${msg.text}" style="max-width: 250px; height: 36px; outline: none; border-radius: 18px;"></audio>`;
+            } else {
+                contentHtml = msg.text.replace(/\n/g, '<br>');
+            }
+            return `
+                <div class="chat-bubble ${isMe ? 'chat-right' : 'chat-left'}" style="animation: slideUp 0.3s ease;">
+                    ${!isMe && msg.senderIp ? `<div style="font-size: 10px; color: var(--text-muted); margin-bottom: 4px;">${msg.senderIp}</div>` : ''}
+                    ${contentHtml}
+                    <div class="chat-time">${time}</div>
+                </div>
+            `;
+        }
+
+        // 语音录制
+        let pcMediaRecorder = null;
+        let pcAudioChunks = [];
+        let pcIsRecording = false;
+
+        async function toggleVoiceRecordPC() {
+            if (!isRunning) return alert('请先启动服务');
+            
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                alert('当前环境不支持录音，或未授予麦克风权限');
+                return;
+            }
+
+            const btn = document.getElementById('btn-voice-pc');
+            
+            if (!pcIsRecording) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    pcMediaRecorder = new MediaRecorder(stream);
+                    pcAudioChunks = [];
+                    
+                    pcMediaRecorder.ondataavailable = e => {
+                        if (e.data.size > 0) pcAudioChunks.push(e.data);
+                    };
+                    
+                    pcMediaRecorder.onstop = async () => {
+                        const audioBlob = new Blob(pcAudioChunks, { type: 'audio/webm' });
+                        const reader = new FileReader();
+                        reader.onload = async (e) => {
+                            try {
+                                await apiFetch('/api/chat', { 
+                                    method: 'POST', 
+                                    headers: { 'Content-Type': 'application/json' }, 
+                                    body: JSON.stringify({ text: e.target.result, sender: deviceId, type: 'audio' }) 
+                                });
+                            } catch(err) {
+                                alert('发送语音失败');
+                            }
+                        };
+                        reader.readAsDataURL(audioBlob);
+                        stream.getTracks().forEach(track => track.stop());
+                    };
+                    
+                    pcMediaRecorder.start();
+                    pcIsRecording = true;
+                    btn.style.background = 'rgba(239, 68, 68, 0.2)';
+                    btn.style.color = 'var(--danger)';
+                    btn.style.animation = 'pulsing 1s infinite';
+                    addLog('开始录音...', 'info');
+                } catch (err) {
+                    alert('无法访问麦克风: ' + err.message);
+                }
+            } else {
+                if (pcMediaRecorder && pcMediaRecorder.state !== 'inactive') {
+                    pcMediaRecorder.stop();
+                }
+                pcIsRecording = false;
+                btn.style.background = 'rgba(16, 185, 129, 0.2)';
+                btn.style.color = 'var(--success)';
+                btn.style.animation = 'none';
+                addLog('录音结束', 'info');
+            }
+        }
+
+        async function loadChat() {
+            // 已被 SSE 替代
+        }
+
+        async function sendChatMessage() {
+            const input = document.getElementById('chat-input');
+            const text = input.value.trim();
+            if (!text || !isRunning) return;
+            input.value = '';
+            try {
+                await apiFetch('/api/chat', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text, sender: deviceId })
+                });
+            } catch(e) { alert('发送失败'); }
+        }
+
+        async function clearChatPC() {
+            if (!isRunning) return;
+            if (!confirm('确定清空所有聊天记录吗？')) return;
+            try {
+                await apiFetch('/api/chat', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: 'clear', action: 'clear', sender: deviceId })
+                });
+            } catch(e) { alert('清空失败'); }
+        }
+
+        function sendChatImagePC(input) {
+            if(!input.files[0] || !isRunning) return;
+            const r = new FileReader();
+            r.onload = async e => {
+                try {
+                    await apiFetch('/api/chat', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text:e.target.result, sender:deviceId, type:'image'}) });
+                } catch(err) { alert('发送图片失败'); }
+            };
+            r.readAsDataURL(input.files[0]);
+            input.value = ''; // 清空选择，允许重复选择同一张图片
+        }
+
+        // 拖拽图片到聊天室
+        const chatContainerNode = document.querySelector('.chat-container');
+        chatContainerNode.addEventListener('dragover', e => { e.preventDefault(); chatContainerNode.style.opacity = '0.7'; });
+        chatContainerNode.addEventListener('dragleave', e => { e.preventDefault(); chatContainerNode.style.opacity = '1'; });
+        chatContainerNode.addEventListener('drop', e => {
+            e.preventDefault(); chatContainerNode.style.opacity = '1';
+            const file = e.dataTransfer.files[0];
+            if (file && file.type.startsWith('image/')) {
+                const r = new FileReader();
+                r.onload = async ev => {
+                    await apiFetch('/api/chat', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text:ev.target.result, sender:deviceId, type:'image'}) });
+                };
+                r.readAsDataURL(file);
+            }
+        });
+
+        // 主题设置
+        function setTheme(primary, hover, el) {
+            document.documentElement.style.setProperty('--primary', primary);
+            document.documentElement.style.setProperty('--primary-hover', hover);
+            // 提取 rgb 值为 glow 阴影使用
+            const hex = primary.replace('#', '');
+            const r = parseInt(hex.substring(0,2), 16), g = parseInt(hex.substring(2,4), 16), b = parseInt(hex.substring(4,6), 16);
+            document.documentElement.style.setProperty('--primary-glow', `rgba(${r}, ${g}, ${b}, 0.5)`);
+            
+            localStorage.setItem('lan_disk_theme_primary', primary);
+            localStorage.setItem('lan_disk_theme_hover', hover);
+            
+            document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active'));
+            if(el) el.classList.add('active');
+            addLog('主题颜色已更新', 'success');
+        }
+
+        function toggleAnimBg(enabled) {
+            document.querySelector('.bg-orbs').style.display = enabled ? 'block' : 'none';
+            localStorage.setItem('lan_disk_anim_bg', enabled);
+        }
+
+        const savedPrimary = localStorage.getItem('lan_disk_theme_primary');
+        const savedHover = localStorage.getItem('lan_disk_theme_hover');
+        if (savedPrimary && savedHover) {
+            document.documentElement.style.setProperty('--primary', savedPrimary);
+            document.documentElement.style.setProperty('--primary-hover', savedHover);
+            const hex = savedPrimary.replace('#', '');
+            const r = parseInt(hex.substring(0,2), 16), g = parseInt(hex.substring(2,4), 16), b = parseInt(hex.substring(4,6), 16);
+            document.documentElement.style.setProperty('--primary-glow', `rgba(${r}, ${g}, ${b}, 0.5)`);
+        }
+        
+        const savedAnimBg = localStorage.getItem('lan_disk_anim_bg');
+        if (savedAnimBg !== null) {
+            const isEnabled = savedAnimBg === 'true';
+            document.getElementById('anim-bg-toggle').checked = isEnabled;
+            toggleAnimBg(isEnabled);
+        }
+
+        // 自启逻辑
+        const autostartToggle = document.getElementById('autostart-toggle');
+        window.api.getAutostart().then(status => autostartToggle.checked = status);
+        autostartToggle.addEventListener('change', async (e) => {
+            const newStatus = await window.api.toggleAutostart(e.target.checked);
+            autostartToggle.checked = newStatus;
+            addLog(`已${newStatus ? '开启' : '关闭'}开机自启`, 'info');
+        });
+
+        const autoServeToggle = document.getElementById('auto-serve-toggle');
+        autoServeToggle.checked = localStorage.getItem('lan_disk_auto_serve') === 'true';
+        autoServeToggle.addEventListener('change', (e) => {
+            localStorage.setItem('lan_disk_auto_serve', e.target.checked);
+            addLog(`已${e.target.checked ? '开启' : '关闭'}启动时自动开启服务`, 'info');
+        });
+
+        // 工具函数
+        function formatBytes(bytes) {
+            if (!+bytes) return '0 B';
+            const k = 1024, dm = 1, sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+        }
+
+        async function cleanLinks() {
+            if (!isRunning) return alert('请先启动服务');
+            try {
+                const res = await apiFetch('/api/tools/clean-links', { method: 'POST' });
+                const data = await res.json();
+                addLog(`已清理 ${data.cleaned} 个过期的分享链接`, 'success'); alert(`清理了 ${data.cleaned} 个过期链接`);
+            } catch(e) { alert('清理失败'); }
+        }
+
+        async function kickDevices() {
+            if (!isRunning) return alert('请先启动服务');
+            if(!confirm('确定要强制断开所有设备吗？')) return;
+            try {
+                const res = await apiFetch('/api/tools/kick-devices', { method: 'POST' });
+                const data = await res.json();
+                addLog(`已断开 ${data.kicked} 个设备`, 'warn'); loadDevices(); alert(`已断开 ${data.kicked} 个设备`);
+            } catch(e) { alert('操作失败'); }
+        }
+
+        async function testPing() {
+            addLog('正在测试外网连通性...', 'info');
+            try {
+                const start = Date.now();
+                await fetch('https://www.baidu.com/favicon.ico', { mode: 'no-cors' });
+                const time = Date.now() - start;
+                addLog(`外网连接正常 (延迟: ${time}ms)`, 'success'); alert(`外网正常，延迟: ${time}ms`);
+            } catch(e) {
+                addLog('外网连接异常', 'error'); alert('外网测试失败');
+            }
+        }
+
+        async function scheduleShutdown() {
+            const minutes = parseInt(document.getElementById('shutdown-minutes').value);
+            if (!minutes || minutes <= 0) return alert('请输入有效的分钟数');
+            const res = await window.api.invoke('schedule-shutdown', minutes);
+            if (res && res.success) { addLog(res.message, 'warn'); alert(res.message); }
+        }
+
+        async function cancelShutdown() {
+            const res = await window.api.invoke('schedule-shutdown', 0);
+            if (res && res.success) { addLog(res.message, 'info'); alert(res.message); }
+        }
+
+        let pcProcessData = [];
+        let pcProcessAutoTimer = null;
+
+        async function loadProcessesPC(silent = false) {
+            if (!isRunning) return alert('请先启动服务');
+            try {
+                const res = await apiFetch('/api/processes');
+                const data = await res.json();
+                if(data.error) { document.getElementById('pc-process-list').innerHTML = `<div style="padding:20px; text-align:center;">${data.error}</div>`; return; }
+                pcProcessData = data;
+                renderProcessesPC();
+                if(!silent) addLog('已刷新进程列表', 'info');
+            } catch(e) { if(!silent) alert('获取进程失败'); }
+        }
+
+        function renderProcessesPC() {
+            const listEl = document.getElementById('pc-process-list');
+            if (!pcProcessData || pcProcessData.length === 0) {
+                listEl.innerHTML = `<div style="padding:20px; text-align:center; color:var(--text-muted);">暂无进程数据</div>`;
+                return;
+            }
+
+            const query = (document.getElementById('pc-process-search').value || '').toLowerCase();
+            const sortKey = document.getElementById('pc-process-sort').value || 'mem';
+
+            let filtered = pcProcessData.filter(p => p.name.toLowerCase().includes(query) || p.pid.toString().includes(query) || (p.desc && p.desc.toLowerCase().includes(query)));
+            
+            filtered.sort((a, b) => {
+                if (sortKey === 'mem') return b.mem - a.mem;
+                if (sortKey === 'pid') return b.pid - a.pid;
+                if (sortKey === 'name') return a.name.localeCompare(b.name);
+                return 0;
+            });
+
+            listEl.innerHTML = filtered.map(p => `
+                <div class="list-item">
+                    <div style="flex:1;">
+                        <div style="font-weight:600; color:white;">${p.name} <span style="font-size:11px; font-weight:normal; color:var(--text-muted); margin-left:8px;">${p.desc && p.desc !== p.name ? p.desc : ''}</span></div>
+                        <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">PID: ${p.pid} | 内存: ${formatBytes(p.mem)}</div>
+                    </div>
+                    <button class="btn btn-danger" style="padding:6px 12px; font-size:12px; border-radius:8px;" onclick="killProcessPC(${p.pid})">结束</button>
+                </div>
+            `).join('');
+        }
+
+        function toggleAutoRefreshPC() {
+            const isAuto = document.getElementById('pc-process-auto').checked;
+            if (isAuto) {
+                loadProcessesPC(true);
+                pcProcessAutoTimer = setInterval(() => loadProcessesPC(true), 3000);
+            } else {
+                clearInterval(pcProcessAutoTimer);
+                pcProcessAutoTimer = null;
+            }
+        }
+
+        async function killProcessPC(pid) {
+            if (!isRunning) return;
+            if(!confirm(`确定强制结束进程 PID: ${pid} 吗？`)) return;
+            try { 
+                await apiFetch('/api/kill-process', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({pid})}); 
+                addLog(`已结束进程 PID: ${pid}`, 'warn');
+                loadProcessesPC(true); 
+            } catch(e) { alert('结束失败'); }
+        }
+
+        async function executePCTerminal() {
+            if (!isRunning) return alert('请先启动服务');
+            const inputEl = document.getElementById('pc-terminal-input');
+            const outputEl = document.getElementById('pc-terminal-output');
+            const cmd = inputEl.value.trim();
+            if (!cmd) return;
+            inputEl.value = '';
+            
+            outputEl.innerHTML += `\n<span style="color:white;">> ${cmd}</span>\n`;
+            try {
+                const res = await apiFetch('/api/terminal', { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' }, 
+                    body: JSON.stringify({ command: cmd, cwd: 'C:\\' }) 
+                });
+                const data = await res.json();
+                if (data.error) {
+                    outputEl.innerHTML += `<span style="color:var(--danger)">${data.error}</span>`;
+                } else {
+                    outputEl.innerHTML += data.output;
+                }
+            } catch (e) {
+                outputEl.innerHTML += `<span style="color:var(--danger)">执行失败: ${e.message}</span>`;
+            }
+            outputEl.scrollTop = outputEl.scrollHeight;
+        }
+
+        // 初始化
+        loadConfig();
+        updateSysInfo();
+        loadNetworkInfo();
+        setInterval(updateSysInfo, 3000);
+        setInterval(() => {
+            if(isRunning) { loadDevices(); }
+        }, 3000);
+
+        if (autoServeToggle.checked) {
+            setTimeout(() => btnStart.click(), 1000);
+        }
+    </script>
+</body>
+</html>

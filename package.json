@@ -1,0 +1,61 @@
+{
+  "name": "lan-disk",
+  "version": "1.0.0",
+  "description": "局域网文件共享与跨设备通信工具",
+  "author": "Developer",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --x64",
+    "rebuild": "electron-rebuild -f -w",
+    "clean": "rimraf dist"
+  },
+  "build": {
+    "appId": "com.landisk.app",
+    "productName": "局域网互联 Pro",
+    "directories": {
+      "output": "release"
+    },
+    "asar": true,
+    "asarUnpack": [
+      "**/*.node",
+      "node_modules/archiver/**/*",
+      "node_modules/archiver-utils/**/*",
+      "node_modules/zip-stream/**/*",
+      "public/**/*"
+    ],
+    "files": [
+      "**/*",
+      "!dist/**",
+      "!release/**",
+      "!.git/**",
+      "!.lingma/**",
+      "!*.log"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "icon.png",
+      "requestedExecutionLevel": "asInvoker"
+    }
+  },
+  "dependencies": {
+    "7zip-bin": "^5.2.0",
+    "archiver": "^7.0.1",
+    "archiver-utils": "^5.0.2",
+    "compression": "^1.8.1",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "multer": "^2.1.1",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0"
+  },
+  "devDependencies": {
+    "electron": "^41.0.3",
+    "electron-builder": "^25.1.8"
+  }
+}

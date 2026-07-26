@@ -1,0 +1,36 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# Build outputs & executables
+dist/
+release/
+build/
+*.exe
+*.apk
+*.aar
+
+# Log files
+*.log
+build.log
+
+# IDE & Tooling
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+.lingma/
+
+# Mobile / Android build cache
+mobile/node_modules/
+mobile/dist/
+mobile/build/
+mobile/android/.gradle/
+mobile/android/app/build/
+mobile/android/build/
+LanDiskMobile/node_modules/
