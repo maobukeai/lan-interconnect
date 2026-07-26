@@ -284,7 +284,7 @@
         </div>
         <div style="display:flex; align-items:center; gap:8px; margin-left:8px; white-space:nowrap;">
             <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071a10 10 0 0114.142 0M1.414 8.414a15 15 0 0121.172 0"></path></svg>
-            猫步互联 Pro - macOS 全能工作台
+            猫步互联 Pro - 全能工作台
         </div>
     </div>
     <div style="padding-right: 14px; -webkit-app-region: no-drag; display: flex; align-items: center; gap: 8px;">
@@ -675,7 +675,7 @@
 
             <div class="apple-glass-card">
                 <div class="apple-card-title"><span class="apple-card-title-text">🖥️ Shell 控制台</span></div>
-                <div id="pc-term-output" style="background: #000; border-radius: 12px; padding: 14px; font-family: monospace; font-size: 13px; color: #34c759; height: 160px; overflow-y: auto; white-space: pre-wrap; border: 1px solid var(--apple-border);">macOS Terminal ready...</div>
+                <div id="pc-term-output" style="background: #000; border-radius: 12px; padding: 14px; font-family: monospace; font-size: 13px; color: #34c759; height: 160px; overflow-y: auto; white-space: pre-wrap; border: 1px solid var(--apple-border);">Shell Terminal ready...</div>
                 <div style="display: flex; gap: 10px; margin-top: 10px;">
                     <div class="apple-input-box" style="flex: 1;">
                         <input type="text" id="pc-term-input" class="apple-input" placeholder="输入命令..." onkeypress="if(event.key==='Enter') executePCTerminal()">
@@ -1484,9 +1484,19 @@
     async function sendPCChatMessage() {
         if (!isRunning) return showToast('❌ 请先启动服务');
         const input = document.getElementById('pc-chat-input');
+        if (!input) return;
         const text = input.value.trim(); if (!text) return; input.value = '';
         const pin = getPin();
-        await fetch(`${currentServerUrl}/api/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-pin': pin }, body: JSON.stringify({ text, sender: 'pc' }) });
+        try {
+            const res = await fetch(`${currentServerUrl}/api/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-pin': pin }, body: JSON.stringify({ text, sender: 'pc' }) });
+            if (!res.ok) {
+                const errData = await res.json().catch(()=>({}));
+                showToast('❌ 发送失败: ' + (errData.error || res.statusText));
+            }
+        } catch (e) {
+            showToast('❌ 发送失败: ' + e.message);
+        }
+        pcInitChatStream();
     }
 
     // 4. 涂鸦

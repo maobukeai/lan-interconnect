@@ -10,14 +10,14 @@
     class Whiteboard {
         constructor(config = {}) {
             this.canvas = typeof config.canvas === 'string' ? document.querySelector(config.canvas) : config.canvas;
-            if (!this.canvas) {
-                console.warn('Whiteboard: Canvas 元素未找到');
-                return;
-            }
-
-            this.ctx = this.canvas.getContext('2d');
-            this.apiFetch = config.apiFetch || window.fetch;
-            this.getPin = config.getPin || (() => localStorage.getItem('lan_disk_pin') || '');
+            this.getPin = config.getPin || (() => typeof localStorage !== 'undefined' ? (localStorage.getItem('lan_disk_pin') || '') : '');
+            this.getApiUrl = config.getApiUrl || ((p) => {
+                if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
+                    const baseUrl = window.currentServerUrl || 'http://localhost:3000';
+                    return baseUrl.replace(/\/$/, '') + p;
+                }
+                return p;
+            });
 
             this.strokeColor = config.strokeColor || '#000000';
             this.lineWidth = config.lineWidth || 2;
@@ -26,15 +26,22 @@
             this.lastX = 0;
             this.lastY = 0;
 
-            this._initCanvas();
+            this._ensureCanvas();
             this._bindEvents();
         }
 
-        _initCanvas() {
-            this.resize();
+        _ensureCanvas() {
+            if (!this.canvas) {
+                this.canvas = document.querySelector('#whiteboard') || document.querySelector('#pc-whiteboard');
+            }
+            if (this.canvas) {
+                this.ctx = this.canvas.getContext('2d');
+                this.resize();
+            }
         }
 
         resize() {
+            this._ensureCanvas();
             if (!this.canvas || !this.ctx) return;
             const parent = this.canvas.parentElement;
             if (parent) {
@@ -44,6 +51,8 @@
         }
 
         getPos(e) {
+            this._ensureCanvas();
+            if (!this.canvas) return { x: 0, y: 0 };
             const rect = this.canvas.getBoundingClientRect();
             const clientX = e.touches && e.touches.length > 0 ? e.touches[0].clientX : e.clientX;
             const clientY = e.touches && e.touches.length > 0 ? e.touches[0].clientY : e.clientY;
@@ -54,6 +63,7 @@
         }
 
         _bindEvents() {
+            this._ensureCanvas();
             if (!this.canvas) return;
 
             this.canvas.addEventListener('mousedown', (e) => this._startDrawing(e));
@@ -104,29 +114,39 @@
         }
 
         clear() {
+            this._ensureCanvas();
             if (!this.ctx || !this.canvas) return;
             this.ctx.fillStyle = '#ffffff';
             this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         }
 
-        async saveImage() {
-            if (!this.canvas) return;
+        async saveImage(customSavePath = '') {
+            this._ensureCanvas();
+            if (!this.canvas) {
+                alert('未找到涂鸦画布');
+                return;
+            }
             const dataUrl = this.canvas.toDataURL('image/png');
             const filename = `draw_${Date.now()}.png`;
             const pin = this.getPin();
+            const getUrl = typeof this.getApiUrl === 'function' ? this.getApiUrl : (p => p);
+            const saveUrl = getUrl('/api/upload/base64');
 
             try {
-                const res = await fetch('/api/upload/base64', {
+                const res = await fetch(saveUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'x-pin': pin },
                     body: JSON.stringify({
                         image: dataUrl,
                         filename: filename,
-                        path: 'C:\\'
+                        path: customSavePath || ''
                     })
                 });
 
-                if (!res.ok) throw new Error('服务器保存失败');
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok || !data.success) {
+                    throw new Error(data.error || '服务器保存失败');
+                }
                 alert('🎨 涂鸦图片已成功保存至共享目录！');
                 this.clear();
             } catch (err) {
@@ -137,17 +157,29 @@
 
     let instance = null;
 
-    Whiteboard.init = function(canvasId) {
+    function getOrCreateInstance(canvasId) {
         if (!instance) {
             instance = new Whiteboard({
-                canvas: typeof canvasId === 'string' ? '#' + canvasId : canvasId
+                canvas: typeof canvasId === 'string' ? '#' + canvasId : (canvasId || '#whiteboard')
             });
         }
-        instance.resize();
+        return instance;
+    }
+
+    Whiteboard.init = function(canvasId) {
+        const inst = getOrCreateInstance(canvasId);
+        inst.resize();
     };
 
-    Whiteboard.clear = function() { if (instance) instance.clear(); };
-    Whiteboard.save = function() { if (instance) instance.saveImage(); };
+    Whiteboard.clear = function() {
+        const inst = getOrCreateInstance();
+        inst.clear();
+    };
+
+    Whiteboard.save = function(customPath) {
+        const inst = getOrCreateInstance();
+        inst.saveImage(customPath);
+    };
 
     global.WhiteboardComponent = Whiteboard;
 

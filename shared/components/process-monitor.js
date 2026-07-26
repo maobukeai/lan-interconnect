@@ -12,13 +12,23 @@
             this.container = typeof config.container === 'string' ? document.querySelector(config.container) : config.container;
             this.searchInput = typeof config.searchInput === 'string' ? document.querySelector(config.searchInput) : config.searchInput;
 
-            this.apiFetch = config.apiFetch || window.fetch;
-            this.getPin = config.getPin || (() => localStorage.getItem('lan_disk_pin') || '');
+            this.getPin = config.getPin || (() => typeof localStorage !== 'undefined' ? (localStorage.getItem('lan_disk_pin') || '') : '');
 
             this.processes = [];
             this.sortKey = 'mem';
             this.searchQuery = '';
             this.autoRefreshTimer = null;
+
+            this._ensureElements();
+        }
+
+        _ensureElements() {
+            if (!this.container) {
+                this.container = document.querySelector('#process-list') || document.querySelector('#pc-proc-list');
+            }
+            if (!this.searchInput) {
+                this.searchInput = document.querySelector('#process-search') || document.querySelector('#pc-process-search');
+            }
         }
 
         getApiUrl(endpoint) {
@@ -30,6 +40,7 @@
         }
 
         async fetchProcesses() {
+            this._ensureElements();
             try {
                 const pin = this.getPin();
                 const apiUrl = this.getApiUrl('/api/processes');
@@ -50,32 +61,30 @@
                     return;
                 }
 
-                if (!res.ok) throw new Error('无法连接系统进程服务');
-
+                if (!res.ok) throw new Error('无法读取进程数据');
                 this.processes = await res.json();
-                this.render();
+                this.renderProcesses();
             } catch (err) {
                 if (this.container) {
-                    this.container.innerHTML = `<div style="padding:24px; text-align:center; color:var(--apple-text-muted); font-size:13px;">进程服务连接异常，请确保服务已启动</div>`;
+                    this.container.innerHTML = `<div style="padding:24px; text-align:center; color:var(--apple-text-muted); font-size:13px;">进程监控数据获取失败: ${err.message}</div>`;
                 }
             }
         }
 
         filterProcesses(keyword) {
             this.searchQuery = (keyword || '').toLowerCase().trim();
-            this.render();
+            this.renderProcesses();
         }
 
-        render() {
+        renderProcesses() {
+            this._ensureElements();
             if (!this.container) return;
 
-            let list = [...this.processes];
-
-            // 强力防空过滤：过滤有效进程
-            let filtered = list.filter(p => {
+            const query = this.searchQuery;
+            let filtered = this.processes.filter(p => {
                 if (!p || !p.name || !p.name.trim()) return false;
-                const matches = !this.searchQuery || p.name.toLowerCase().includes(this.searchQuery) || p.pid.toString().includes(this.searchQuery);
-                return matches;
+                const matchesQuery = !query || p.name.toLowerCase().includes(query) || String(p.pid).includes(query);
+                return matchesQuery;
             });
 
             const appGroups = {};
@@ -92,12 +101,11 @@
             let groups = Object.values(appGroups);
             groups.sort((a, b) => {
                 if (this.sortKey === 'mem') return b.totalMem - a.totalMem;
-                if (this.sortKey === 'name') return a.name.localeCompare(b.name);
+                if (this.sortKey === 'name') return a.name.localeCompare(b.name, 'zh-CN');
                 return b.items.length - a.items.length;
             });
 
-            // 限制无搜索时展示前 35 个高占用应用组，避免无谓渲染几百个微小进程
-            if (!this.searchQuery && groups.length > 35) {
+            if (!query && groups.length > 35) {
                 groups = groups.slice(0, 35);
             }
 
@@ -112,8 +120,7 @@
                 const memMb = (g.totalMem / 1024 / 1024).toFixed(1);
                 const safeName = escapeHtml(g.name) || '系统进程';
                 const bgStyle = (idx % 2 === 0) ? 'background: rgba(255, 255, 255, 0.04);' : 'background: rgba(255, 255, 255, 0.02);';
-                
-                // 单个进程行 (纯卡片行，无任何边框)
+
                 if (g.items.length === 1) {
                     const p = g.items[0];
                     return `
@@ -125,7 +132,7 @@
                                         ${safeName}
                                         <span style="font-size:10px; font-weight:normal; color:var(--apple-text-subtle); margin-left:6px; background:rgba(255,255,255,0.06); padding:2px 6px; border-radius:6px;">PID: ${p.pid}</span>
                                     </div>
-                                    <div style="font-size:11px; color:var(--apple-text-muted); margin-top:2px;">占用内存: <b style="color:var(--apple-system-purple);">${memMb} MB</b></div>
+                                    <div style="font-size:11px; color:var(--apple-text-muted); margin-top:2px;">内存占用: <b style="color:var(--apple-system-purple);">${memMb} MB</b></div>
                                 </div>
                             </div>
                             <button class="apple-btn apple-btn-danger btn-kill-proc" data-pid="${p.pid}" style="padding:4px 12px; font-size:11px; margin-left:10px; flex-shrink:0; border-radius:8px;">结束进程</button>
@@ -133,7 +140,6 @@
                     `;
                 }
 
-                // 多子进程组合行 (无边框设计)
                 return `
                     <div style="${bgStyle} border: none; border-radius: 10px; overflow: hidden; margin-bottom: 6px; box-sizing: border-box;">
                         <div style="padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; min-height: 46px;">
@@ -199,14 +205,19 @@
             try {
                 const pin = this.getPin();
                 const apiUrl = this.getApiUrl('/api/kill-process');
-                await fetch(apiUrl, {
+                const res = await fetch(apiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'x-pin': pin },
                     body: JSON.stringify({ pid })
                 });
-                this.fetchProcesses();
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    alert('结束进程失败: ' + (data.error || res.statusText));
+                } else {
+                    this.fetchProcesses();
+                }
             } catch (err) {
-                alert('结束进程失败: ' + err.message);
+                alert('结束进程抛出异常: ' + err.message);
             }
         }
 
@@ -230,18 +241,30 @@
 
     let instance = null;
 
-    ProcessMonitor.load = function(containerId) {
+    function getOrCreateInstance(containerId) {
         if (!instance) {
             instance = new ProcessMonitor({
-                container: typeof containerId === 'string' ? '#' + containerId : containerId,
+                container: typeof containerId === 'string' ? '#' + containerId : (containerId || '#process-list'),
                 searchInput: '#process-search'
             });
         }
-        instance.fetchProcesses();
+        return instance;
+    }
+
+    ProcessMonitor.load = function(containerId) {
+        const inst = getOrCreateInstance(containerId);
+        inst.fetchProcesses();
     };
 
-    ProcessMonitor.filter = function(keyword) { if (instance) instance.filterProcesses(keyword); };
-    ProcessMonitor.kill = function(pid) { if (instance) instance.killProcess(pid); };
+    ProcessMonitor.filter = function(keyword) {
+        const inst = getOrCreateInstance();
+        inst.filterProcesses(keyword);
+    };
+
+    ProcessMonitor.kill = function(pid) {
+        const inst = getOrCreateInstance();
+        inst.killProcess(pid);
+    };
 
     global.ProcessMonitorComponent = ProcessMonitor;
 

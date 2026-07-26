@@ -1,7 +1,6 @@
 /**
- * 局域网互联 Pro - iMessage 风格聊天组件 (IMessageChat)
- * 职责：处理 SSE 聊天长连接流、发送文本消息、发送图片、语音录制与上传发送、聊天历史记录清理与自适应滚动。
- * 遵循无全局变量污染、高扩展性设计。
+ * 局域网互联 Pro - iMessage 跨端实时通信组件 (IMessageChat)
+ * 职责：支持 SSE 实时消息流接收、文本消息转义与发送、图片与语音消息传输、历史记录清空。
  */
 
 (function (global) {
@@ -11,87 +10,93 @@
         constructor(config = {}) {
             this.container = typeof config.messagesContainer === 'string' ? document.querySelector(config.messagesContainer) : config.messagesContainer;
             this.inputElement = typeof config.inputElement === 'string' ? document.querySelector(config.inputElement) : config.inputElement;
-            this.imageInputElement = typeof config.imageInputElement === 'string' ? document.querySelector(config.imageInputElement) : config.imageInputElement;
             this.recordBtnElement = typeof config.recordBtnElement === 'string' ? document.querySelector(config.recordBtnElement) : config.recordBtnElement;
 
-            this.apiFetch = config.apiFetch || window.fetch;
-            this.getPin = config.getPin || (() => localStorage.getItem('lan_disk_pin') || '');
-            this.deviceId = config.deviceId || localStorage.getItem('lan_device_id') || ('dev_' + Math.random().toString(36).substr(2, 6));
+            this.getPin = config.getPin || (() => typeof localStorage !== 'undefined' ? (localStorage.getItem('lan_disk_pin') || '') : '');
+            this.getApiUrl = config.getApiUrl || ((p) => {
+                if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
+                    const baseUrl = window.currentServerUrl || 'http://localhost:3000';
+                    return baseUrl.replace(/\/$/, '') + p;
+                }
+                return p;
+            });
 
+            this.deviceId = this.getDeviceId();
             this.eventSource = null;
             this.mediaRecorder = null;
             this.audioChunks = [];
             this.isRecording = false;
 
-            this._bindEvents();
+            this.initStream();
         }
 
-        _bindEvents() {
-            if (this.inputElement) {
-                this.inputElement.addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        this.sendText();
-                    }
-                });
+        getDeviceId() {
+            let id = typeof localStorage !== 'undefined' ? localStorage.getItem('lan_disk_device_id') : null;
+            if (!id) {
+                id = 'dev_' + Math.random().toString(36).substr(2, 9);
+                if (typeof localStorage !== 'undefined') localStorage.setItem('lan_disk_device_id', id);
             }
-
-            if (this.imageInputElement) {
-                this.imageInputElement.addEventListener('change', (e) => {
-                    if (e.target.files && e.target.files[0]) {
-                        this.sendImage(e.target.files[0]);
-                        e.target.value = '';
-                    }
-                });
-            }
-
-            if (this.recordBtnElement) {
-                this.recordBtnElement.addEventListener('click', () => {
-                    this.toggleVoiceRecord();
-                });
-            }
+            return id;
         }
 
         initStream() {
-            if (this.eventSource) {
-                this.eventSource.close();
-            }
+            if (this.eventSource && this.eventSource.readyState !== EventSource.CLOSED) return;
 
             const pin = this.getPin();
-            const streamUrl = `/api/chat/stream?pin=${encodeURIComponent(pin)}`;
+            const getUrl = typeof this.getApiUrl === 'function' ? this.getApiUrl : (p => p);
+            const sseUrl = getUrl(`/api/chat/stream${pin ? `?pin=${encodeURIComponent(pin)}` : ''}`);
 
             try {
-                this.eventSource = new EventSource(streamUrl);
+                this.eventSource = new EventSource(sseUrl);
 
                 this.eventSource.onmessage = (event) => {
                     try {
                         const data = JSON.parse(event.data);
                         if (data.type === 'init') {
-                            this.renderMessages(data.messages || []);
+                            this.renderMessages(data.messages);
                         } else if (data.type === 'new') {
                             this.appendMessage(data.message);
+                        } else if (data.type === 'clear') {
+                            this.ensureContainer();
+                            if (this.container) {
+                                this.container.innerHTML = '<div style="text-align: center; color: var(--apple-text-muted); font-size: 12px; margin-top: 20px;">聊天记录已清空</div>';
+                            }
                         }
                     } catch (e) {
-                        console.error('解析 SSE 聊天数据失败', e);
+                        console.error('解析 SSE 消息失败', e);
                     }
                 };
-            } catch (err) {
-                console.error('初始化 SSE 建立失败', err);
+
+                this.eventSource.onerror = () => {
+                    if (this.eventSource) {
+                        this.eventSource.close();
+                        this.eventSource = null;
+                    }
+                    setTimeout(() => this.initStream(), 3000);
+                };
+            } catch (e) {
+                console.error('初始化 SSE 失败', e);
             }
         }
 
-        closeStream() {
-            if (this.eventSource) {
-                this.eventSource.close();
-                this.eventSource = null;
+        ensureContainer() {
+            if (!this.container) {
+                this.container = document.querySelector('#chat-messages') || document.querySelector('#pc-chat-messages');
             }
         }
 
-        renderMessages(messages = []) {
+        ensureInput() {
+            if (!this.inputElement) {
+                this.inputElement = document.querySelector('#chat-input') || document.querySelector('#pc-chat-input');
+            }
+        }
+
+        renderMessages(messages) {
+            this.ensureContainer();
             if (!this.container) return;
 
-            if (!messages.length) {
-                this.container.innerHTML = '<div style="text-align: center; color: var(--apple-text-muted, #8e8e93); font-size: 12px; margin-top: 20px;">iMessage 实时跨端通信框架</div>';
+            if (!messages || messages.length === 0) {
+                this.container.innerHTML = '<div style="text-align: center; color: var(--apple-text-muted); font-size: 12px; margin-top: 20px;">跨端加密实时传输中...</div>';
                 return;
             }
 
@@ -100,6 +105,7 @@
         }
 
         appendMessage(message) {
+            this.ensureContainer();
             if (!this.container) return;
 
             if (this.container.children.length === 1 && this.container.children[0].tagName === 'DIV' && !this.container.children[0].classList.contains('msg-bubble')) {
@@ -117,13 +123,13 @@
         }
 
         createMessageHTML(m) {
-            const isMe = m.sender === this.deviceId;
+            const isMe = m.sender === this.deviceId || m.sender === 'pc';
             const timeStr = new Date(m.time || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
             let contentHtml = '';
             if (m.type === 'image') {
                 contentHtml = `<img src="${m.text}" style="max-width:100%; border-radius:12px; display:block;" alt="chat picture">`;
-            } else if (m.type === 'voice') {
+            } else if (m.type === 'voice' || m.type === 'audio') {
                 contentHtml = `
                     <div style="display:flex; align-items:center; gap:8px;">
                         <span>🎙️ 语音消息</span>
@@ -131,7 +137,8 @@
                     </div>
                 `;
             } else {
-                contentHtml = (m.text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace/>/g, '&gt;').replace(/\n/g, '<br>');
+                const escapeHtml = str => typeof str === 'string' ? str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') : str;
+                contentHtml = escapeHtml(m.text || '').replace(/\n/g, '<br>');
             }
 
             return `
@@ -143,6 +150,7 @@
         }
 
         async sendText(customText) {
+            this.ensureInput();
             let text = customText;
             if (typeof text !== 'string' && this.inputElement) {
                 text = this.inputElement.value;
@@ -153,9 +161,12 @@
                 this.inputElement.value = '';
             }
 
+            const pin = this.getPin();
+            const getUrl = typeof this.getApiUrl === 'function' ? this.getApiUrl : (p => p);
+            const chatUrl = getUrl('/api/chat');
+
             try {
-                const pin = this.getPin();
-                await fetch('/api/chat', {
+                const res = await fetch(chatUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'x-pin': pin },
                     body: JSON.stringify({
@@ -164,19 +175,30 @@
                         type: 'text'
                     })
                 });
+
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}));
+                    alert('发送消息失败: ' + (errData.error || res.statusText));
+                }
+
+                this.initStream();
             } catch (err) {
                 console.error('发送文本消息失败', err);
+                alert('发送文本消息失败: ' + err.message);
             }
         }
 
-        sendImage(file) {
+        async sendImage(file) {
             if (!file) return;
             const reader = new FileReader();
             reader.onload = async (e) => {
                 const base64Data = e.target.result;
+                const pin = this.getPin();
+                const getUrl = typeof this.getApiUrl === 'function' ? this.getApiUrl : (p => p);
+                const chatUrl = getUrl('/api/chat');
+
                 try {
-                    const pin = this.getPin();
-                    await fetch('/api/chat', {
+                    await fetch(chatUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'x-pin': pin },
                         body: JSON.stringify({
@@ -185,8 +207,10 @@
                             type: 'image'
                         })
                     });
+                    this.initStream();
                 } catch (err) {
                     console.error('发送图片消息失败', err);
+                    alert('发送图片消息失败: ' + err.message);
                 }
             };
             reader.readAsDataURL(file);
@@ -248,9 +272,12 @@
         }
 
         async sendVoiceMessage(base64Audio) {
+            const pin = this.getPin();
+            const getUrl = typeof this.getApiUrl === 'function' ? this.getApiUrl : (p => p);
+            const chatUrl = getUrl('/api/chat');
+
             try {
-                const pin = this.getPin();
-                await fetch('/api/chat', {
+                await fetch(chatUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'x-pin': pin },
                     body: JSON.stringify({
@@ -259,6 +286,7 @@
                         type: 'voice'
                     })
                 });
+                this.initStream();
             } catch (err) {
                 console.error('发送语音失败', err);
             }
@@ -267,9 +295,12 @@
         async clearHistory() {
             if (!confirm('确定要清空所有聊天记录吗？')) return;
 
+            const pin = this.getPin();
+            const getUrl = typeof this.getApiUrl === 'function' ? this.getApiUrl : (p => p);
+            const chatUrl = getUrl('/api/chat');
+
             try {
-                const pin = this.getPin();
-                await fetch('/api/chat', {
+                await fetch(chatUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'x-pin': pin },
                     body: JSON.stringify({
@@ -278,6 +309,7 @@
                         sender: this.deviceId
                     })
                 });
+                this.initStream();
             } catch (err) {
                 console.error('清空聊天记录失败', err);
             }
@@ -286,21 +318,51 @@
 
     let instance = null;
 
-    IMessageChat.init = function(containerId) {
+    function getOrCreateInstance(containerId) {
         if (!instance) {
             instance = new IMessageChat({
-                messagesContainer: typeof containerId === 'string' ? '#' + containerId : containerId,
+                messagesContainer: typeof containerId === 'string' ? '#' + containerId : (containerId || '#chat-messages'),
                 inputElement: '#chat-input',
                 recordBtnElement: '#btn-voice'
             });
         }
-        instance.initStream();
+        return instance;
+    }
+
+    IMessageChat.init = function(containerId) {
+        const inst = getOrCreateInstance(containerId);
+        inst.initStream();
     };
 
-    IMessageChat.sendMessage = function() { if (instance) instance.sendText(); };
-    IMessageChat.sendImage = function(el) { if (instance && el && el.files && el.files[0]) instance.sendImage(el.files[0]); };
-    IMessageChat.toggleVoice = function() { if (instance) instance.toggleVoiceRecord(); };
-    IMessageChat.clearChat = function() { if (instance) instance.clearHistory(); };
+    IMessageChat.sendMessage = function(customText) {
+        const inst = getOrCreateInstance();
+        inst.sendText(customText);
+    };
+
+    IMessageChat.sendImage = function(el) {
+        const inst = getOrCreateInstance();
+        if (el && el.files && el.files[0]) inst.sendImage(el.files[0]);
+    };
+
+    IMessageChat.toggleVoice = function() {
+        const inst = getOrCreateInstance();
+        inst.toggleVoiceRecord();
+    };
+
+    IMessageChat.clearChat = function() {
+        const inst = getOrCreateInstance();
+        inst.clearHistory();
+    };
+
+    if (typeof window !== 'undefined') {
+        window.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+                if (document.querySelector('#chat-messages') || document.querySelector('#pc-chat-messages')) {
+                    getOrCreateInstance();
+                }
+            }, 300);
+        });
+    }
 
     global.IMessageChatComponent = IMessageChat;
 

@@ -608,3 +608,118 @@ input:checked + .apple-slider:before {
     transform: scale(1.05);
 }
 
+/* ==========================================================================
+   移动端与手机屏幕全适配体系 (Mobile Responsive Adaptation Engine)
+   ========================================================================== */
+
+@media (max-width: 768px) {
+    header.apple-header {
+        padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+    }
+
+    .apple-header-title {
+        font-size: 16px;
+    }
+
+    .apple-container {
+        padding: 14px 10px calc(100px + env(safe-area-inset-bottom));
+    }
+
+    .apple-glass-card {
+        padding: 16px 12px;
+        border-radius: 18px;
+    }
+
+    .apple-card-title {
+        font-size: 14px;
+        margin-bottom: 12px;
+    }
+
+    /* 苹果 Bottom Dock 导航自适应 */
+    .apple-bottom-dock {
+        padding: 4px 8px;
+        gap: 4px;
+        bottom: calc(12px + env(safe-area-inset-bottom));
+        max-width: 95vw;
+    }
+
+    .apple-dock-tab {
+        padding: 6px 12px;
+        font-size: 10px;
+    }
+
+    .apple-dock-tab svg {
+        width: 20px;
+        height: 20px;
+    }
+
+    /* 移动端 2 列自适应控制面板卡片网格 */
+    #view-dashboard > div:first-child {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 10px !important;
+    }
+
+    /* 移动端文件列表排版优化 */
+    .apple-file-card {
+        padding: 10px 12px !important;
+    }
+
+    /* 常用书签栏水平滑动不换行 */
+    #web-bookmarks-bar {
+        overflow-x: auto;
+        white-space: nowrap;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    #web-bookmarks-list {
+        flex-wrap: nowrap !important;
+    }
+
+    /* 浮动批量操作栏手机端适配 */
+    .apple-floating-batch-bar {
+        bottom: calc(75px + env(safe-area-inset-bottom));
+        padding: 8px 14px;
+        font-size: 12px;
+        gap: 8px;
+        max-width: 92vw;
+    }
+}
+
+@media (max-width: 480px) {
+    #view-dashboard > div:first-child {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 8px !important;
+    }
+
+    .apple-dock-tab {
+        padding: 5px 8px;
+        font-size: 9px;
+    }
+
+    /* iMessage 输入框在小屏手机上的精细适配 */
+    #view-chat .apple-glass-card > div:last-of-type {
+        gap: 6px !important;
+    }
+
+    #view-chat input#chat-input {
+        font-size: 12px !important;
+        padding: 8px 10px !important;
+    }
+
+    /* 模态框与画廊弹窗内边距收缩 */
+    #image-modal {
+        padding: 10px !important;
+    }
+
+    #text-modal > div {
+        width: 96% !important;
+        padding: 16px !important;
+        border-radius: 18px !important;
+    }
+
+    #text-viewer {
+        max-height: 55vh !important;
+        font-size: 12px !important;
+    }
+}
+

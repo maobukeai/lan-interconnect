@@ -13,17 +13,34 @@
             this.inputElement = typeof config.inputElement === 'string' ? document.querySelector(config.inputElement) : config.inputElement;
             this.executeBtnElement = typeof config.executeBtnElement === 'string' ? document.querySelector(config.executeBtnElement) : config.executeBtnElement;
 
-            this.apiFetch = config.apiFetch || window.fetch;
-            this.getPin = config.getPin || (() => localStorage.getItem('lan_disk_pin') || '');
+            this.getPin = config.getPin || (() => typeof localStorage !== 'undefined' ? (localStorage.getItem('lan_disk_pin') || '') : '');
             this.getCwd = config.getCwd || (() => 'C:\\');
+            this.getApiUrl = config.getApiUrl || ((p) => {
+                if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
+                    const baseUrl = window.currentServerUrl || 'http://localhost:3000';
+                    return baseUrl.replace(/\/$/, '') + p;
+                }
+                return p;
+            });
 
             this.history = [];
             this.historyIndex = -1;
 
+            this._ensureElements();
             this._bindEvents();
         }
 
+        _ensureElements() {
+            if (!this.outputElement) {
+                this.outputElement = document.querySelector('#terminal-output') || document.querySelector('#pc-terminal-output');
+            }
+            if (!this.inputElement) {
+                this.inputElement = document.querySelector('#terminal-input') || document.querySelector('#pc-terminal-input');
+            }
+        }
+
         _bindEvents() {
+            this._ensureElements();
             if (this.inputElement) {
                 this.inputElement.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter') {
@@ -47,6 +64,7 @@
         }
 
         navigateHistory(direction) {
+            this._ensureElements();
             if (!this.history.length || !this.inputElement) return;
 
             if (direction === 'up') {
@@ -71,6 +89,7 @@
         }
 
         async executeCommand(customCommand) {
+            this._ensureElements();
             let cmd = customCommand;
             if (typeof cmd !== 'string' && this.inputElement) {
                 cmd = this.inputElement.value;
@@ -95,9 +114,11 @@
 
             const cwd = this.getCwd();
             const pin = this.getPin();
+            const getUrl = typeof this.getApiUrl === 'function' ? this.getApiUrl : (p => p);
+            const terminalUrl = getUrl('/api/terminal');
 
             try {
-                const res = await fetch('/api/terminal', {
+                const res = await fetch(terminalUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'x-pin': pin },
                     body: JSON.stringify({
@@ -106,7 +127,7 @@
                     })
                 });
 
-                const data = await res.json();
+                const data = await res.json().catch(() => ({}));
                 if (data.error) {
                     this.appendLine(data.error, 'error');
                 } else if (data.output) {
@@ -120,6 +141,7 @@
         }
 
         appendLine(text, type = 'normal') {
+            this._ensureElements();
             if (!this.outputElement) return;
 
             const lineDiv = document.createElement('div');
@@ -144,12 +166,14 @@
         }
 
         scrollToBottom() {
+            this._ensureElements();
             if (this.outputElement) {
                 this.outputElement.scrollTop = this.outputElement.scrollHeight;
             }
         }
 
         clearOutput() {
+            this._ensureElements();
             if (this.outputElement) {
                 this.outputElement.innerHTML = '<div style="color: #8e8e93;">zsh - 猫步互联 Pro 控制台 ready...</div>';
             }
@@ -158,14 +182,24 @@
 
     let instance = null;
 
-    WebTerminal.execute = function(inputId, outputId) {
+    function getOrCreateInstance(inputId, outputId) {
         if (!instance) {
             instance = new WebTerminal({
-                outputElement: typeof outputId === 'string' ? '#' + outputId : outputId,
-                inputElement: typeof inputId === 'string' ? '#' + inputId : inputId
+                outputElement: typeof outputId === 'string' ? '#' + outputId : (outputId || '#terminal-output'),
+                inputElement: typeof inputId === 'string' ? '#' + inputId : (inputId || '#terminal-input')
             });
         }
-        instance.executeCommand();
+        return instance;
+    }
+
+    WebTerminal.execute = function(inputId, outputId) {
+        const inst = getOrCreateInstance(inputId, outputId);
+        inst.executeCommand();
+    };
+
+    WebTerminal.clear = function() {
+        const inst = getOrCreateInstance();
+        inst.clearOutput();
     };
 
     global.WebTerminalComponent = WebTerminal;
