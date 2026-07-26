@@ -7,7 +7,7 @@ const path = require('path');
 const testPort = 3001;
 const testConfig = {
     mode: 'shared',
-    pin: '',
+    pin: '8888', // 设置 PIN 校验密码
     port: testPort,
     customDir: path.join(__dirname, 'test_shared'),
     whitelistMode: false,
@@ -33,14 +33,14 @@ async function runTests() {
         fs.mkdirSync(testConfig.customDir, { recursive: true });
     }
     
-    await startServer(testConfig);
-    console.log('Server started.');
+    const startInfo = await startServer(testConfig);
+    console.log(`Server started with QR Token: ${startInfo.token}`);
 
     try {
         // Test 1: Path Traversal Protection
         console.log('Running Test 1: Path Traversal Protection...');
         const maliciousPath = encodeURIComponent(path.join(testConfig.customDir, '../../Windows/System32'));
-        const res1 = await request(`/api/files?path=${maliciousPath}`);
+        const res1 = await request(`/api/files?path=${maliciousPath}&token=${startInfo.token}`);
         assert.strictEqual(res1.status, 403, 'Path traversal should return 403 Forbidden');
         console.log('Test 1 Passed.');
 
@@ -48,7 +48,7 @@ async function runTests() {
         console.log('Running Test 2: Chat XSS Escaping...');
         const xssPayload = '<script>alert(1)</script>';
         const body = JSON.stringify({ text: xssPayload, sender: 'test' });
-        const res2 = await request('/api/chat', {
+        const res2 = await request(`/api/chat?token=${startInfo.token}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: body
@@ -61,19 +61,28 @@ async function runTests() {
 
         // Test 3: Normal File Access
         console.log('Running Test 3: Normal File Access...');
-        const res3 = await request(`/api/files?path=${encodeURIComponent(testConfig.customDir)}`);
+        const res3 = await request(`/api/files?path=${encodeURIComponent(testConfig.customDir)}&token=${startInfo.token}`);
         assert.strictEqual(res3.status, 200, 'Normal directory access should return 200');
         console.log('Test 3 Passed.');
 
         // Test 4: Terminal Command (Blocked in shared mode)
         console.log('Running Test 4: Terminal Execution Blocked in Shared Mode...');
-        const res4 = await request('/api/terminal', {
+        const res4 = await request(`/api/terminal?token=${startInfo.token}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ command: 'echo 123' })
         });
         assert.strictEqual(res4.status, 403, 'Terminal execution should be forbidden in shared mode');
         console.log('Test 4 Passed.');
+
+        // Test 5: QR Token Auto-Authentication Pass
+        console.log('Running Test 5: QR Token Auto-Authentication Pass...');
+        const res5NoAuth = await request('/api/verify', { method: 'POST' });
+        assert.strictEqual(res5NoAuth.status, 401, 'Request without PIN or Token should fail with 401');
+
+        const res5WithToken = await request(`/api/verify?token=${startInfo.token}`, { method: 'POST' });
+        assert.strictEqual(res5WithToken.status, 200, 'Request with valid QR Token should bypass PIN and return 200');
+        console.log('Test 5 Passed.');
 
         console.log('All tests passed successfully!');
     } catch (e) {

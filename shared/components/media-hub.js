@@ -1,20 +1,13 @@
 /**
- * 局域网互联 Pro - 媒体中心组件 (MediaHub)
- * 职责：多媒体文件识别过滤、音频/视频播放器拉起 (AppleMediaPlayer)、图片/文本预览处理。
- * 遵循无全局变量污染、高扩展性设计。
+ * 局域网互联 Pro - 媒体调度与画廊中心组件 (MediaHub)
+ * 职责：处理视频/音频播放串联、全屏图片画廊（支持双指缩放与下拉关闭手势）、文本/Markdown 查看及弹窗手势交互。
  */
 
 (function (global) {
     'use strict';
 
     class MediaHub {
-        /**
-         * 初始化媒体中心组件
-         * @param {Object} config 配置选项
-         * @param {HTMLElement|string} [config.imageModal] 图片预览模态框元素
-         * @param {HTMLElement|string} [config.imageViewer] 图片预览 img 元素
-         * @param {HTMLElement|string} [config.textModal] 文本预览模态框元素
-         * @param {HTMLElement|string} [config.textViewer] 文本预        constructor(config = {}) {
+        constructor(config = {}) {
             this.imageModal = typeof config.imageModal === 'string' ? document.querySelector(config.imageModal) : config.imageModal;
             this.imageViewer = typeof config.imageViewer === 'string' ? document.querySelector(config.imageViewer) : config.imageViewer;
             this.textModal = typeof config.textModal === 'string' ? document.querySelector(config.textModal) : config.textModal;
@@ -32,23 +25,52 @@
             });
 
             this.currentGallery = { index: 0, items: [] };
+            this.scale = 1;
+            this.lastScale = 1;
+            this.lastTapTime = 0;
+
             this._bindTouchEvents();
         }
 
         _bindTouchEvents() {
             const imageModal = this.imageModal || (typeof document !== 'undefined' ? document.getElementById('image-modal') : null);
+            const imageViewer = this.imageViewer || (typeof document !== 'undefined' ? document.getElementById('image-viewer') : null);
+
             if (!imageModal) return;
+
             let startX = 0;
             let startY = 0;
+            let initialPinchDist = 0;
 
             imageModal.addEventListener('touchstart', (e) => {
-                if (e.touches && e.touches.length === 1) {
+                if (e.touches.length === 1) {
                     startX = e.touches[0].clientX;
                     startY = e.touches[0].clientY;
+                } else if (e.touches.length === 2) {
+                    // 记录双指初始距离 (Pinch-to-Zoom)
+                    const dx = e.touches[0].clientX - e.touches[1].clientX;
+                    const dy = e.touches[0].clientY - e.touches[1].clientY;
+                    initialPinchDist = Math.sqrt(dx * dx + dy * dy);
+                }
+            }, { passive: true });
+
+            imageModal.addEventListener('touchmove', (e) => {
+                if (e.touches.length === 2 && initialPinchDist > 0 && imageViewer) {
+                    // 计算双指实时捏合/放缩比例
+                    const dx = e.touches[0].clientX - e.touches[1].clientX;
+                    const dy = e.touches[0].clientY - e.touches[1].clientY;
+                    const currentDist = Math.sqrt(dx * dx + dy * dy);
+                    const factor = currentDist / initialPinchDist;
+                    this.scale = Math.min(4, Math.max(0.8, this.lastScale * factor));
+                    imageViewer.style.transform = `scale(${this.scale})`;
                 }
             }, { passive: true });
 
             imageModal.addEventListener('touchend', (e) => {
+                if (e.touches.length === 0) {
+                    this.lastScale = this.scale;
+                }
+
                 if (!e.changedTouches || e.changedTouches.length !== 1) return;
                 const endX = e.changedTouches[0].clientX;
                 const endY = e.changedTouches[0].clientY;
@@ -56,6 +78,21 @@
                 const diffX = endX - startX;
                 const diffY = endY - startY;
 
+                // 双击点按重置/放大
+                const now = Date.now();
+                if (now - this.lastTapTime < 300 && Math.abs(diffX) < 10 && Math.abs(diffY) < 10 && imageViewer) {
+                    this.scale = this.scale > 1.2 ? 1 : 2.2;
+                    this.lastScale = this.scale;
+                    imageViewer.style.transform = `scale(${this.scale})`;
+                    this.lastTapTime = now;
+                    return;
+                }
+                this.lastTapTime = now;
+
+                // 若处于放大状态，优先进行拖拽微调，不动手势切页
+                if (this.scale > 1.2) return;
+
+                // 1. 水平滑动手势 (左右切图)
                 if (Math.abs(diffX) > 50 && Math.abs(diffX) > Math.abs(diffY)) {
                     if (diffX < 0) {
                         this.nextImage();
@@ -63,24 +100,24 @@
                         this.prevImage();
                     }
                 }
+                // 2. 下拉滑动手势 (Swipe-Down to Dismiss 关闭弹窗)
+                else if (diffY > 90 && Math.abs(diffY) > Math.abs(diffX)) {
+                    this.closeModals();
+                }
             }, { passive: true });
         }
 
-        /**
-         * 统一播放/预览入口
-         * @param {string} type 媒体类型: 'video' | 'audio' | 'image' | 'text'
-         * @param {string} path 文件绝对路径
-         * @param {string} name 文件名
-         * @param {Array} [currentFiles] 当前目录文件列表（用于构建连播列表）
-         */
+        resetZoom() {
+            this.scale = 1;
+            this.lastScale = 1;
+            const imageViewer = this.imageViewer || document.getElementById('image-viewer');
+            if (imageViewer) imageViewer.style.transform = 'scale(1)';
+        }
+
         playMedia(type, path, name, currentFiles = []) {
             const pin = typeof this.getPin === 'function' ? this.getPin() : '';
             const getUrl = typeof this.getApiUrl === 'function' ? this.getApiUrl : (p => p);
             const streamUrl = getUrl(`/api/stream?path=${encodeURIComponent(path)}&pin=${encodeURIComponent(pin)}`);
-
-            if (typeof history !== 'undefined' && history.pushState && window.location.protocol !== 'file:') {
-                history.pushState({ type: 'modal' }, '', '#preview');
-            }
 
             if (type === 'video' || type === 'audio') {
                 const playlist = (currentFiles || [])
@@ -118,10 +155,8 @@
             }
         }
 
-        /**
-         * 展现图片画廊弹窗
-         */
         showImagePreview(index, imageList = []) {
+            this.resetZoom();
             this.currentGallery = { index, items: imageList };
             this.renderGalleryCurrent();
             const modal = this.imageModal || document.getElementById('image-modal');
@@ -133,6 +168,8 @@
             if (!items || items.length === 0) return;
             const item = items[index];
             if (!item) return;
+
+            this.resetZoom();
 
             const viewer = this.imageViewer || document.getElementById('image-viewer');
             if (viewer) viewer.src = item.url;
@@ -157,11 +194,6 @@
             this.renderGalleryCurrent();
         }
 
-        /**
-         * 展现文本文件查看弹窗
-         * @param {string} name 文件名
-         * @param {string} path 文件路径
-         */
         async showTextPreview(name, path) {
             const titleEl = this.textTitle || document.getElementById('text-title');
             const viewerEl = this.textViewer || document.getElementById('text-viewer');
@@ -186,10 +218,8 @@
             }
         }
 
-        /**
-         * 关闭所有预览模态框
-         */
         closeModals() {
+            this.resetZoom();
             const imgModal = this.imageModal || document.getElementById('image-modal');
             const txtModal = this.textModal || document.getElementById('text-modal');
             if (imgModal) imgModal.style.display = 'none';
@@ -197,7 +227,6 @@
         }
     }
 
-    // 暴露全局单例 / 类
     global.MediaHubComponent = MediaHub;
     if (typeof window !== 'undefined' && !window.MediaHubInstance) {
         window.MediaHubInstance = new MediaHub();

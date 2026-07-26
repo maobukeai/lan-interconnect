@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
 
 // 全局配置与运行状态
 const state = {
@@ -9,6 +10,8 @@ const state = {
     activeSockets: new Set(),
     currentConfig: { mode: 'full', pin: '', port: 3000, customDir: '', whitelistMode: false, whitelistIps: [], bindIp: '' },
     sharedDir: '',
+    qrToken: '',
+    validTokens: new Set(),
     networkStats: {
         rxBytes: 0,
         txBytes: 0,
@@ -30,6 +33,12 @@ const state = {
 
 const BLOCKED_IPS_FILE = path.join(__dirname, '..', 'blocked_ips.json');
 const DEVICE_ALIASES_FILE = path.join(__dirname, '..', 'device_aliases.json');
+
+function generateQrToken() {
+    state.qrToken = crypto.randomBytes(8).toString('hex');
+    state.validTokens.add(state.qrToken);
+    return state.qrToken;
+}
 
 function loadPersistedSecurityData() {
     try {
@@ -81,7 +90,6 @@ function isSafePath(targetPath) {
         const resolvedShared = path.resolve(state.sharedDir);
         return resolvedPath === resolvedShared || resolvedPath.startsWith(resolvedShared + path.sep);
     }
-    // 全盘模式安全防护：对危险的核心系统敏感路径（如 System32）禁止修改/写入
     if (process.platform === 'win32') {
         const lower = resolvedPath.toLowerCase();
         const sys32 = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32').toLowerCase();
@@ -120,6 +128,7 @@ function shouldCompress(req, res) {
 
 module.exports = {
     state,
+    generateQrToken,
     loadPersistedSecurityData,
     savePersistedSecurityData,
     broadcastMessage,

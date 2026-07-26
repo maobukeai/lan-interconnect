@@ -5,8 +5,9 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const { state, shouldCompress, getLocalIpAddress } = require('./server/config');
+const { state, generateQrToken, shouldCompress, getLocalIpAddress } = require('./server/config');
 const { checkAuth, checkSensitive } = require('./server/middleware/auth');
+const mdnsResponder = require('./server/services/mdns');
 
 const devicesRouter = require('./server/routes/devices');
 const chatRouter = require('./server/routes/chat');
@@ -33,6 +34,9 @@ function startServer(config) {
                 console.error("Failed to create SHARED_DIR", err);
             }
         }
+
+        // 每次启动服务自动生成全新的安全扫码 Token
+        const token = generateQrToken();
 
         const app = express();
         state.app = app;
@@ -146,7 +150,11 @@ function startServer(config) {
             const ip = state.currentConfig.bindIp && state.currentConfig.bindIp !== '0.0.0.0' 
                 ? state.currentConfig.bindIp 
                 : getLocalIpAddress();
-            resolve({ ip, port: targetPort });
+
+            // 启动局域网 mDNS 本地域名广播 (landisk.local)
+            mdnsResponder.start(ip);
+
+            resolve({ ip, port: targetPort, token });
         });
 
         state.server.on('error', (err) => {
@@ -157,6 +165,8 @@ function startServer(config) {
 
 function stopServer() {
     return new Promise((resolve) => {
+        mdnsResponder.stop();
+
         if (state.statsInterval) {
             clearInterval(state.statsInterval);
             state.statsInterval = null;

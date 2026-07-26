@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>猫步互联 Pro - Apple Web Client</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="alternate icon" type="image/png" href="favicon.png">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
     <link rel="stylesheet" href="shared/apple-theme.css">
     <link rel="stylesheet" href="shared/apple-player.css">
     <!-- 基础引擎与 Apple 组件库 (一个功能一个文件) -->
@@ -164,7 +167,7 @@
 <!-- 顶栏 Header -->
 <header class="apple-header">
     <div class="apple-header-title">
-        <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071a10 10 0 0114.142 0M1.414 8.414a15 15 0 0121.172 0"></path></svg>
+        <img src="favicon.png" style="width:26px; height:26px; border-radius:6px; object-fit:cover; box-shadow:0 2px 8px var(--apple-glow-blue);">
         猫步互联 Pro
     </div>
     <div style="display: flex; align-items: center; gap: 10px;">
@@ -174,6 +177,12 @@
         </button>
     </div>
 </header>
+
+<!-- PWA 添加至主屏幕全屏引导栏 -->
+<div id="pwa-install-banner" style="display:none; background:rgba(0,122,255,0.15); border-bottom:1px solid rgba(0,122,255,0.3); padding:8px 16px; font-size:12px; text-align:center; color:white; align-items:center; justify-content:space-between; gap:8px; backdrop-filter:blur(10px);">
+    <span>📲 提示：点击浏览器菜单中的「添加到主屏幕」，解锁 100% 独立原生全屏 App 体验</span>
+    <button onclick="document.getElementById('pwa-install-banner').style.display='none'" style="border:none; background:none; color:rgba(255,255,255,0.6); cursor:pointer; font-size:14px;">✕</button>
+</div>
 
 <!-- 主内容区域 -->
 <div class="apple-container">
@@ -392,6 +401,13 @@
 
 <script>
     let storedPin = localStorage.getItem('lan_disk_pin') || '';
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlToken = urlParams.get('token');
+    if (urlToken) {
+        localStorage.setItem('lan_disk_qr_token', urlToken);
+    }
+    const qrToken = localStorage.getItem('lan_disk_qr_token') || '';
+
     window.MediaHubInstance = new MediaHubComponent({
         imageModal: '#image-modal',
         imageViewer: '#image-viewer',
@@ -402,7 +418,7 @@
 
     async function init() {
         try {
-            const res = await fetch('/api/verify', { method: 'POST', headers: { 'x-pin': storedPin } });
+            const res = await fetch('/api/verify', { method: 'POST', headers: { 'x-pin': storedPin, 'x-qr-token': qrToken } });
             if (res.ok) {
                 document.getElementById('login-overlay').style.display = 'none';
                 loadDashboardData();
@@ -411,6 +427,11 @@
                 document.getElementById('login-overlay').style.display = 'flex';
             }
         } catch (e) {}
+
+        if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && !window.matchMedia('(display-mode: standalone)').matches) {
+            const pwaBanner = document.getElementById('pwa-install-banner');
+            if (pwaBanner) pwaBanner.style.display = 'flex';
+        }
     }
     init();
 

@@ -19,6 +19,13 @@ function checkAuth(req, res, next) {
     if (req.path === '/' || req.path.startsWith('/index.html') || req.path.startsWith('/favicon.ico') || req.path.startsWith('/api/shared/download/')) {
         return next();
     }
+
+    // 检查扫码免密 Token 鉴权 (若请求包含二维码分配的 token)
+    const token = req.headers['x-qr-token'] || req.query.token;
+    if (token && (state.validTokens.has(token) || token === state.qrToken)) {
+        return next();
+    }
+
     if (!state.currentConfig.pin) {
         return next(); // 免密模式
     }
@@ -32,6 +39,12 @@ function checkAuth(req, res, next) {
 }
 
 function checkSensitive(req, res, next) {
+    // 若匹配有效扫码 Token 允许访问敏感控制 API
+    const token = req.headers['x-qr-token'] || req.query.token;
+    if (token && (state.validTokens.has(token) || token === state.qrToken)) {
+        return next();
+    }
+
     if (state.currentConfig.pin) {
         return next();
     }

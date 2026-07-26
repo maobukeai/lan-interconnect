@@ -283,7 +283,7 @@
             <div class="mac-light mac-light-max" onclick="window.api.invoke('maximize-window')" title="最大化 / 全屏"></div>
         </div>
         <div style="display:flex; align-items:center; gap:8px; margin-left:8px; white-space:nowrap;">
-            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071a10 10 0 0114.142 0M1.414 8.414a15 15 0 0121.172 0"></path></svg>
+            <img src="shared/app-icon.jpg" style="width:20px; height:20px; border-radius:5px; object-fit:cover; box-shadow:0 2px 6px var(--apple-glow-blue);">
             猫步互联 Pro - 全能工作台
         </div>
     </div>
@@ -380,8 +380,11 @@
                         </div>
                     </div>
 
-                    <!-- 右侧：启动/停止按钮 -->
-                    <button class="apple-btn apple-btn-primary" id="btn-start-server" style="padding: 8px 20px; font-size: 13px;" onclick="toggleServer()">启动服务</button>
+                    <!-- 右侧：启动/停止按钮与浏览器快捷键 -->
+                    <div style="display: flex; gap: 8px;">
+                        <button class="apple-btn apple-btn-primary" id="btn-start-server" style="padding: 8px 18px; font-size: 13px;" onclick="toggleServer()">启动服务</button>
+                        <button class="apple-btn apple-btn-glass" style="padding: 8px 16px; font-size: 13px;" onclick="openWebUrl()">🌐 在浏览器打开</button>
+                    </div>
                 </div>
             </div>
 
@@ -737,6 +740,13 @@
             el.style.opacity = '0';
             el.style.transform = 'translateX(-50%) translateY(10px)';
         }, duration);
+    }
+
+    window.isGuiWindowMinimized = false;
+    if (window.api && window.api.on) {
+        window.api.on('window-state-changed', (data) => {
+            window.isGuiWindowMinimized = !!(data && data.minimized);
+        });
     }
 
     function switchPCTab(tab, el) {
@@ -1702,7 +1712,9 @@
                 const res = await window.api.invoke('start-server', config);
                 if (res && res.success) {
                     isRunning = true;
+                    window.isRunning = true;
                     currentServerUrl = res.url;
+                    window.currentQrUrl = res.qrUrl;
                     btn.textContent = '停止服务';
                     btn.className = 'apple-btn apple-btn-danger';
                     
@@ -1813,8 +1825,20 @@
         showToast('✅ 访问地址已复制到剪贴板');
     }
 
-    function openWebUrl() {
-        if (currentServerUrl) window.api.invoke('open-url', currentServerUrl);
+    async function openWebUrl() {
+        if (!isRunning && !window.isRunning) {
+            showToast('⏳ 正在为您启动局域网互联服务...');
+            await toggleServer();
+        }
+        const targetUrl = window.currentQrUrl || currentServerUrl || 'http://127.0.0.1:3000';
+        if (window.api && typeof window.api.openUrl === 'function') {
+            window.api.openUrl(targetUrl);
+        } else if (window.api && typeof window.api.invoke === 'function') {
+            window.api.invoke('open-url', targetUrl);
+        } else {
+            window.open(targetUrl, '_blank');
+        }
+        showToast('🚀 已在系统默认浏览器中打开页面！');
     }
 
     async function testPing() {
@@ -1872,6 +1896,7 @@
     }
 
     async function updateSysInfo() {
+        if (window.isGuiWindowMinimized) return;
         try {
             const info = await window.api.invoke('get-sys-info');
             if (info) {
