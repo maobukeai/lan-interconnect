@@ -243,16 +243,16 @@
         <!-- 存储空间与一键清理 -->
         <div class="glass-card" style="margin-bottom: 12px; padding: 14px 16px;">
             <div class="row-between" style="margin-bottom: 8px;">
-                <span class="apple-card-title-text"><span data-icon="hardDrive"></span>存储空间容量</span>
+                <span class="apple-card-title-text" style="display:flex; align-items:center; gap:8px;"><span data-icon="drive"></span>存储空间容量</span>
                 <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-clean-storage" title="一键释放空间">
                     <span data-icon="trash"></span>一键释放空间
                 </button>
             </div>
             <div class="storage-bar-wrap">
-                <div class="storage-bar-fill" id="dash-storage-fill" style="width: 45%;"></div>
+                <div class="storage-bar-fill" id="dash-storage-fill" style="width: 0%;"></div>
             </div>
             <div class="row-between subtle" style="font-size:11px; margin-top:6px;">
-                <span id="dash-storage-detail">加载存储指标中…</span>
+                <span id="dash-storage-detail">正在读取磁盘空间…</span>
                 <span id="dash-storage-health" style="color:var(--apple-system-green); font-weight:600;">● 状态健康</span>
             </div>
         </div>

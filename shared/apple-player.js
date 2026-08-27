@@ -748,17 +748,28 @@ class AppleCinemaPlayerEngine {
     }
 
     toggleFullscreen() {
-        const target = this.dom.stageBox || this.dom.media;
-        if (!document.fullscreenElement && !document.webkitFullscreenElement) {
-            try {
-                if (target.requestFullscreen) {
-                    target.requestFullscreen().catch(() => {});
-                } else if (target.webkitRequestFullscreen) {
-                    target.webkitRequestFullscreen();
-                } else if (this.dom.media.webkitEnterFullscreen) {
-                    this.dom.media.webkitEnterFullscreen();
-                }
-            } catch (e) {}
+        const stageBox = this.dom.stageBox;
+        if (!stageBox) return;
+
+        const isMobile = window.innerWidth <= 768 || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+        const isCurrentlyFull = stageBox.classList.contains('is-fullscreen') || !!(document.fullscreenElement || document.webkitFullscreenElement);
+
+        if (!isCurrentlyFull) {
+            // 进入全屏：优先走沉浸式网页全屏 (无浏览器 Esc 黑条干扰)
+            stageBox.classList.add('is-fullscreen');
+            document.body.classList.add('ap-fullscreen-active');
+            if (this.dom.fsBtnLabel) this.dom.fsBtnLabel.textContent = '还原';
+
+            // 仅在桌面宽屏环境下才可选调用原生全屏
+            if (!isMobile) {
+                try {
+                    if (stageBox.requestFullscreen) {
+                        stageBox.requestFullscreen().catch(() => {});
+                    } else if (stageBox.webkitRequestFullscreen) {
+                        stageBox.webkitRequestFullscreen();
+                    }
+                } catch (e) {}
+            }
 
             try {
                 if (screen.orientation && screen.orientation.lock) {
@@ -766,11 +777,18 @@ class AppleCinemaPlayerEngine {
                 }
             } catch (e) {}
         } else {
+            // 退出全屏
+            stageBox.classList.remove('is-fullscreen');
+            document.body.classList.remove('ap-fullscreen-active');
+            if (this.dom.fsBtnLabel) this.dom.fsBtnLabel.textContent = '全屏';
+
             try {
-                if (document.exitFullscreen) {
-                    document.exitFullscreen().catch(() => {});
-                } else if (document.webkitExitFullscreen) {
-                    document.webkitExitFullscreen();
+                if (document.fullscreenElement || document.webkitFullscreenElement) {
+                    if (document.exitFullscreen) {
+                        document.exitFullscreen().catch(() => {});
+                    } else if (document.webkitExitFullscreen) {
+                        document.webkitExitFullscreen();
+                    }
                 }
             } catch (e) {}
 
@@ -784,12 +802,18 @@ class AppleCinemaPlayerEngine {
 
     onFullscreenChange() {
         this.closeMenuPopover();
-        const isFull = !!(document.fullscreenElement || document.webkitFullscreenElement);
+        const isNativeFull = !!(document.fullscreenElement || document.webkitFullscreenElement);
         if (this.dom.stageBox) {
-            this.dom.stageBox.classList.toggle('is-fullscreen', isFull);
+            if (isNativeFull) {
+                this.dom.stageBox.classList.add('is-fullscreen');
+                document.body.classList.add('ap-fullscreen-active');
+            } else if (!isNativeFull && !this.dom.stageBox.classList.contains('is-fullscreen')) {
+                document.body.classList.remove('ap-fullscreen-active');
+            }
         }
         if (this.dom.fsBtnLabel) {
-            this.dom.fsBtnLabel.textContent = isFull ? '还原' : '全屏';
+            const isAnyFull = isNativeFull || (this.dom.stageBox && this.dom.stageBox.classList.contains('is-fullscreen'));
+            this.dom.fsBtnLabel.textContent = isAnyFull ? '还原' : '全屏';
         }
     }
 

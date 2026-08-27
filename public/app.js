@@ -316,8 +316,33 @@
                         const totalStr = (parts[1] || '').trim();
                         $('#dash-disk').textContent = freeStr + ' 可用';
                         if ($('#dash-disk-sub')) $('#dash-disk-sub').textContent = `总容量 ${totalStr}`;
+
+                        // 解析数值更新下方的「存储空间容量」进度条卡片
+                        const freeNum = parseFloat(freeStr) || 0;
+                        const totalNum = parseFloat(totalStr) || 0;
+                        if (totalNum > 0) {
+                            const usedNum = Math.max(0, totalNum - freeNum);
+                            const usedPercent = Math.min(100, Math.max(0, Math.round((usedNum / totalNum) * 100)));
+                            if ($('#dash-storage-fill')) $('#dash-storage-fill').style.width = usedPercent + '%';
+                            if ($('#dash-storage-detail')) $('#dash-storage-detail').textContent = `已用 ${usedNum.toFixed(1)} GB / 共 ${totalStr} (可用 ${freeStr})`;
+                            
+                            const healthEl = $('#dash-storage-health');
+                            if (healthEl) {
+                                if (usedPercent >= 95) {
+                                    healthEl.textContent = '● 空间严重不足';
+                                    healthEl.style.color = 'var(--apple-system-red, #ff3b30)';
+                                } else if (usedPercent >= 85) {
+                                    healthEl.textContent = '● 空间偏低';
+                                    healthEl.style.color = 'var(--apple-system-orange, #ff9500)';
+                                } else {
+                                    healthEl.textContent = '● 状态健康';
+                                    healthEl.style.color = 'var(--apple-system-green, #34c759)';
+                                }
+                            }
+                        }
                     } else {
                         $('#dash-disk').textContent = d.diskSpace;
+                        if ($('#dash-storage-detail')) $('#dash-storage-detail').textContent = d.diskSpace;
                     }
                 }
             }
@@ -547,13 +572,15 @@
             btnClean.addEventListener('click', async () => {
                 try {
                     btnClean.disabled = true;
+                    btnClean.textContent = '正在清理…';
                     const res = await fetch('/api/tools/clean-storage', {
                         method: 'POST',
                         headers: auth().authHeaders()
                     });
                     const d = await res.json();
                     if (d.success) {
-                        LanDiskUI.toast('已释放临时缓存与回收站', 'success');
+                        const totalCleaned = (d.cleanedChunks || 0) + (d.cleanedTrash || 0);
+                        LanDiskUI.toast(totalCleaned > 0 ? `已清理 ${totalCleaned} 项临时文件与回收站` : '存储空间状态良好，无多余临时文件', 'success');
                         loadDashboard();
                     } else {
                         LanDiskUI.toast(d.error || '清理失败', 'error');
@@ -562,6 +589,7 @@
                     LanDiskUI.toast('清理遇到异常', 'error');
                 } finally {
                     btnClean.disabled = false;
+                    btnClean.innerHTML = `${I('trash', 14)} 一键释放空间`;
                 }
             });
         }

@@ -1027,7 +1027,6 @@
             MediaTheaterComponent.scan();
         });
         $('#btn-media-folder').addEventListener('click', () => {
-            if (!IPC.state.running) { UI.toast('请先启动服务', 'info'); return; }
             MediaTheaterComponent.pickFolder();
         });
 

@@ -449,8 +449,6 @@
                             this.playAt(parseInt(card.getAttribute('data-idx'), 10));
                         });
                     });
-
-                    this._lazyThumbnails();
                 }
 
             } catch (err) {
@@ -664,66 +662,139 @@
         }
 
         // 目录选择入口（支持原生桌面与 Web 模态浏览）
+        // 目录选择入口（支持原生桌面与 Web 模态浏览）
         async pickFolder() {
             const ui = global.LanDiskUI;
 
-            // 桌面端调用原生 OS 文件夹选择窗口
-            if (global.IPC && typeof global.IPC.selectFolder === 'function') {
+            // 1. 桌面端优先调用原生 OS 文件管理器窗口
+            if (typeof window !== 'undefined' && window.api && typeof window.api.selectFolder === 'function') {
+                try {
+                    const chosen = await window.api.selectFolder();
+                    if (chosen && typeof chosen === 'string') {
+                        this.addFolder(chosen);
+                        return;
+                    }
+                    if (chosen === null) return; // 用户在系统弹窗中主动取消了
+                } catch (err) {
+                    console.warn('Native selectFolder failed:', err);
+                }
+            } else if (global.IPC && typeof global.IPC.selectFolder === 'function') {
                 try {
                     const chosen = await global.IPC.selectFolder();
                     if (chosen && typeof chosen === 'string') {
                         this.addFolder(chosen);
                         return;
                     }
+                    if (chosen === null) return;
                 } catch (err) {
-                    console.warn('Native folder picker cancelled or failed:', err);
+                    console.warn('IPC selectFolder failed:', err);
                 }
             }
 
-            // Web 端或备用交互式目录选择弹窗
+            // 2. Web 移动端/浏览器端：交互式驱动盘符与文件夹树形选择模态窗
+            if (!ui || !ui.openModal) {
+                const manual = prompt('请输入要添加到媒体资料库的服务器文件夹绝对路径：');
+                if (manual && manual.trim()) {
+                    this.addFolder(manual.trim());
+                }
+                return;
+            }
+
             const modal = ui.openModal(`
                 <div class="modal-title">添加媒体目录到资料库</div>
-                <div class="modal-message" data-mf="path">加载中…</div>
-                <div class="col" data-mf="list" style="gap:4px; margin-bottom:16px; max-height:46vh; overflow-y:auto"></div>
-                <div class="modal-actions">
+                <div class="modal-message" data-mf="path" style="font-size:12px; color:var(--apple-text-secondary); word-break:break-all; margin-bottom:8px;">正在加载盘符…</div>
+                <div class="col" data-mf="list" style="gap:5px; margin-bottom:16px; max-height:46vh; overflow-y:auto; padding:2px;"></div>
+                <div class="modal-actions" style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
                     <button class="apple-btn apple-btn-glass" data-act="cancel">取消</button>
-                    <button class="apple-btn apple-btn-primary" data-act="pick">${I('check', 15)} 选定并加入资料库</button>
+                    <div style="display:flex; gap:8px;">
+                        <button class="apple-btn apple-btn-glass" data-act="manual" title="手动输入路径">手动输入</button>
+                        <button class="apple-btn apple-btn-primary" data-act="pick">${I('check', 14)} 选定当前目录</button>
+                    </div>
                 </div>
-            `, { width: 440 });
+            `, { width: 460 });
 
             let currentPath = '';
             const listEl = modal.el.querySelector('[data-mf="list"]');
             const pathEl = modal.el.querySelector('[data-mf="path"]');
 
             const renderList = async (p) => {
+                listEl.innerHTML = `<div style="padding:12px; text-align:center; color:var(--apple-text-muted); font-size:12px;">加载中…</div>`;
                 try {
                     if (!p) {
                         const res = await fetch(this.getApiUrl('/api/drives'), { headers: this._authHeaders() });
-                        if (!res.ok) throw new Error();
+                        if (!res.ok) throw new Error('无法获取盘符列表');
                         const drives = await res.json();
-                        pathEl.textContent = '设备根目录（盘符）';
+                        pathEl.textContent = '服务器根目录（选择驱动盘符）';
                         currentPath = '';
                         listEl.innerHTML = drives.map(dr => `
-                            <button class="ctx-menu-item" data-p="${escapeHtml(dr.path)}">${I('drive', 16)}<span>${escapeHtml(dr.name)}</span></button>
+                            <button class="ctx-menu-item" data-p="${escapeHtml(dr.path)}" style="width:100%; display:flex; align-items:center; gap:8px; padding:9px 12px; border-radius:10px; background:rgba(255,255,255,0.06); border:1px solid var(--apple-border); color:var(--apple-text-main); font-size:13px; cursor:pointer;">
+                                ${I('drive', 16)}
+                                <span style="font-weight:600;">${escapeHtml(dr.name || dr.path)}</span>
+                            </button>
                         `).join('');
                     } else {
-            if (typeof window !== 'undefined' && window.api && window.api.selectFolder) {
-                const res = await window.api.selectFolder();
-                if (res && res.success && res.path) {
-                    this.addFolder(res.path);
-                }
-            } else if (global.LanDiskUI && global.LanDiskUI.browseFolder) {
-                global.LanDiskUI.browseFolder({
-                    onSelect: (selectedPath) => {
-                        this.addFolder(selectedPath);
+                        const res = await fetch(this.getApiUrl(`/api/files?path=${encodeURIComponent(p)}`), { headers: this._authHeaders() });
+                        if (!res.ok) throw new Error('无法读取目录内容');
+                        const data = await res.json();
+                        const items = Array.isArray(data) ? data : (data.files || []);
+                        const dirs = items.filter(f => f.isDirectory || f.isDir || f.type === 'directory');
+                        pathEl.textContent = p;
+                        currentPath = p;
+
+                        let html = '';
+                        // 返回上一级
+                        const parentPath = p.replace(/[\\/][^\\/]+[\\/]?$/, '');
+                        html += `
+                            <button class="ctx-menu-item" data-p="${escapeHtml(parentPath)}" style="width:100%; display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:10px; background:rgba(255,255,255,0.04); border:1px dashed var(--apple-border); color:var(--apple-text-secondary); font-size:12.5px; cursor:pointer;">
+                                ${I('chevronLeft', 14)}
+                                <span>.. (返回上一级)</span>
+                            </button>
+                        `;
+
+                        if (dirs.length === 0) {
+                            html += `<div style="padding:16px; text-align:center; color:var(--apple-text-muted); font-size:12px;">(此目录下无子文件夹，可直接点击右下角选定)</div>`;
+                        } else {
+                            html += dirs.map(d => `
+                                <button class="ctx-menu-item" data-p="${escapeHtml(d.path)}" style="width:100%; display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:10px; background:rgba(255,255,255,0.06); border:1px solid var(--apple-border); color:var(--apple-text-main); font-size:12.5px; cursor:pointer;">
+                                    ${I('folder', 15)}
+                                    <span style="font-weight:500;">${escapeHtml(d.name)}</span>
+                                </button>
+                            `).join('');
+                        }
+                        listEl.innerHTML = html;
                     }
-                });
-            } else {
-                const manual = prompt('请输入要添加到影音资料库的本地完整文件夹路径：');
+
+                    listEl.querySelectorAll('[data-p]').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            const nextPath = btn.getAttribute('data-p');
+                            renderList(nextPath);
+                        });
+                    });
+                } catch (err) {
+                    listEl.innerHTML = `<div style="padding:16px; text-align:center; color:#ef4444; font-size:12.5px;">读取失败: ${escapeHtml(err.message)}</div>`;
+                }
+            };
+
+            modal.el.querySelector('[data-act="cancel"]').addEventListener('click', () => modal.close());
+
+            modal.el.querySelector('[data-act="manual"]').addEventListener('click', () => {
+                modal.close();
+                const manual = prompt('请输入要添加到媒体资料库的文件夹绝对路径：', currentPath || '');
                 if (manual && manual.trim()) {
                     this.addFolder(manual.trim());
                 }
-            }
+            });
+
+            modal.el.querySelector('[data-act="pick"]').addEventListener('click', () => {
+                if (!currentPath) {
+                    ui.toast('请先点击进入具体磁盘或文件夹', 'info');
+                    return;
+                }
+                modal.close();
+                this.addFolder(currentPath);
+            });
+
+            renderList('');
         }
 
         // 客户端 Canvas 视频首帧提取兜底方案（当服务端缩略图 API 离线或不可达时自动触发）
@@ -796,6 +867,10 @@
             } catch (e) {
                 img.style.display = 'none';
             }
+        }
+
+        _lazyThumbnails() {
+            // 原生 loading="lazy" 与 onerror fallback 已接管缩略图加载
         }
 
         playAt(idx) {
