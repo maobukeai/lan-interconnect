@@ -5,17 +5,22 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const { state, generateQrToken, shouldCompress, getLocalIpAddress } = require('./server/config');
-const { checkAuth, checkSensitive } = require('./server/middleware/auth');
+const { state, generateQrToken, cleanupExpiredTokens, shouldCompress, getLocalIpAddress } = require('./server/config');
+const { checkAuth, checkSensitive, isLocalRequest } = require('./server/middleware/auth');
 const mdnsResponder = require('./server/services/mdns');
+const trashService = require('./server/services/trash');
 
 const devicesRouter = require('./server/routes/devices');
 const chatRouter = require('./server/routes/chat');
 const filesRouter = require('./server/routes/files');
-const uploadRouter = require('./server/routes/upload');
+const { router: uploadRouter, cleanupTempChunks } = require('./server/routes/upload');
 const downloadRouter = require('./server/routes/download');
 const systemRouter = require('./server/routes/system');
 const toolsRouter = require('./server/routes/tools');
+const historyRouter = require('./server/routes/history');
+const speedtestRouter = require('./server/routes/speedtest');
+const remoteRouter = require('./server/routes/remote');
+const mediaRouter = require('./server/routes/media');
 
 function startServer(config) {
     return new Promise(async (resolve, reject) => {
@@ -40,6 +45,7 @@ function startServer(config) {
 
         const app = express();
         state.app = app;
+        app.disable('x-powered-by');
 
         app.use(compression({ filter: shouldCompress }));
         app.use(cors());
@@ -60,7 +66,7 @@ function startServer(config) {
             state.lastStatsUpdate = now;
         }, 1000);
 
-        // 定期清理过期分享链接与离线设备 (每 60 秒执行一次)
+        // 定期清理过期分享链接、离线设备、过期 Token、孤儿分片与超期回收站 (每 60 秒执行一次)
         if (state.autoCleanupInterval) clearInterval(state.autoCleanupInterval);
         state.autoCleanupInterval = setInterval(() => {
             const now = Date.now();
@@ -74,28 +80,33 @@ function startServer(config) {
                     delete state.connectedDevices[ip];
                 }
             }
+            cleanupExpiredTokens();
+            cleanupTempChunks();
+            trashService.cleanupExpired();
         }, 60000);
 
         // 流量统计中间件
         app.use((req, res, next) => {
-            if (req.socket) {
-                const rxTracker = () => {
-                    state.networkStats.rxBytes += req.socket.bytesRead - (req.socket._lastRx || 0);
-                    req.socket._lastRx = req.socket.bytesRead;
-                };
-                req.socket.on('data', rxTracker);
-                
+            if (req.socket && !req.socket._hasRxTracker) {
+                req.socket._hasRxTracker = true;
+                req.socket.on('data', (chunk) => {
+                    if (chunk) state.networkStats.rxBytes += chunk.length;
+                });
+            }
+
+            if (res && !res._hasTxTracker) {
+                res._hasTxTracker = true;
                 const originalWrite = res.write;
                 const originalEnd = res.end;
                 
                 res.write = function(chunk, encoding, callback) {
                     if (chunk) state.networkStats.txBytes += chunk.length;
-                    originalWrite.call(res, chunk, encoding, callback);
+                    return originalWrite.call(res, chunk, encoding, callback);
                 };
                 
                 res.end = function(chunk, encoding, callback) {
                     if (chunk) state.networkStats.txBytes += chunk.length;
-                    originalEnd.call(res, chunk, encoding, callback);
+                    return originalEnd.call(res, chunk, encoding, callback);
                 };
             }
             next();
@@ -117,12 +128,64 @@ function startServer(config) {
         app.use('/api/terminal', checkSensitive);
         app.use('/api/processes', checkSensitive);
         app.use('/api/kill-process', checkSensitive);
+        app.use('/api/clipboard', checkSensitive);
+        app.use('/api/control/start', checkSensitive);
+        app.use('/api/control/stop', checkSensitive);
         app.use('/api/tools/kick-devices', checkSensitive);
         app.use('/api/tools/kick-device', checkSensitive);
         app.use('/api/tools/block-ip', checkSensitive);
         app.use('/api/tools/unblock-ip', checkSensitive);
         app.use('/api/tools/set-device-alias', checkSensitive);
         app.use('/api/tools/clean-links', checkSensitive);
+        app.use('/api/remote/power', checkSensitive);
+        app.use('/api/remote/mouse', checkSensitive);
+
+        const QRCode = require('qrcode');
+
+        app.post('/api/control/start', async (req, res) => {
+            try {
+                const config = req.body || {};
+                // 先响应再重启：重启会销毁所有连接（包括当前请求自己的），
+                // 若先 await startServer 会把响应写向已销毁的 socket 导致客户端收到连接重置
+                res.json({ success: true, restarting: true });
+                setTimeout(() => {
+                    startServer(config).catch(err => console.error('[control/start] restart failed:', err.message));
+                }, 200);
+            } catch (err) {
+                res.status(500).json({ success: false, error: err.message });
+            }
+        });
+
+        app.post('/api/control/stop', async (req, res) => {
+            try {
+                await stopServer();
+                res.json({ success: true });
+            } catch (err) {
+                res.status(500).json({ success: false, error: err.message });
+            }
+        });
+
+        app.get('/api/control/status', async (req, res) => {
+            const ip = state.currentConfig.bindIp && state.currentConfig.bindIp !== '0.0.0.0'
+                ? state.currentConfig.bindIp
+                : getLocalIpAddress();
+            const port = state.currentConfig.port || 3000;
+            const serverUrl = `http://${ip}:${port}`;
+            // 免密模式下扫码 Token 等同敏感接口通行证，仅向本机下发；
+            // 否则任意局域网访客可借 qrUrl 中的 token 调用终端/剪贴板等接口
+            const allowToken = !!state.currentConfig.pin || isLocalRequest(req);
+            const qrUrl = (allowToken && state.qrToken) ? `${serverUrl}?token=${state.qrToken}` : serverUrl;
+            let qrDataUrl = '';
+            try { qrDataUrl = await QRCode.toDataURL(qrUrl, { width: 300, margin: 1 }); } catch(e){}
+            res.json({
+                running: !!state.server,
+                url: serverUrl,
+                qrUrl,
+                qrDataUrl,
+                ip,
+                port
+            });
+        });
 
         // 挂载路由模块
         app.use('/api', devicesRouter);
@@ -132,34 +195,75 @@ function startServer(config) {
         app.use('/api', downloadRouter);
         app.use('/api', systemRouter);
         app.use('/api', toolsRouter);
+        app.use('/api', historyRouter);
+        app.use('/api', speedtestRouter);
+        app.use('/api', remoteRouter);
+        app.use('/api', mediaRouter);
 
-        const targetPort = state.currentConfig.port || 3000;
+        const preferredPort = parseInt(state.currentConfig.port, 10) || 3000;
         const bindHost = state.currentConfig.bindIp || '0.0.0.0';
 
         const http = require('http');
-        state.server = http.createServer(app);
-        
-        state.server.on('connection', (socket) => {
-            state.activeSockets.add(socket);
-            socket.on('close', () => {
-                state.activeSockets.delete(socket);
+        let currentPort = preferredPort;
+        let attempts = 0;
+        const maxAttempts = 50;
+
+        function tryListen() {
+            const server = http.createServer(app);
+            state.server = server;
+            
+            server.on('connection', (socket) => {
+                state.activeSockets.add(socket);
+                socket.on('close', () => {
+                    state.activeSockets.delete(socket);
+                });
             });
-        });
 
-        state.server.listen(targetPort, bindHost, () => {
-            const ip = state.currentConfig.bindIp && state.currentConfig.bindIp !== '0.0.0.0' 
-                ? state.currentConfig.bindIp 
-                : getLocalIpAddress();
+            server.once('error', (err) => {
+                if ((err.code === 'EADDRINUSE' || err.code === 'EACCES') && attempts < maxAttempts) {
+                    attempts++;
+                    const conflictPort = currentPort;
+                    currentPort++;
+                    console.warn(`[Port Conflict] 端口 ${conflictPort} 被占用，自动尝试切换至端口 ${currentPort}...`);
+                    try { server.close(); } catch (e) {}
+                    setTimeout(tryListen, 50);
+                    return;
+                }
 
-            // 启动局域网 mDNS 本地域名广播 (landisk.local)
-            mdnsResponder.start(ip);
+                // 启动失败时清理已创建的定时器，避免泄漏
+                if (state.statsInterval) {
+                    clearInterval(state.statsInterval);
+                    state.statsInterval = null;
+                }
+                if (state.autoCleanupInterval) {
+                    clearInterval(state.autoCleanupInterval);
+                    state.autoCleanupInterval = null;
+                }
+                reject(err);
+            });
 
-            resolve({ ip, port: targetPort, token });
-        });
+            server.once('listening', () => {
+                state.currentConfig.port = currentPort;
+                const ip = state.currentConfig.bindIp && state.currentConfig.bindIp !== '0.0.0.0' 
+                    ? state.currentConfig.bindIp 
+                    : getLocalIpAddress();
 
-        state.server.on('error', (err) => {
-            reject(err);
-        });
+                // 启动局域网 mDNS 本地域名广播 (landisk.local)
+                mdnsResponder.start(ip);
+
+                console.log(`[Node Server] 服务已在 http://${ip}:${currentPort} 成功启动 (绑定: ${bindHost})`);
+                resolve({
+                    ip,
+                    port: currentPort,
+                    token,
+                    fallbackFromPort: currentPort !== preferredPort ? preferredPort : null
+                });
+            });
+
+            server.listen(currentPort, bindHost);
+        }
+
+        tryListen();
     });
 }
 
@@ -194,6 +298,14 @@ function stopServer() {
         } else {
             resolve();
         }
+    });
+}
+
+if (require.main === module) {
+    startServer({}).then(({ ip, port }) => {
+        console.log(`[Node Server] Running on http://${ip}:${port}`);
+    }).catch(err => {
+        console.error('[Node Server] Failed to start:', err);
     });
 }
 

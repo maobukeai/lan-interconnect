@@ -25,29 +25,58 @@
             this.isDrawing = false;
             this.lastX = 0;
             this.lastY = 0;
+            this._sized = false;
 
             this._ensureCanvas();
+            this.resize();
             this._bindEvents();
+
+            // 窗口缩放时保持画布尺寸同步（去抖，保留笔迹）
+            if (typeof window !== 'undefined' && !Whiteboard._resizeHooked) {
+                Whiteboard._resizeHooked = true;
+                let timer = null;
+                window.addEventListener('resize', () => {
+                    clearTimeout(timer);
+                    timer = setTimeout(() => {
+                        if (instance) instance.resize();
+                    }, 300);
+                });
+            }
         }
 
         _ensureCanvas() {
             if (!this.canvas) {
                 this.canvas = document.querySelector('#whiteboard') || document.querySelector('#pc-whiteboard');
             }
-            if (this.canvas) {
+            if (this.canvas && !this.ctx) {
                 this.ctx = this.canvas.getContext('2d');
-                this.resize();
             }
         }
 
+        // 调整画布尺寸并保留已有笔迹（窗口缩放时不丢内容）
         resize() {
             this._ensureCanvas();
             if (!this.canvas || !this.ctx) return;
             const parent = this.canvas.parentElement;
-            if (parent) {
-                this.canvas.width = parent.clientWidth || 300;
-            }
+            const newWidth = parent ? (parent.clientWidth || 300) : (this.canvas.width || 300);
+            if (newWidth === this.canvas.width && this._sized) return;
+            this._sized = true;
+
+            // 先留档当前画面
+            let snapshot = null;
+            try {
+                snapshot = document.createElement('canvas');
+                snapshot.width = this.canvas.width;
+                snapshot.height = this.canvas.height;
+                snapshot.getContext('2d').drawImage(this.canvas, 0, 0);
+            } catch (e) { snapshot = null; }
+
+            this.canvas.width = newWidth;
+            this.canvas.height = Math.round(newWidth * 0.62);
             this.clear();
+            if (snapshot) {
+                this.ctx.drawImage(snapshot, 0, 0, this.canvas.width, this.canvas.height);
+            }
         }
 
         getPos(e) {
@@ -120,6 +149,15 @@
             this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         }
 
+        _authHeaders(extra) {
+            if (typeof global.LanDiskAuth !== 'undefined' && global.LanDiskAuth.authHeaders) {
+                return global.LanDiskAuth.authHeaders(extra);
+            }
+            const headers = extra ? Object.assign({}, extra) : {};
+            headers['x-pin'] = this.getPin();
+            return headers;
+        }
+
         async saveImage(customSavePath = '') {
             this._ensureCanvas();
             if (!this.canvas) {
@@ -128,14 +166,13 @@
             }
             const dataUrl = this.canvas.toDataURL('image/png');
             const filename = `draw_${Date.now()}.png`;
-            const pin = this.getPin();
             const getUrl = typeof this.getApiUrl === 'function' ? this.getApiUrl : (p => p);
             const saveUrl = getUrl('/api/upload/base64');
 
             try {
                 const res = await fetch(saveUrl, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'x-pin': pin },
+                    headers: this._authHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({
                         image: dataUrl,
                         filename: filename,
@@ -147,10 +184,12 @@
                 if (!res.ok || !data.success) {
                     throw new Error(data.error || '服务器保存失败');
                 }
-                alert('🎨 涂鸦图片已成功保存至共享目录！');
+                if (typeof global.LanDiskUI !== 'undefined' && global.LanDiskUI.toast) global.LanDiskUI.toast('涂鸦已保存到共享目录', 'success');
+                else alert('涂鸦图片已成功保存至共享目录！');
                 this.clear();
             } catch (err) {
-                alert('保存涂鸦失败: ' + err.message);
+                if (typeof global.LanDiskUI !== 'undefined' && global.LanDiskUI.toast) global.LanDiskUI.toast('保存涂鸦失败: ' + err.message, 'error');
+                else alert('保存涂鸦失败: ' + err.message);
             }
         }
     }
@@ -167,8 +206,11 @@
     }
 
     Whiteboard.init = function(canvasId) {
+        const isNew = !instance;
         const inst = getOrCreateInstance(canvasId);
-        inst.resize();
+        // 只在首次创建实例时调整尺寸：resize 会清空画布，重复调用会吞掉用户已画内容
+        if (isNew) inst.resize();
+        return inst;
     };
 
     Whiteboard.clear = function() {

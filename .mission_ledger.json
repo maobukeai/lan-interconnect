@@ -1,0 +1,25 @@
+﻿{
+  "mission_id": "95130a70-8c85-4215-bca4-61803873eb79",
+  "title": "影院级视听增强：全格式外挂字幕系统与跨端断点续播进度记忆",
+  "timestamp": "2026-08-28T00:15:50.000Z",
+  "classification": "L2",
+  "status": "COMPLETE",
+  "quality_gate": {
+    "decision": "PASS",
+    "arbitration": "已全面交付外挂字幕系统与跨端断点续播功能：1. 服务端 /api/media/subtitles 与 /api/subtitle 支持同名前缀多语言字幕探查与流式输出；2. 播放器内置 SRT/VTT/ASS 解析引擎与毛玻璃抗锯齿字幕渲染层，支持 4 档字号调节与 ±0.5s 时间轴微调，支持本地字幕导入；3. 服务端 /api/media/progress 与 LocalStorage 协同实现多端断点续播，开播弹出继续播放毛玻璃胶囊；4. 影音海报墙集成发光进度条与已看百分比角标；5. 自动化测试 7/7 绿灯通过，发布包热同步完毕。"
+  },
+  "evidence_summary": {
+    "console_errors": 0,
+    "network_errors": 0,
+    "tests_passed": "7/7 automated tests passed (Test 1-7 including subtitle probe and progress API)",
+    "features_delivered": [
+      "🎬 全格式外挂字幕自动探查与匹配 (SRT / WebVTT / ASS)",
+      "✨ 苹果毛玻璃字幕渲染层与 4 档字号调节 (14/18/22/26px)",
+      "⏱️ 字幕时间轴 ±0.5s 实时微调与本地字幕文件一键导入",
+      "🕒 跨设备断点续播实时同步与一键继续悬浮胶囊",
+      "📊 影音资料库海报墙发光已看进度条与百分比角标",
+      "📦 桌面免安装包热同步"
+    ],
+    "screenshots": []
+  }
+}

@@ -115,9 +115,9 @@
         }
 
         playMedia(type, path, name, currentFiles = []) {
-            const pin = typeof this.getPin === 'function' ? this.getPin() : '';
             const getUrl = typeof this.getApiUrl === 'function' ? this.getApiUrl : (p => p);
-            const streamUrl = getUrl(`/api/stream?path=${encodeURIComponent(path)}&pin=${encodeURIComponent(pin)}`);
+            const authQ = () => (global.LanDiskAuth && global.LanDiskAuth.authQuery) ? global.LanDiskAuth.authQuery().replace(/^\?/, '&') : `&pin=${encodeURIComponent(typeof this.getPin === 'function' ? this.getPin() : '')}`;
+            const streamUrl = getUrl(`/api/stream?path=${encodeURIComponent(path)}${authQ()}`);
 
             if (type === 'video' || type === 'audio') {
                 const playlist = (currentFiles || [])
@@ -126,12 +126,14 @@
                         name: f.name,
                         path: f.path,
                         type: /\.(mp3|wav|flac|aac|m4a)$/i.test(f.name) ? 'audio' : 'video',
-                        url: getUrl(`/api/stream?path=${encodeURIComponent(f.path)}&pin=${encodeURIComponent(pin)}`)
+                        url: getUrl(`/api/stream?path=${encodeURIComponent(f.path)}${authQ()}`)
                     }));
                 const currentItem = { name, path, type, url: streamUrl };
 
                 if (global.AppleMediaPlayer && typeof global.AppleMediaPlayer.play === 'function') {
                     global.AppleMediaPlayer.play(currentItem, playlist);
+                } else if (global.LanDiskUI && global.LanDiskUI.downloadUrl) {
+                    global.LanDiskUI.downloadUrl(streamUrl, name);
                 } else {
                     window.open(streamUrl, '_blank');
                 }
@@ -141,7 +143,7 @@
                     .map(f => ({
                         name: f.name,
                         path: f.path,
-                        url: getUrl(`/api/stream?path=${encodeURIComponent(f.path)}&pin=${encodeURIComponent(pin)}`)
+                        url: getUrl(`/api/stream?path=${encodeURIComponent(f.path)}${authQ()}`)
                     }));
                 
                 let targetIdx = imageFiles.findIndex(f => f.path === path);
@@ -203,18 +205,36 @@
             if (viewerEl) viewerEl.textContent = '加载中...';
             if (modalEl) modalEl.style.display = 'flex';
 
-            const pin = typeof this.getPin === 'function' ? this.getPin() : '';
             const getUrl = typeof this.getApiUrl === 'function' ? this.getApiUrl : (p => p);
-            const downloadUrl = getUrl(`/api/download?path=${encodeURIComponent(path)}&pin=${encodeURIComponent(pin)}`);
+            const authHeaders = (global.LanDiskAuth && global.LanDiskAuth.authHeaders) ? global.LanDiskAuth.authHeaders() : {};
+            const authQ = (global.LanDiskAuth && global.LanDiskAuth.authQuery) ? global.LanDiskAuth.authQuery().replace(/^\?/, '&') : '';
 
             try {
                 const fetchFn = this.apiFetch || window.fetch.bind(window);
-                const res = await fetchFn(downloadUrl);
-                if (!res.ok) throw new Error('无法读取文件内容');
-                const text = await res.text();
-                if (viewerEl) viewerEl.textContent = text;
+                // 优先走 /api/read-text：服务端有 10MB 上限与转义，比整文件下载更省流量
+                const textRes = await fetchFn(getUrl(`/api/read-text?path=${encodeURIComponent(path)}${authQ}`), { headers: authHeaders });
+                if (textRes.ok) {
+                    const data = await textRes.json();
+                    if (viewerEl) viewerEl.textContent = data.content || data.error || '';
+                    return;
+                }
+                if (textRes.status === 400 || textRes.status === 413) {
+                    const errData = await textRes.json().catch(() => ({}));
+                    if (viewerEl) viewerEl.textContent = `无法预览: ${errData.error || '文件过大'}`;
+                    return;
+                }
+                throw new Error('无法读取文件内容');
             } catch (err) {
-                if (viewerEl) viewerEl.textContent = `读取失败: ${err.message}`;
+                // 兜底：按原始文件下载后以文本展示
+                try {
+                    const fetchFn = this.apiFetch || window.fetch.bind(window);
+                    const res = await fetchFn(getUrl(`/api/download?path=${encodeURIComponent(path)}${authQ}`), { headers: authHeaders });
+                    if (!res.ok) throw new Error('无法读取文件内容');
+                    const text = await res.text();
+                    if (viewerEl) viewerEl.textContent = text;
+                } catch (err2) {
+                    if (viewerEl) viewerEl.textContent = `读取失败: ${err2.message}`;
+                }
             }
         }
 
@@ -228,8 +248,7 @@
     }
 
     global.MediaHubComponent = MediaHub;
-    if (typeof window !== 'undefined' && !window.MediaHubInstance) {
-        window.MediaHubInstance = new MediaHub();
-    }
+    // 不再自动创建全局实例：页面（如 index.html）会用带配置的构造函数创建
+    // window.MediaHubInstance，脚本级自动实例会给同一弹窗挂重复手势监听器。
 
 })(typeof window !== 'undefined' ? window : this);

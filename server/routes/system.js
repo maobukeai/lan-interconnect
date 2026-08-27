@@ -45,60 +45,61 @@ function getCpuUsageServer() {
 }
 
 // 获取系统动态性能指标 API
-router.get('/sys-info', (req, res) => {
-    let diskSpace = '未知';
+// 磁盘查询优先走 fs.statfsSync（微秒级系统调用）；
+// Node 版本过旧无 statfs 时才降级 PowerShell，且改为异步 + 5 秒缓存，避免阻塞事件循环。
+let diskSpaceCache = { value: '', at: 0 };
+let diskSpacePending = null;
+
+function queryDiskSpaceFast() {
     try {
-        if (process.platform === 'win32') {
-            let output = '';
-            try {
-                output = execSync('powershell -NoProfile -Command "Get-CimInstance Win32_LogicalDisk | Select-Object Caption, Size, FreeSpace"', { timeout: 3000 }).toString();
-            } catch (psErr) {
-                try { output = execSync('wmic logicaldisk get size,freespace,caption', { timeout: 3000 }).toString(); } catch (wmicErr) { output = ''; }
-            }
-
-            if (output) {
-                const lines = output.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-                if (lines.length > 1) {
-                    const cLine = lines.find(l => l.includes('C:'));
-                    if (cLine) {
-                        const parts = cLine.split(/\s+/);
-                        if (parts.length >= 3) {
-                            const headerLine = lines[0].toLowerCase();
-                            const num1 = parseInt(parts[1], 10);
-                            const num2 = parseInt(parts[2], 10);
-                            if (!isNaN(num1) && !isNaN(num2)) {
-                                let freeBytes = 0, totalBytes = 0;
-                                if (headerLine.includes('freespace') && headerLine.indexOf('freespace') < headerLine.indexOf('size')) {
-                                    freeBytes = num1; totalBytes = num2;
-                                } else {
-                                    totalBytes = num1; freeBytes = num2;
-                                }
-                                const free = (freeBytes / 1024 / 1024 / 1024).toFixed(1);
-                                const total = (totalBytes / 1024 / 1024 / 1024).toFixed(1);
-                                diskSpace = `${free} GB 可用 / 共 ${total} GB`;
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (diskSpace === '未知' && fs.statfsSync) {
-                try {
-                    const stats = fs.statfsSync('C:\\');
-                    const free = ((stats.bsize * stats.bfree) / 1024 / 1024 / 1024).toFixed(1);
-                    const total = ((stats.bsize * stats.blocks) / 1024 / 1024 / 1024).toFixed(1);
-                    diskSpace = `${free} GB 可用 / 共 ${total} GB`;
-                } catch (fsErr) {}
-            }
-        } else if (fs.statfsSync) {
-            try {
-                const stats = fs.statfsSync('/');
-                const free = ((stats.bsize * stats.bfree) / 1024 / 1024 / 1024).toFixed(1);
-                const total = ((stats.bsize * stats.blocks) / 1024 / 1024 / 1024).toFixed(1);
-                diskSpace = `${free} GB 可用 / 共 ${total} GB`;
-            } catch (fsErr) {}
+        if (fs.statfsSync) {
+            const st = fs.statfsSync(process.platform === 'win32' ? 'C:\\' : '/');
+            const free = (st.bsize * st.bfree / 1024 / 1024 / 1024).toFixed(1);
+            const total = (st.bsize * st.blocks / 1024 / 1024 / 1024).toFixed(1);
+            return `${free} GB 可用 / 共 ${total} GB`;
         }
     } catch (e) {}
+    return null;
+}
+
+function queryDiskSpaceAsync() {
+    return new Promise((resolve) => {
+        if (process.platform !== 'win32') return resolve('未知');
+        const { exec } = require('child_process');
+        exec('powershell -NoProfile -Command "Get-CimInstance Win32_LogicalDisk -Filter \'DeviceID=\'\'C:\'\'\' | Select-Object Size, FreeSpace"',
+            { timeout: 3000 }, (err, stdout) => {
+                try {
+                    const m = String(stdout || '').match(/(\d+)\s+(\d+)/);
+                    if (m) {
+                        const total = (parseInt(m[1], 10) / 1024 / 1024 / 1024).toFixed(1);
+                        const free = (parseInt(m[2], 10) / 1024 / 1024 / 1024).toFixed(1);
+                        return resolve(`${free} GB 可用 / 共 ${total} GB`);
+                    }
+                } catch (e) {}
+                resolve('未知');
+            });
+    });
+}
+
+async function getDiskSpace() {
+    const fast = queryDiskSpaceFast();
+    if (fast) {
+        diskSpaceCache = { value: fast, at: Date.now() };
+        return fast;
+    }
+    if (Date.now() - diskSpaceCache.at < 5000) return diskSpaceCache.value;
+    if (!diskSpacePending) {
+        diskSpacePending = queryDiskSpaceAsync().then(v => {
+            diskSpaceCache = { value: v, at: Date.now() };
+            diskSpacePending = null;
+            return v;
+        });
+    }
+    return diskSpacePending;
+}
+
+router.get('/sys-info', async (req, res) => {
+    const diskSpace = await getDiskSpace();
 
     res.json({
         cpu: (os.cpus() && os.cpus()[0]) ? os.cpus()[0].model : 'Central Processor',
@@ -111,6 +112,7 @@ router.get('/sys-info', (req, res) => {
     });
 });
 
+
 router.get('/sysinfo', (req, res) => {
     const totalMem = os.totalmem();
     const freeMem = os.freemem();
@@ -121,6 +123,7 @@ router.get('/sysinfo', (req, res) => {
         platform: os.platform(),
         arch: os.arch(),
         uptime: os.uptime(),
+        homeDir: os.homedir(),
         memory: {
             total: totalMem,
             free: freeMem,
@@ -132,80 +135,117 @@ router.get('/sysinfo', (req, res) => {
     });
 });
 
+router.get('/network-info', (req, res) => {
+    const interfaces = os.networkInterfaces();
+    const result = [];
+    for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name]) {
+            if (iface.family === 'IPv4' && !iface.internal) {
+                result.push({ name, ip: iface.address });
+            }
+        }
+    }
+    res.json(result);
+});
+
+// 进程列表缓存（2.5 秒 TTL + 并发去重）：双端每 3 秒轮询，避免狂开 PowerShell 子进程
+const PROCESS_CACHE_TTL = 2500;
+let processCache = { value: null, at: 0 };
+let processPending = null;
+
+function fetchProcessList() {
+    return new Promise((resolve) => {
+        if (process.platform === 'win32') {
+            const psCmd = 'powershell -NoProfile -Command "Get-Process -ErrorAction SilentlyContinue | Select-Object Id, ProcessName, Description, MainWindowTitle, WorkingSet64 | ConvertTo-Json -Compress"';
+            exec(psCmd, { maxBuffer: 1024 * 1024 * 10, timeout: 5000 }, (error, stdout) => {
+                if (!error && stdout && stdout.trim()) {
+                    try {
+                        const list = JSON.parse(stdout);
+                        const processes = (Array.isArray(list) ? list : [list])
+                            .filter(p => p && p.ProcessName && p.ProcessName.trim() && p.ProcessName.toLowerCase() !== 'idle' && p.ProcessName !== 'System Idle Process')
+                            .map(p => {
+                                const procName = p.ProcessName.trim();
+                                let zhName = processNameMap[procName];
+                                let displayName = zhName ? `${zhName} (${procName})` : procName;
+                                let desc = p.Description || '';
+                                if (p.MainWindowTitle && p.MainWindowTitle.trim()) {
+                                    desc = desc ? `${desc} | 窗口: ${p.MainWindowTitle}` : `窗口: ${p.MainWindowTitle}`;
+                                }
+                                return {
+                                    pid: p.Id,
+                                    name: displayName,
+                                    desc: desc || procName,
+                                    mem: p.WorkingSet64 || 0
+                                };
+                            })
+                            .filter(p => p.name && p.mem > 1024 * 512);
+                        return resolve(processes);
+                    } catch (e) {}
+                }
+
+                exec('tasklist /fo csv /nh', { maxBuffer: 1024 * 1024 * 5, timeout: 5000 }, (tErr, tStdout) => {
+                    if (tErr || !tStdout) return resolve([]);
+                    try {
+                        const lines = tStdout.split('\r\n').filter(l => l.trim());
+                        const processes = lines.map(line => {
+                            const cols = line.split('","').map(c => c.replace(/"/g, ''));
+                            if (cols.length >= 5) {
+                                const name = cols[0];
+                                const pid = parseInt(cols[1]);
+                                const memStr = cols[4].replace(/[^0-9]/g, '');
+                                const mem = (parseInt(memStr) || 0) * 1024;
+                                let zhName = processNameMap[name.replace(/\.exe$/i, '')];
+                                return {
+                                    pid: pid,
+                                    name: zhName ? `${zhName} (${name})` : name,
+                                    desc: name,
+                                    mem: mem
+                                };
+                            }
+                            return null;
+                        }).filter(Boolean);
+                        resolve(processes);
+                    } catch (e) {
+                        resolve([]);
+                    }
+                });
+            });
+        } else {
+            exec('ps -ax -o pid,rss,comm', (error, stdout) => {
+                if (error || !stdout) return resolve([]);
+                try {
+                    const lines = stdout.split('\n').slice(1);
+                    const processes = lines.filter(l => l.trim()).map(l => {
+                        const parts = l.trim().split(/\s+/);
+                        return { pid: parseInt(parts[0]), mem: (parseInt(parts[1]) || 0) * 1024, name: parts.slice(2).join(' '), desc: parts.slice(2).join(' ') };
+                    });
+                    resolve(processes);
+                } catch (e) {
+                    resolve([]);
+                }
+            });
+        }
+    });
+}
+
 // 进程管理 API
 router.get('/processes', (req, res) => {
     if (state.currentConfig.mode === 'shared') return res.json([]);
-    
-    if (process.platform === 'win32') {
-        const psCmd = 'powershell -NoProfile -Command "Get-Process -ErrorAction SilentlyContinue | Select-Object Id, ProcessName, Description, MainWindowTitle, WorkingSet64 | ConvertTo-Json -Compress"';
-        exec(psCmd, { maxBuffer: 1024 * 1024 * 10, timeout: 5000 }, (error, stdout) => {
-            if (!error && stdout && stdout.trim()) {
-                try {
-                    const list = JSON.parse(stdout);
-                    const processes = (Array.isArray(list) ? list : [list])
-                        .filter(p => p && p.ProcessName && p.ProcessName.trim() && p.ProcessName.toLowerCase() !== 'idle' && p.ProcessName !== 'System Idle Process')
-                        .map(p => {
-                            const procName = p.ProcessName.trim();
-                            let zhName = processNameMap[procName];
-                            let displayName = zhName ? `${zhName} (${procName})` : procName;
-                            let desc = p.Description || '';
-                            if (p.MainWindowTitle && p.MainWindowTitle.trim()) {
-                                desc = desc ? `${desc} | 窗口: ${p.MainWindowTitle}` : `窗口: ${p.MainWindowTitle}`;
-                            }
-                            return {
-                                pid: p.Id,
-                                name: displayName,
-                                desc: desc || procName,
-                                mem: p.WorkingSet64 || 0
-                            };
-                        })
-                        .filter(p => p.name && p.mem > 1024 * 512);
-                    return res.json(processes);
-                } catch (e) {}
-            }
 
-            exec('tasklist /fo csv /nh', { maxBuffer: 1024 * 1024 * 5, timeout: 5000 }, (tErr, tStdout) => {
-                if (tErr || !tStdout) return res.json([]);
-                try {
-                    const lines = tStdout.split('\r\n').filter(l => l.trim());
-                    const processes = lines.map(line => {
-                        const cols = line.split('","').map(c => c.replace(/"/g, ''));
-                        if (cols.length >= 5) {
-                            const name = cols[0];
-                            const pid = parseInt(cols[1]);
-                            const memStr = cols[4].replace(/[^0-9]/g, '');
-                            const mem = (parseInt(memStr) || 0) * 1024;
-                            let zhName = processNameMap[name.replace(/\.exe$/i, '')];
-                            return {
-                                pid: pid,
-                                name: zhName ? `${zhName} (${name})` : name,
-                                desc: name,
-                                mem: mem
-                            };
-                        }
-                        return null;
-                    }).filter(Boolean);
-                    res.json(processes);
-                } catch (e) {
-                    res.json([]);
-                }
-            });
-        });
-    } else {
-        exec('ps -ax -o pid,rss,comm', (error, stdout) => {
-            if (error || !stdout) return res.json([]);
-            try {
-                const lines = stdout.split('\n').slice(1);
-                const processes = lines.filter(l => l.trim()).map(l => {
-                    const parts = l.trim().split(/\s+/);
-                    return { pid: parseInt(parts[0]), mem: (parseInt(parts[1]) || 0) * 1024, name: parts.slice(2).join(' '), desc: parts.slice(2).join(' ') };
-                });
-                res.json(processes);
-            } catch (e) {
-                res.json([]);
-            }
+    if (processCache.value && Date.now() - processCache.at < PROCESS_CACHE_TTL) {
+        return res.json(processCache.value);
+    }
+    if (!processPending) {
+        processPending = fetchProcessList().then(list => {
+            processCache = { value: list, at: Date.now() };
+            processPending = null;
+            return list;
+        }).catch(() => {
+            processPending = null;
+            return [];
         });
     }
+    processPending.then(list => res.json(list)).catch(() => res.json([]));
 });
 
 router.post('/kill-process', (req, res) => {
@@ -215,6 +255,10 @@ router.post('/kill-process', (req, res) => {
     const safePid = parseInt(pid, 10);
     if (isNaN(safePid) || safePid <= 0 || String(safePid) !== String(pid)) {
         return res.status(400).json({ error: 'Invalid PID format' });
+    }
+    // 保护本服务进程与父进程（Electron 主进程），避免远程误杀导致服务崩溃
+    if (safePid === process.pid || safePid === process.ppid) {
+        return res.status(403).json({ error: '无法结束本服务自身的进程' });
     }
     try {
         process.kill(safePid, 'SIGKILL');

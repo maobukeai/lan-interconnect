@@ -1,14 +1,15 @@
 {
   "name": "lan-disk",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "猫步互联 - 局域网文件共享与跨设备通信工具",
   "author": "Developer",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "server": "node server.js",
     "build": "electron-builder --win --x64",
     "rebuild": "electron-rebuild -f -w",
-    "clean": "rimraf dist"
+    "clean": "rimraf dist release"
   },
   "build": {
     "appId": "com.landisk.app",
@@ -22,10 +23,16 @@
       "node_modules/archiver/**/*",
       "node_modules/archiver-utils/**/*",
       "node_modules/zip-stream/**/*",
-      "public/**/*"
+      "public/**/*",
+      "shared/**/*",
+      "server/services/**/*"
     ],
     "files": [
       "**/*",
+      "!node_modules/7zip-bin/win/ia32/**",
+      "!node_modules/7zip-bin/win/arm64/**",
+      "!node_modules/7zip-bin/mac/**",
+      "!node_modules/7zip-bin/linux/**",
       "!dist/**",
       "!release/**",
       "!.git/**",
@@ -39,7 +46,7 @@
           "arch": ["x64"]
         }
       ],
-      "icon": "icon.png",
+      "icon": "icon.ico",
       "requestedExecutionLevel": "asInvoker"
     }
   },

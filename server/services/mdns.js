@@ -23,8 +23,8 @@ class MdnsResponder {
             this.socket.on('message', (msg, rinfo) => {
                 try {
                     const msgStr = msg.toString('utf8');
-                    if (msgStr.includes('landisk') || msgStr.includes('local')) {
-                        this.respond(rinfo);
+                    if (msgStr.includes('landisk')) {
+                        this.respond(msg, rinfo);
                     }
                 } catch(e) {}
             });
@@ -46,15 +46,19 @@ class MdnsResponder {
         }
     }
 
-    respond(rinfo) {
+    respond(queryMsg, rinfo) {
         if (!this.socket) return;
         try {
             // 构造简易 DNS A 记录响应包
             const ipParts = this.ip.split('.').map(n => parseInt(n, 10));
             if (ipParts.length !== 4) return;
 
+            // 回显查询包的 Transaction ID，否则标准 mDNS 客户端会直接丢弃响应
+            const txIdHi = queryMsg && queryMsg.length >= 2 ? queryMsg[0] : 0x00;
+            const txIdLo = queryMsg && queryMsg.length >= 2 ? queryMsg[1] : 0x00;
+
             const response = Buffer.from([
-                0x00, 0x00, // ID
+                txIdHi, txIdLo, // ID: 与查询包一致
                 0x84, 0x00, // Flags: Response, Authoritative
                 0x00, 0x00, // Questions
                 0x00, 0x01, // Answer RRs

@@ -1,922 +1,1501 @@
 /**
- * Apple Minimalist Media Player (Apple Design System)
- * 局域网互联 Pro - 苹果极简全功能媒体播放器引擎
+ * Apple Cinema & Vision Pro Media Player Engine (影院级苹果全屏播放引擎)
+ * 猫步互联 Pro · 极简通透水晶质感 · 全套全屏控制 · 4K截帧 · 半透抽屉 · 手势HUD
  */
 
-class AppleMediaPlayerEngine {
+class AppleCinemaPlayerEngine {
     constructor() {
         this.initialized = false;
         this.playlist = [];
         this.currentIndex = -1;
         this.currentMedia = null;
         this.isPlaying = false;
-        this.loopMode = 'off'; // 'off' | 'one' | 'all' | 'shuffle'
-        this.showRemainingTime = false;
-        this.hideControlsTimer = null;
+        this.loopMode = 'all';
+        this.isLocked = false;
+        this.previousView = 'files';
+
+        // 画面与滤镜
+        this.rotateAngle = 0;
+        this.objectFitMode = 'contain';
+        this.currentFilter = 'none';
+        this.brightness = 100;
+        this.historyStorageKey = 'landisk_player_history';
+        this._lastHistorySave = 0;
+        this._controlsTimer = null;
+        this._resumeToastTimer = null;
+
+        // 外挂字幕状态
+        this.subtitlesEnabled = true;
+        this.subtitles = [];
+        this.currentSubtitleTrack = null;
+        this.subtitleCues = [];
+        this.subtitleOffset = 0;
+        this.subtitleSize = 'md';
+
+        // 手势状态
+        this.touchStartX = 0;
+        this.touchStartY = 0;
+        this.isSwiping = false;
+        this.swipeDirection = null;
+        this.startVolume = 1;
+        this.startBrightness = 100;
+        this.startSeekTime = 0;
+        this.touchTargetSeek = null;
+        this.pressSpeedTimer = null;
+        this.isPressSpeeding = false;
+        this.prePressRate = 1.0;
         this.lastTapTime = 0;
+        this.controlsVisible = true;
+
+        // 音频可视化
         this.audioCtx = null;
         this.audioAnalyser = null;
         this.audioSource = null;
         this.animFrameId = null;
 
-        // 视频画面增强属性
-        this.rotateAngle = 0; // 0, 90, 180, 270
-        this.isFlipped = false; // 水平镜像
-        this.objectFitMode = 'contain'; // 'contain' | 'cover' | 'fill'
-        this.brightness = 100; // 50% - 150%
-        this.contrast = 100; // 50% - 150%
-        this.isPressSpeeding = false;
-        this.prePressRate = 1.0;
-        this.pressSpeedTimer = null;
-
-        // DOM 节点引用
         this.dom = {};
     }
 
     init() {
         if (this.initialized) return;
-        this.createDOMStructure();
+
+        this.dom = {
+            view: document.getElementById('view-player'),
+            btnBack: document.getElementById('btn-player-back'),
+            btnTopBack: document.getElementById('ap-btn-top-back'),
+            btnSnapshot: document.getElementById('ap-btn-snapshot'),
+            btnPip: document.getElementById('ap-btn-pip'),
+            btnTopEpisodes: document.getElementById('ap-btn-top-episodes'),
+            btnTopSettings: document.getElementById('ap-btn-top-settings'),
+            navTitle: document.getElementById('player-nav-title'),
+            stageBox: document.getElementById('player-stage-box'),
+            media: document.getElementById('apple-media-element'),
+            subtitleLayer: document.getElementById('ap-subtitle-layer'),
+            subtitleText: document.getElementById('ap-subtitle-text'),
+            audioLayer: document.getElementById('ap-audio-layer'),
+            audioVinyl: document.getElementById('ap-audio-vinyl'),
+            audioCanvas: document.getElementById('ap-audio-canvas'),
+            controlsOverlay: document.getElementById('player-controls-overlay'),
+            videoTitle: document.getElementById('ap-video-title'),
+            videoBadge: document.getElementById('ap-video-badge'),
+            centerBadge: document.getElementById('ap-center-badge'),
+            lockBtn: document.getElementById('ap-lock-btn'),
+            iconUnlock: document.getElementById('ap-icon-unlock'),
+            iconLock: document.getElementById('ap-icon-lock'),
+            speedBadge: document.getElementById('ap-speed-badge'),
+            gestureToast: document.getElementById('ap-gesture-toast'),
+            resumeToast: document.getElementById('ap-resume-toast'),
+            resumeText: document.getElementById('ap-resume-text'),
+            btnResumeAction: document.getElementById('ap-btn-resume-action'),
+            btnResumeDismiss: document.getElementById('ap-btn-resume-dismiss'),
+            hudBrightness: document.getElementById('ap-hud-brightness'),
+            hudBrightnessFill: document.getElementById('ap-hud-brightness-fill'),
+            hudBrightnessVal: document.getElementById('ap-hud-brightness-val'),
+            hudVolume: document.getElementById('ap-hud-volume'),
+            hudVolumeFill: document.getElementById('ap-hud-volume-fill'),
+            hudVolumeVal: document.getElementById('ap-hud-volume-val'),
+            progressWrap: document.getElementById('ap-progress-wrap'),
+            progressBuffer: document.getElementById('ap-progress-buffer'),
+            progressFill: document.getElementById('ap-progress-fill'),
+            progressThumb: document.getElementById('ap-progress-thumb'),
+            btnPrev: document.getElementById('ap-btn-prev'),
+            btnPlay: document.getElementById('ap-btn-play'),
+            iconPlay: document.getElementById('ap-icon-play'),
+            iconPause: document.getElementById('ap-icon-pause'),
+            btnNext: document.getElementById('ap-btn-next'),
+            timeText: document.getElementById('ap-time-text'),
+            btnSpeed: document.getElementById('ap-btn-speed'),
+            btnFitToggle: document.getElementById('ap-btn-fit-toggle'),
+            btnFilterToggle: document.getElementById('ap-btn-filter-toggle'),
+            btnFullscreen: document.getElementById('ap-btn-fullscreen'),
+            fsBtnLabel: document.getElementById('ap-fs-btn-label'),
+            // 全屏半透抽屉
+            drawerEpisodes: document.getElementById('ap-fs-drawer-episodes'),
+            drawerEpisodesRanges: document.getElementById('ap-fs-ep-ranges'),
+            drawerEpisodesList: document.getElementById('ap-fs-drawer-episodes-list'),
+            drawerEpisodesCount: document.getElementById('ap-fs-episodes-count'),
+            drawerEpisodesClose: document.getElementById('ap-fs-drawer-episodes-close'),
+            drawerSettings: document.getElementById('ap-fs-drawer-settings'),
+            drawerSettingsClose: document.getElementById('ap-fs-drawer-settings-close'),
+            fsSpeedGrid: document.getElementById('ap-fs-speed-grid'),
+            fsFilterGrid: document.getElementById('ap-fs-filter-grid'),
+            fsFitGrid: document.getElementById('ap-fs-fit-grid'),
+            fsLoopGrid: document.getElementById('ap-fs-loop-grid'),
+            fsBtnRotate: document.getElementById('ap-fs-btn-rotate'),
+            fsSubStatus: document.getElementById('ap-fs-sub-status'),
+            fsSubTracksGrid: document.getElementById('ap-fs-sub-tracks-grid'),
+            fsSubSizeGrid: document.getElementById('ap-fs-sub-size-grid'),
+            fsSubDelayGrid: document.getElementById('ap-fs-sub-delay-grid'),
+            fsInputCustomSub: document.getElementById('ap-fs-input-custom-sub'),
+            // 下部大面板
+            cardTitle: document.getElementById('player-card-title'),
+            cardSub: document.getElementById('player-card-sub'),
+            episodesRanges: document.getElementById('player-ep-ranges-container'),
+            episodesScroll: document.getElementById('player-episodes-scroll'),
+            episodesCount: document.getElementById('player-episodes-count'),
+            speedGrid: document.getElementById('player-speed-grid'),
+            filterGrid: document.getElementById('player-filter-grid'),
+            fitGrid: document.getElementById('player-fit-grid'),
+            btnRotate: document.getElementById('btn-player-rotate'),
+            subStatus: document.getElementById('player-sub-status'),
+            subTracksGrid: document.getElementById('player-sub-tracks-grid'),
+            subSizeGrid: document.getElementById('player-sub-size-grid'),
+            subDelayGrid: document.getElementById('player-sub-delay-grid'),
+            inputCustomSub: document.getElementById('player-input-custom-sub')
+        };
+
         this.bindEvents();
         this.initialized = true;
     }
 
-    createDOMStructure() {
-        const overlay = document.createElement('div');
-        overlay.className = 'apple-player-overlay';
-        overlay.id = 'apple-player-overlay';
-
-        overlay.innerHTML = `
-            <div class="apple-player-container" id="apple-player-container">
-                <!-- 顶部栏 -->
-                <div class="apple-player-header" id="apple-player-header">
-                    <div class="apple-player-title-box">
-                        <div class="apple-player-title" id="apple-media-title">媒体名称</div>
-                        <div class="apple-player-subtitle" id="apple-media-subtitle">局域网流媒体</div>
-                    </div>
-                    <div class="apple-player-header-actions">
-                        <!-- 画面与增强设置 -->
-                        <div class="apple-popover-container" id="apple-video-settings-popover">
-                            <button class="apple-player-btn" id="apple-btn-video-settings" title="画面比例与色彩设置">⚙️</button>
-                            <div class="apple-popover-menu" style="min-width: 170px; padding: 8px;">
-                                <div style="font-size:11px; color:rgba(255,255,255,0.5); margin-bottom:4px; font-weight:600;">画面填充模式</div>
-                                <div class="apple-popover-item active" data-fit="contain">📐 原始比例</div>
-                                <div class="apple-popover-item" data-fit="cover">📺 铺满裁剪</div>
-                                <div class="apple-popover-item" data-fit="fill">↔️ 强制拉伸</div>
-                                <div style="height:1px; background:rgba(255,255,255,0.1); margin:6px 0;"></div>
-                                <div style="font-size:11px; color:rgba(255,255,255,0.5); margin-bottom:4px; font-weight:600;">画面控制</div>
-                                <div class="apple-popover-item" id="apple-opt-rotate">🔄 旋转 90°</div>
-                                <div class="apple-popover-item" id="apple-opt-flip">🪞 水平镜像</div>
-                            </div>
-                        </div>
-                        <button class="apple-player-btn" id="apple-btn-playlist" title="播放列表">
-                            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"></path></svg>
-                        </button>
-                        <button class="apple-player-btn" id="apple-btn-pip" title="画中画 (P)">
-                            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
-                        </button>
-                        <button class="apple-player-btn" id="apple-btn-fullscreen" title="全屏 (F)">
-                            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
-                        </button>
-                        <button class="apple-player-btn" id="apple-btn-close" title="关闭 (Esc)">
-                            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                        </button>
-                    </div>
-                </div>
-
-                <!-- 视听舞台区域 -->
-                <div class="apple-player-stage" id="apple-player-stage">
-                    <video id="apple-media-element" crossorigin="anonymous" playsinline style="transition: transform 0.3s ease, object-fit 0.3s ease;"></video>
-
-                    <!-- 动态提示 Toast -->
-                    <div id="apple-press-speed-toast" style="position:absolute; top:80px; left:50%; transform:translateX(-50%); background:rgba(0,122,255,0.85); backdrop-filter:blur(10px); padding:6px 16px; border-radius:20px; font-size:12px; font-weight:700; color:white; display:none; align-items:center; gap:6px; box-shadow:0 4px 16px rgba(0,0,0,0.3); z-index:40;">
-                        ⚡ 2.0X 极速快进中...
-                    </div>
-                    <div id="apple-resume-toast" style="position:absolute; bottom:80px; left:50%; transform:translateX(-50%); background:rgba(52,199,89,0.9); backdrop-filter:blur(10px); padding:6px 16px; border-radius:20px; font-size:12px; font-weight:600; color:white; display:none; align-items:center; gap:6px; box-shadow:0 4px 16px rgba(0,0,0,0.3); z-index:40;">
-                        ⏱️ 已为您自动恢复至上次播放进度
-                    </div>
-
-                    <!-- 音频专属动态视图 -->
-                    <div class="apple-audio-stage" id="apple-audio-stage" style="display: none;">
-                        <div class="apple-audio-cover-wrapper">
-                            <div class="apple-audio-vinyl" id="apple-audio-vinyl">
-                                <div class="apple-audio-center-disc">🎵</div>
-                            </div>
-                        </div>
-                        <canvas class="apple-audio-canvas" id="apple-audio-canvas"></canvas>
-                    </div>
-
-                    <!-- 中心大图标微动画 -->
-                    <div class="apple-center-badge" id="apple-center-badge">▶</div>
-
-                    <!-- 触摸双击快进快退反馈 -->
-                    <div class="apple-gesture-ripple left" id="apple-ripple-left">⏮ -10s</div>
-                    <div class="apple-gesture-ripple right" id="apple-ripple-right">⏭ +10s</div>
-                </div>
-
-                <!-- 底部悬浮胶囊控制面板 -->
-                <div class="apple-player-controls-wrapper" id="apple-controls-wrapper">
-                    <!-- 进度条 -->
-                    <div class="apple-progress-container" id="apple-progress-container">
-                        <div class="apple-progress-track">
-                            <div class="apple-progress-buffer" id="apple-progress-buffer"></div>
-                            <div class="apple-progress-fill" id="apple-progress-fill"></div>
-                        </div>
-                        <div class="apple-progress-thumb" id="apple-progress-thumb"></div>
-                        <div class="apple-progress-tooltip" id="apple-progress-tooltip">00:00</div>
-                    </div>
-
-                    <!-- 控制胶囊条 -->
-                    <div class="apple-controls-pill">
-                        <!-- 左侧：播放与跳跃 -->
-                        <div class="apple-controls-group">
-                            <button class="apple-player-btn" id="apple-btn-prev" title="上一曲">
-                                <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
-                            </button>
-                            <button class="apple-player-btn" id="apple-btn-rewind" title="后退 10 秒">
-                                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.334 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8L4.066 11.2z"/></svg>
-                            </button>
-                            <button class="apple-player-btn apple-btn-play" id="apple-btn-play" title="播放/暂停 (Space)">
-                                <svg id="apple-icon-play" width="22" height="22" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                                <svg id="apple-icon-pause" width="22" height="22" fill="currentColor" viewBox="0 0 24 24" style="display:none;"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
-                            </button>
-                            <button class="apple-player-btn" id="apple-btn-forward" title="快进 10 秒">
-                                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.934 12.8a1 1 0 000-1.6L6.6 7.2A1 1 0 005 8v8a1 1 0 001.6.8l5.334-4zM19.934 12.8a1 1 0 000-1.6l-5.334-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.334-4z"/></svg>
-                            </button>
-                            <button class="apple-player-btn" id="apple-btn-next" title="下一曲">
-                                <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
-                            </button>
-                            <button class="apple-player-btn" id="apple-btn-loop" title="循环模式">
-                                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                            </button>
-                        </div>
-
-                        <!-- 中间：时间显示 -->
-                        <div class="apple-time-display" id="apple-time-display">00:00 / 00:00</div>
-
-                        <!-- 右侧：音量与倍速 -->
-                        <div class="apple-controls-group">
-                            <!-- 音量调节 -->
-                            <div class="apple-volume-wrapper">
-                                <button class="apple-player-btn" id="apple-btn-mute" title="静音 (M)">
-                                    <svg id="apple-icon-vol" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path></svg>
-                                </button>
-                                <div class="apple-volume-slider-box">
-                                    <input type="range" class="apple-volume-slider" id="apple-volume-slider" min="0" max="1" step="0.05" value="1">
-                                </div>
-                            </div>
-
-                            <!-- 倍速菜单 -->
-                            <div class="apple-popover-container" id="apple-speed-popover">
-                                <button class="apple-player-btn" id="apple-btn-speed" style="width: auto; padding: 0 8px; font-size: 12px; font-weight: 600;">1.0x</button>
-                                <div class="apple-popover-menu">
-                                    <div class="apple-popover-item" data-speed="0.5">0.5x</div>
-                                    <div class="apple-popover-item" data-speed="0.75">0.75x</div>
-                                    <div class="apple-popover-item active" data-speed="1.0">1.0x 正常</div>
-                                    <div class="apple-popover-item" data-speed="1.25">1.25x</div>
-                                    <div class="apple-popover-item" data-speed="1.5">1.5x</div>
-                                    <div class="apple-popover-item" data-speed="2.0">2.0x</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 侧边播放列表抽屉 -->
-                <div class="apple-playlist-drawer" id="apple-playlist-drawer">
-                    <div class="apple-playlist-header">
-                        <div class="apple-playlist-title">
-                            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"></path></svg>
-                            播放列表 (<span id="apple-playlist-count">0</span>)
-                        </div>
-                        <button class="apple-player-btn" id="apple-btn-close-playlist">
-                            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                        </button>
-                    </div>
-                    <div class="apple-playlist-body" id="apple-playlist-body"></div>
-                </div>
-            </div>
-        `;
-
-        document.body.appendChild(overlay);
-
-        // 缓存 DOM 节点
-        this.dom = {
-            overlay: document.getElementById('apple-player-overlay'),
-            container: document.getElementById('apple-player-container'),
-            header: document.getElementById('apple-player-header'),
-            stage: document.getElementById('apple-player-stage'),
-            media: document.getElementById('apple-media-element'),
-            audioStage: document.getElementById('apple-audio-stage'),
-            audioVinyl: document.getElementById('apple-audio-vinyl'),
-            audioCanvas: document.getElementById('apple-audio-canvas'),
-            centerBadge: document.getElementById('apple-center-badge'),
-            rippleLeft: document.getElementById('apple-ripple-left'),
-            rippleRight: document.getElementById('apple-ripple-right'),
-            controlsWrapper: document.getElementById('apple-controls-wrapper'),
-            progressContainer: document.getElementById('apple-progress-container'),
-            progressBuffer: document.getElementById('apple-progress-buffer'),
-            progressFill: document.getElementById('apple-progress-fill'),
-            progressThumb: document.getElementById('apple-progress-thumb'),
-            progressTooltip: document.getElementById('apple-progress-tooltip'),
-            title: document.getElementById('apple-media-title'),
-            subtitle: document.getElementById('apple-media-subtitle'),
-            btnPlay: document.getElementById('apple-btn-play'),
-            iconPlay: document.getElementById('apple-icon-play'),
-            iconPause: document.getElementById('apple-icon-pause'),
-            btnPrev: document.getElementById('apple-btn-prev'),
-            btnNext: document.getElementById('apple-btn-next'),
-            btnRewind: document.getElementById('apple-btn-rewind'),
-            btnForward: document.getElementById('apple-btn-forward'),
-            btnLoop: document.getElementById('apple-btn-loop'),
-            timeDisplay: document.getElementById('apple-time-display'),
-            btnMute: document.getElementById('apple-btn-mute'),
-            iconVol: document.getElementById('apple-icon-vol'),
-            volumeSlider: document.getElementById('apple-volume-slider'),
-            speedPopover: document.getElementById('apple-speed-popover'),
-            btnSpeed: document.getElementById('apple-btn-speed'),
-            videoSettingsPopover: document.getElementById('apple-video-settings-popover'),
-            btnVideoSettings: document.getElementById('apple-btn-video-settings'),
-            optRotate: document.getElementById('apple-opt-rotate'),
-            optFlip: document.getElementById('apple-opt-flip'),
-            pressSpeedToast: document.getElementById('apple-press-speed-toast'),
-            btnPlaylist: document.getElementById('apple-btn-playlist'),
-            btnClosePlaylist: document.getElementById('apple-btn-close-playlist'),
-            playlistDrawer: document.getElementById('apple-playlist-drawer'),
-            playlistBody: document.getElementById('apple-playlist-body'),
-            playlistCount: document.getElementById('apple-playlist-count'),
-            btnPip: document.getElementById('apple-btn-pip'),
-            btnFullscreen: document.getElementById('apple-btn-fullscreen'),
-            btnClose: document.getElementById('apple-btn-close')
-        };
-    }
-
-    applyVideoTransforms() {
-        const { media } = this.dom;
-        if (!media) return;
-        const scaleX = this.isFlipped ? -1 : 1;
-        media.style.transform = `rotate(${this.rotateAngle}deg) scaleX(${scaleX})`;
-        media.style.objectFit = this.objectFitMode;
-    }
-
-    savePlaybackProgress() {
-        if (!this.currentMedia || !this.dom.media || !this.dom.media.duration) return;
-        const currentTime = this.dom.media.currentTime;
-        if (currentTime > 5 && (this.dom.media.duration - currentTime) > 10) {
-            try {
-                localStorage.setItem('apple_player_pos_' + this.currentMedia.path, currentTime.toString());
-            } catch(e) {}
-        }
-    }
-
-    checkPlaybackResume(mediaItem) {
-        try {
-            const saved = localStorage.getItem('apple_player_pos_' + mediaItem.path);
-            if (saved) {
-                const pos = parseFloat(saved);
-                if (pos > 5) {
-                    this.dom.media.currentTime = pos;
-                    const toast = this.dom.resumeToast;
-                    if (toast) {
-                        toast.style.display = 'flex';
-                        setTimeout(() => { toast.style.display = 'none'; }, 3000);
-                    }
-                }
-            }
-        } catch(e) {}
-    }
-
     bindEvents() {
-        const { media, btnPlay, stage, btnPrev, btnNext, btnRewind, btnForward, btnLoop, timeDisplay, btnMute, volumeSlider, btnSpeed, speedPopover, btnPlaylist, btnPip, btnFullscreen, btnClose, btnClosePlaylist, progressContainer, btnVideoSettings, videoSettingsPopover, optRotate, optFlip, pressSpeedToast } = this.dom;
+        const { media, stageBox, btnBack, btnTopBack, btnSnapshot, btnPip, btnTopEpisodes, btnTopSettings, btnPrev, btnPlay, btnNext, btnSpeed, btnFitToggle, btnFilterToggle, btnFullscreen, lockBtn, btnResumeAction, btnResumeDismiss, drawerEpisodesClose, drawerSettingsClose, fsSpeedGrid, fsFilterGrid, fsFitGrid, fsLoopGrid, fsBtnRotate, speedGrid, filterGrid, fitGrid, btnRotate } = this.dom;
 
-        // 画面高级设置 Popover 逻辑
-        if (btnVideoSettings && videoSettingsPopover) {
-            btnVideoSettings.addEventListener('click', (e) => {
-                e.stopPropagation();
-                videoSettingsPopover.classList.toggle('open');
-            });
-
-            videoSettingsPopover.querySelectorAll('.apple-popover-item[data-fit]').forEach(item => {
-                item.addEventListener('click', (e) => {
-                    this.objectFitMode = e.target.getAttribute('data-fit');
-                    this.applyVideoTransforms();
-                    videoSettingsPopover.querySelectorAll('.apple-popover-item[data-fit]').forEach(i => i.classList.remove('active'));
-                    e.target.classList.add('active');
-                    videoSettingsPopover.classList.remove('open');
-                });
-            });
-
-            if (optRotate) {
-                optRotate.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    this.rotateAngle = (this.rotateAngle + 90) % 360;
-                    this.applyVideoTransforms();
-                    this.triggerCenterBadge(`🔄 旋转 ${this.rotateAngle}°`);
-                });
-            }
-
-            if (optFlip) {
-                optFlip.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    this.isFlipped = !this.isFlipped;
-                    this.applyVideoTransforms();
-                    this.triggerCenterBadge(this.isFlipped ? '🪞 已镜像' : '↔️ 恢复正常');
-                });
-            }
-
-            document.addEventListener('click', (e) => {
-                if (!videoSettingsPopover.contains(e.target)) {
-                    videoSettingsPopover.classList.remove('open');
-                }
-            });
-        }
-
-        // 滚轮调节音量
-        stage.addEventListener('wheel', (e) => {
-            e.preventDefault();
-            const delta = e.deltaY < 0 ? 0.05 : -0.05;
-            media.volume = Math.max(0, Math.min(1, media.volume + delta));
-            media.muted = (media.volume === 0);
-            this.updateVolumeIcon();
-            this.triggerCenterBadge(`🔊 ${Math.round(media.volume * 100)}%`);
-        }, { passive: false });
-
-        // 长按 2.0X 极速快进手势
-        const startPressSpeed = () => {
-            this.pressSpeedTimer = setTimeout(() => {
-                if (!media.paused) {
-                    this.isPressSpeeding = true;
-                    this.prePressRate = media.playbackRate;
-                    media.playbackRate = 2.0;
-                    if (pressSpeedToast) pressSpeedToast.style.display = 'flex';
-                }
-            }, 350);
-        };
-
-        const stopPressSpeed = () => {
-            clearTimeout(this.pressSpeedTimer);
-            if (this.isPressSpeeding) {
-                this.isPressSpeeding = false;
-                media.playbackRate = this.prePressRate;
-                if (pressSpeedToast) pressSpeedToast.style.display = 'none';
-            }
-        };
-
-        stage.addEventListener('mousedown', (e) => {
-            if (e.target.closest('.apple-player-btn') || e.target.closest('.apple-popover-container')) return;
-            startPressSpeed();
-        });
-        stage.addEventListener('mouseup', stopPressSpeed);
-        stage.addEventListener('mouseleave', stopPressSpeed);
-        stage.addEventListener('touchstart', startPressSpeed, { passive: true });
-        stage.addEventListener('touchend', stopPressSpeed);
-
-        // 播放 / 暂停控制
-        btnPlay.addEventListener('click', () => this.togglePlay());
-        
-        // 媒体自带事件监听
+        media.addEventListener('timeupdate', () => this.onTimeUpdate());
+        media.addEventListener('progress', () => this.onProgress());
         media.addEventListener('play', () => this.onPlayStateChange(true));
         media.addEventListener('pause', () => this.onPlayStateChange(false));
-        media.addEventListener('timeupdate', () => this.onTimeUpdate());
-        media.addEventListener('progress', () => this.onBufferUpdate());
-        media.addEventListener('ended', () => this.onMediaEnded());
+        media.addEventListener('ended', () => this.onEnded());
+        media.addEventListener('loadedmetadata', () => this.onLoadedMetadata());
 
-        // 双击与点击舞台
-        stage.addEventListener('click', (e) => this.handleStageClick(e));
-
-        // 跳跃控制
-        btnRewind.addEventListener('click', () => this.seekBy(-10));
-        btnForward.addEventListener('click', () => this.seekBy(10));
-        btnPrev.addEventListener('click', () => this.playPrev());
-        btnNext.addEventListener('click', () => this.playNext());
-
-        // 循环模式
-        btnLoop.addEventListener('click', () => this.toggleLoopMode());
-
-        // 时间格式切换
-        timeDisplay.addEventListener('click', () => {
-            this.showRemainingTime = !this.showRemainingTime;
-            this.onTimeUpdate();
+        btnPlay?.addEventListener('click', (e) => { e.stopPropagation(); this.togglePlay(); });
+        btnPrev?.addEventListener('click', (e) => { e.stopPropagation(); this.prev(); });
+        btnNext?.addEventListener('click', (e) => { e.stopPropagation(); this.next(); });
+        btnBack?.addEventListener('click', () => this.close());
+        btnTopBack?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (document.fullscreenElement || document.webkitFullscreenElement) {
+                this.toggleFullscreen();
+            } else {
+                this.close();
+            }
         });
 
-        // 进度条拖拽与悬停
-        let isDraggingProgress = false;
-        const handleProgressSeek = (e) => {
-            const rect = progressContainer.getBoundingClientRect();
-            const pos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-            if (media.duration) {
-                media.currentTime = pos * media.duration;
-            }
+        btnSnapshot?.addEventListener('click', (e) => { e.stopPropagation(); this.takeSnapshot(); });
+        btnPip?.addEventListener('click', (e) => { e.stopPropagation(); this.togglePiP(); });
+        btnFullscreen?.addEventListener('click', (e) => { e.stopPropagation(); this.toggleFullscreen(); });
+        lockBtn?.addEventListener('click', (e) => { e.stopPropagation(); this.toggleLock(); });
+
+        // 抽屉触发
+        btnTopEpisodes?.addEventListener('click', (e) => { e.stopPropagation(); this.toggleDrawer('episodes'); });
+        btnTopSettings?.addEventListener('click', (e) => { e.stopPropagation(); this.toggleDrawer('settings'); });
+        drawerEpisodesClose?.addEventListener('click', (e) => { e.stopPropagation(); this.closeDrawers(); });
+        drawerSettingsClose?.addEventListener('click', (e) => { e.stopPropagation(); this.closeDrawers(); });
+
+        // 快捷倍速循环
+        btnSpeed?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const speeds = [1.0, 1.25, 1.5, 2.0, 3.0, 0.75];
+            const current = this.dom.media ? (this.dom.media.playbackRate || 1.0) : 1.0;
+            let nextIdx = (speeds.indexOf(current) + 1) % speeds.length;
+            if (nextIdx === -1) nextIdx = 0;
+            this.setPlaybackRate(speeds[nextIdx]);
+        });
+
+        // 快捷画面比例循环
+        btnFitToggle?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const fits = ['contain', 'cover', 'fill'];
+            const names = { contain: '自适应', cover: '铺满全屏', fill: '拉伸全屏' };
+            let nextIdx = (fits.indexOf(this.objectFitMode) + 1) % fits.length;
+            if (nextIdx === -1) nextIdx = 0;
+            this.setObjectFit(fits[nextIdx]);
+            btnFitToggle.textContent = names[fits[nextIdx]];
+        });
+
+        // 快捷色彩滤镜循环
+        btnFilterToggle?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const filters = ['none', 'warm', 'cinema', 'vivid'];
+            const names = { none: '原画', warm: '夜间暖光', cinema: '影院高对比', vivid: '鲜艳生动' };
+            let nextIdx = (filters.indexOf(this.currentFilter) + 1) % filters.length;
+            if (nextIdx === -1) nextIdx = 0;
+            this.setVideoFilter(filters[nextIdx]);
+            btnFilterToggle.textContent = names[filters[nextIdx]];
+        });
+
+        // 断点续播
+        btnResumeDismiss?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.hideResumeToast();
+        });
+
+        // 抽屉内倍速点击
+        const bindGridEvents = (grid, setter, attr) => {
+            grid?.querySelectorAll('.player-opt-pill').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const val = btn.getAttribute(attr);
+                    setter(attr === 'data-speed' ? parseFloat(val) : val);
+                });
+            });
         };
 
-        progressContainer.addEventListener('mousedown', (e) => {
-            isDraggingProgress = true;
-            handleProgressSeek(e);
-        });
+        bindGridEvents(fsSpeedGrid, (v) => this.setPlaybackRate(v), 'data-speed');
+        bindGridEvents(speedGrid, (v) => this.setPlaybackRate(v), 'data-speed');
+        bindGridEvents(fsFilterGrid, (v) => this.setVideoFilter(v), 'data-filter');
+        bindGridEvents(filterGrid, (v) => this.setVideoFilter(v), 'data-filter');
+        bindGridEvents(fsFitGrid, (v) => this.setObjectFit(v), 'data-fit');
+        bindGridEvents(fitGrid, (v) => this.setObjectFit(v), 'data-fit');
+        bindGridEvents(fsLoopGrid, (v) => this.setLoopMode(v), 'data-loop');
 
-        document.addEventListener('mousemove', (e) => {
-            if (isDraggingProgress) handleProgressSeek(e);
-            
-            // 悬停预览 Tooltip
-            if (this.dom.overlay.classList.contains('active')) {
-                const rect = progressContainer.getBoundingClientRect();
-                if (e.clientY >= rect.top - 10 && e.clientY <= rect.bottom + 10 && e.clientX >= rect.left && e.clientX <= rect.right) {
-                    const pos = (e.clientX - rect.left) / rect.width;
-                    if (media.duration) {
-                        this.dom.progressTooltip.textContent = this.formatTime(pos * media.duration);
-                        this.dom.progressTooltip.style.left = `${pos * 100}%`;
+        // 字幕字号、延迟与轨道切换绑定
+        const bindSubGrid = (grid, setter, attr) => {
+            grid?.querySelectorAll('.player-opt-pill').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const val = btn.getAttribute(attr);
+                    setter(val);
+                });
+            });
+        };
+
+        bindSubGrid(this.dom.fsSubSizeGrid, (v) => this.setSubtitleSize(v), 'data-subsize');
+        bindSubGrid(this.dom.subSizeGrid, (v) => this.setSubtitleSize(v), 'data-subsize');
+        bindSubGrid(this.dom.fsSubDelayGrid, (v) => this.setSubtitleDelay(v), 'data-subdelay');
+        bindSubGrid(this.dom.subDelayGrid, (v) => this.setSubtitleDelay(v), 'data-subdelay');
+
+        const bindSubTrackClick = (grid) => {
+            grid?.addEventListener('click', (e) => {
+                const btn = e.target.closest('.player-opt-pill');
+                if (!btn) return;
+                e.stopPropagation();
+                const subType = btn.getAttribute('data-sub');
+                if (subType === 'off') {
+                    this.toggleSubtitle(false);
+                    grid.querySelectorAll('.player-opt-pill').forEach(b => b.classList.toggle('active', b === btn));
+                } else if (subType === 'auto') {
+                    this.toggleSubtitle(true);
+                    if (this.subtitles.length > 0) {
+                        this.loadSubtitleTrack(this.subtitles[0]);
+                    }
+                    grid.querySelectorAll('.player-opt-pill').forEach(b => b.classList.toggle('active', b === btn));
+                } else {
+                    const idx = parseInt(btn.getAttribute('data-sub-idx'), 10);
+                    if (!isNaN(idx) && this.subtitles[idx]) {
+                        this.toggleSubtitle(true);
+                        this.loadSubtitleTrack(this.subtitles[idx]);
+                        grid.querySelectorAll('.player-opt-pill').forEach(b => b.classList.toggle('active', b === btn));
                     }
                 }
-            }
-        });
-
-        document.addEventListener('mouseup', () => {
-            isDraggingProgress = false;
-        });
-
-        // 音量与静音
-        btnMute.addEventListener('click', () => this.toggleMute());
-        volumeSlider.addEventListener('input', (e) => {
-            media.volume = parseFloat(e.target.value);
-            media.muted = (media.volume === 0);
-            this.updateVolumeIcon();
-        });
-
-        // 倍速弹出菜单
-        btnSpeed.addEventListener('click', (e) => {
-            e.stopPropagation();
-            speedPopover.classList.toggle('open');
-        });
-
-        speedPopover.querySelectorAll('.apple-popover-item').forEach(item => {
-            item.addEventListener('click', (e) => {
-                const speed = parseFloat(e.target.getAttribute('data-speed'));
-                media.playbackRate = speed;
-                btnSpeed.textContent = `${speed}x`;
-                speedPopover.querySelectorAll('.apple-popover-item').forEach(i => i.classList.remove('active'));
-                e.target.classList.add('active');
-                speedPopover.classList.remove('open');
             });
-        });
+        };
+        bindSubTrackClick(this.dom.fsSubTracksGrid);
+        bindSubTrackClick(this.dom.subTracksGrid);
 
+        // 本地字幕文件导入监听
+        const handleCustomSubFile = (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                const content = evt.target.result;
+                const ext = file.name.split('.').pop().toLowerCase();
+                this.loadSubtitleText(content, file.name, ext);
+            };
+            reader.readAsText(file);
+            e.target.value = '';
+        };
+
+        this.dom.fsInputCustomSub?.addEventListener('change', handleCustomSubFile);
+        this.dom.inputCustomSub?.addEventListener('change', handleCustomSubFile);
+
+        if (fsBtnRotate) fsBtnRotate.addEventListener('click', (e) => { e.stopPropagation(); this.rotateVideo(); });
+        if (btnRotate) btnRotate.addEventListener('click', (e) => { e.stopPropagation(); this.rotateVideo(); });
+
+        this.bindProgressEvents(this.dom.progressWrap);
+        this.bindStageGestures(stageBox);
+
+        // 点击页面任意外部区域（非抽屉内部）自动收起抽屉
         document.addEventListener('click', (e) => {
-            if (!speedPopover.contains(e.target)) {
-                speedPopover.classList.remove('open');
+            const anyDrawerOpen = (this.dom.drawerEpisodes && this.dom.drawerEpisodes.classList.contains('open')) ||
+                                  (this.dom.drawerSettings && this.dom.drawerSettings.classList.contains('open'));
+            if (!anyDrawerOpen) return;
+
+            const inEpisodes = this.dom.drawerEpisodes && this.dom.drawerEpisodes.contains(e.target);
+            const inSettings = this.dom.drawerSettings && this.dom.drawerSettings.contains(e.target);
+            const isEpisodesBtn = this.dom.btnTopEpisodes && this.dom.btnTopEpisodes.contains(e.target);
+            const isSettingsBtn = this.dom.btnTopSettings && this.dom.btnTopSettings.contains(e.target);
+
+            if (!inEpisodes && !inSettings && !isEpisodesBtn && !isSettingsBtn) {
+                this.closeDrawers();
             }
         });
 
-        // 播放列表抽屉
-        if (btnPlaylist && this.dom.playlistDrawer) {
-            btnPlaylist.addEventListener('click', () => {
-                this.dom.playlistDrawer.classList.toggle('open');
-            });
-        }
-        if (btnClosePlaylist && this.dom.playlistDrawer) {
-            btnClosePlaylist.addEventListener('click', () => {
-                this.dom.playlistDrawer.classList.remove('open');
-            });
-        }
-
-        // 画中画
-        if (btnPip) {
-            btnPip.addEventListener('click', async () => {
-                try {
-                    if (document.pictureInPictureElement) {
-                        await document.exitPictureInPicture();
-                    } else if (document.pictureInPictureEnabled && media.nodeName === 'VIDEO') {
-                        await media.requestPictureInPicture();
-                    }
-                } catch (err) {}
-            });
-        }
-
-        // 全屏控制
-        if (btnFullscreen) {
-            btnFullscreen.addEventListener('click', () => this.toggleFullscreen());
-        }
-
-        // 关闭播放器
-        if (btnClose) {
-            btnClose.addEventListener('click', () => this.close());
-        }
-
-        // 自动隐藏控制栏
-        const resetHideTimer = () => {
-            this.showControls();
-            clearTimeout(this.hideControlsTimer);
-            if (this.isPlaying) {
-                this.hideControlsTimer = setTimeout(() => this.hideControls(), 3000);
-            }
-        };
-
-        this.dom.container.addEventListener('mousemove', resetHideTimer);
-        this.dom.container.addEventListener('touchstart', resetHideTimer, { passive: true });
-
-        // 监听原生全屏改变事件，同步UI与控制类
-        const onFsChange = () => {
-            const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
-            this.dom.overlay.classList.toggle('is-fullscreen', isFs);
-            if (this.dom.btnFullscreen) {
-                this.dom.btnFullscreen.classList.toggle('active', isFs);
-            }
-        };
-        document.addEventListener('fullscreenchange', onFsChange);
-        document.addEventListener('webkitfullscreenchange', onFsChange);
-
-        // 全局键盘快捷键
-        document.addEventListener('keydown', (e) => this.handleKeyDown(e));
+        // 监听标准全屏改变
+        document.addEventListener('fullscreenchange', () => this.onFullscreenChange());
+        document.addEventListener('webkitfullscreenchange', () => this.onFullscreenChange());
+        window.addEventListener('keydown', (e) => this.onKeyDown(e));
     }
 
     play(mediaItem, playlist = []) {
         this.init();
-        this.playlist = playlist.length > 0 ? playlist : [mediaItem];
-        this.currentIndex = this.playlist.findIndex(item => item.path === mediaItem.path);
-        if (this.currentIndex === -1) {
-            this.playlist.unshift(mediaItem);
+        this.closeDrawers();
+        if (playlist && playlist.length > 0) {
+            // 复制并做自然数字排序（Natural Numeric Sort，完美解决 1, 10, 100 乱序问题）
+            const sortedList = [...playlist].sort((a, b) => {
+                const nameA = a.name || '';
+                const nameB = b.name || '';
+                return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+            });
+            this.playlist = sortedList;
+            this.currentIndex = this.playlist.findIndex(item => item.path === mediaItem.path);
+            if (this.currentIndex === -1) {
+                this.playlist.unshift(mediaItem);
+                this.currentIndex = 0;
+            }
+        } else {
+            this.playlist = [mediaItem];
             this.currentIndex = 0;
         }
 
-        this.loadMedia(this.playlist[this.currentIndex]);
-        this.dom.overlay.classList.add('active');
+        this.showPlayerView();
+        this.loadCurrentMedia();
+    }
+
+    showPlayerView() {
+        this.closeDrawers();
+        if (this.dom.stageBox) {
+            this.dom.stageBox.scrollLeft = 0;
+            this.dom.stageBox.scrollTop = 0;
+        }
+        const currentActive = document.querySelector('.view-section.active');
+        if (currentActive && currentActive.id !== 'view-player') {
+            this.previousView = currentActive.id.replace('view-', '');
+        }
+
+        document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+        if (this.dom.view) this.dom.view.classList.add('active');
+
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    close() {
+        if (this.dom.media) {
+            this.dom.media.pause();
+        }
+        this.closeDrawers();
+        if (this.dom.stageBox) {
+            this.dom.stageBox.scrollLeft = 0;
+            this.dom.stageBox.scrollTop = 0;
+        }
+        if (document.fullscreenElement || document.webkitFullscreenElement) {
+            if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+        }
+
+        const targetView = this.previousView || 'files';
+        const dockBtn = document.querySelector(`.dock-item[data-view="${targetView}"]`);
+        if (dockBtn) {
+            dockBtn.click();
+        } else {
+            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+            const fallback = document.getElementById('view-' + targetView) || document.getElementById('view-files');
+            if (fallback) fallback.classList.add('active');
+        }
+    }
+
+    loadCurrentMedia() {
+        if (this.dom.stageBox) {
+            this.dom.stageBox.scrollLeft = 0;
+            this.dom.stageBox.scrollTop = 0;
+        }
+        if (this.currentIndex < 0 || this.currentIndex >= this.playlist.length) return;
+        const item = this.playlist[this.currentIndex];
+        this.currentMedia = item;
+
+        const isAudio = item.type === 'audio' || /\.(mp3|wav|flac|aac|ogg|m4a)$/i.test(item.name);
+        
+        let streamUrl = item.url;
+        if (!streamUrl) {
+            let authQ = '';
+            if (window.LanDiskAuth && typeof window.LanDiskAuth.authQuery === 'function') {
+                const q = window.LanDiskAuth.authQuery();
+                if (q) authQ = q.replace(/^\?/, '&');
+            } else {
+                const pin = localStorage.getItem('lan_disk_pin') || localStorage.getItem('landisk_pin') || '';
+                const token = localStorage.getItem('lan_disk_qr_token') || '';
+                if (pin) authQ += '&pin=' + encodeURIComponent(pin);
+                if (token) authQ += '&token=' + encodeURIComponent(token);
+            }
+            streamUrl = '/api/stream?path=' + encodeURIComponent(item.path) + authQ;
+        }
+
+        if (this.dom.videoTitle) this.dom.videoTitle.textContent = item.name;
+        if (this.dom.navTitle) this.dom.navTitle.textContent = item.name;
+        if (this.dom.cardTitle) this.dom.cardTitle.textContent = item.name;
+        if (this.dom.cardSub) this.dom.cardSub.textContent = isAudio ? 'Apple Music 高保真无损音频 · 局域网直连' : '4K HDR 硬件加速解码 · 局域网直连';
+        if (this.dom.videoBadge) this.dom.videoBadge.innerHTML = `<span class="ap-status-dot"></span>${isAudio ? '无损音频' : '4K HDR'}`;
+
+        if (isAudio) {
+            this.dom.audioLayer.style.display = 'flex';
+            this.initAudioVisualizer();
+        } else {
+            this.dom.audioLayer.style.display = 'none';
+        }
+
+        this.dom.media.src = streamUrl;
+        this.dom.media.load();
+        this.dom.media.play().catch(() => {});
+
+        this.renderEpisodes();
+        this.resetTransform();
+        this.detectSubtitles(item);
+        this.checkResumeHistory(item);
         this.showControls();
     }
 
-    loadMedia(mediaItem) {
-        this.currentMedia = mediaItem;
-        const { media, title, subtitle, audioStage } = this.dom;
+    renderEpisodes() {
+        const countStr = `(${this.playlist.length})`;
+        if (this.dom.episodesCount) this.dom.episodesCount.textContent = countStr;
+        if (this.dom.drawerEpisodesCount) this.dom.drawerEpisodesCount.textContent = countStr;
 
-        title.textContent = mediaItem.name;
-        subtitle.textContent = `局域网文件 • ${mediaItem.type === 'audio' ? '音频文件' : '视频文件'}`;
+        // 1. 渲染分页区间胶囊 (Range Tabs)
+        this.renderEpisodeRanges(this.dom.episodesRanges, false);
+        this.renderEpisodeRanges(this.dom.drawerEpisodesRanges, true);
 
-        const isAudio = mediaItem.type === 'audio' || /\.(mp3|wav|flac|aac|m4a)$/i.test(mediaItem.name);
+        // 2. 渲染下部横滑卡片
+        if (this.dom.episodesScroll) {
+            this.dom.episodesScroll.innerHTML = this.playlist.map((item, idx) => {
+                const isActive = idx === this.currentIndex;
+                const indexFormatted = String(idx + 1).padStart(2, '0');
+                return `
+                    <div class="player-episode-card ${isActive ? 'active' : ''}" data-idx="${idx}">
+                        <div class="player-ep-idx">第 ${indexFormatted} 集</div>
+                        <div class="player-ep-name" title="${item.name}">${item.name}</div>
+                    </div>
+                `;
+            }).join('');
 
-        if (isAudio) {
-            audioStage.style.display = 'flex';
-            this.initAudioCanvas();
-        } else {
-            audioStage.style.display = 'none';
+            this.dom.episodesScroll.querySelectorAll('.player-episode-card').forEach(card => {
+                card.addEventListener('click', () => {
+                    const idx = parseInt(card.getAttribute('data-idx'), 10);
+                    if (idx !== this.currentIndex) {
+                        this.currentIndex = idx;
+                        this.loadCurrentMedia();
+                        this.scrollToCurrentEpisode();
+                    }
+                });
+            });
         }
 
-        let finalUrl = mediaItem.url || '';
-        if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
-            if (finalUrl.startsWith('/')) {
-                const baseUrl = window.currentServerUrl || 'http://127.0.0.1:3000';
-                finalUrl = baseUrl.replace(/\/$/, '') + finalUrl;
+        // 3. 渲染全屏右侧半透抽屉列表
+        if (this.dom.drawerEpisodesList) {
+            this.dom.drawerEpisodesList.innerHTML = this.playlist.map((item, idx) => {
+                const isActive = idx === this.currentIndex;
+                const indexFormatted = String(idx + 1).padStart(2, '0');
+                return `
+                    <div class="ap-fs-ep-item ${isActive ? 'active' : ''}" data-idx="${idx}">
+                        <span class="ap-fs-ep-idx">${indexFormatted}</span>
+                        <span class="ap-fs-ep-title">${item.name}</span>
+                        ${isActive ? '<span style="color:#38bdf8; font-size:12px;">▶ 播放中</span>' : ''}
+                    </div>
+                `;
+            }).join('');
+
+            this.dom.drawerEpisodesList.querySelectorAll('.ap-fs-ep-item').forEach(item => {
+                item.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const idx = parseInt(item.getAttribute('data-idx'), 10);
+                    if (idx !== this.currentIndex) {
+                        this.currentIndex = idx;
+                        this.loadCurrentMedia();
+                        this.scrollToCurrentEpisode();
+                    }
+                    this.closeDrawers();
+                });
+            });
+        }
+
+        // 4. 自动滚动到当前播放集
+        setTimeout(() => this.scrollToCurrentEpisode(), 60);
+    }
+
+    renderEpisodeRanges(containerEl, isDrawer = false) {
+        if (!containerEl) return;
+        const total = this.playlist.length;
+        if (total <= 20) {
+            containerEl.innerHTML = '';
+            containerEl.style.display = 'none';
+            return;
+        }
+
+        containerEl.style.display = 'flex';
+        const groupSize = 30;
+        const groupCount = Math.ceil(total / groupSize);
+        let html = '';
+        for (let g = 0; g < groupCount; g++) {
+            const start = g * groupSize;
+            const end = Math.min((g + 1) * groupSize, total);
+            const padStart = String(start + 1).padStart(2, '0');
+            const padEnd = String(end).padStart(2, '0');
+            const isActive = this.currentIndex >= start && this.currentIndex < end;
+            html += `
+                <button class="player-range-pill ${isActive ? 'active' : ''}" data-start="${start}" data-end="${end}">
+                    ${padStart} - ${padEnd}
+                </button>
+            `;
+        }
+        containerEl.innerHTML = html;
+
+        containerEl.querySelectorAll('.player-range-pill').forEach(pill => {
+            pill.addEventListener('click', (e) => {
+                e.stopPropagation();
+                containerEl.querySelectorAll('.player-range-pill').forEach(p => p.classList.remove('active'));
+                pill.classList.add('active');
+                const startIdx = parseInt(pill.getAttribute('data-start'), 10);
+                if (isDrawer && this.dom.drawerEpisodesList) {
+                    const targetEl = this.dom.drawerEpisodesList.querySelector(`.ap-fs-ep-item[data-idx="${startIdx}"]`);
+                    if (targetEl) {
+                        this.dom.drawerEpisodesList.scrollTo({ top: targetEl.offsetTop, behavior: 'smooth' });
+                    }
+                } else if (this.dom.episodesScroll) {
+                    const targetCard = this.dom.episodesScroll.querySelector(`.player-episode-card[data-idx="${startIdx}"]`);
+                    if (targetCard) {
+                        const scrollLeft = targetCard.offsetLeft - 16;
+                        this.dom.episodesScroll.scrollTo({ left: Math.max(0, scrollLeft), behavior: 'smooth' });
+                    }
+                }
+            });
+        });
+    }
+
+    scrollToCurrentEpisode() {
+        if (this.dom.stageBox) {
+            this.dom.stageBox.scrollLeft = 0;
+            this.dom.stageBox.scrollTop = 0;
+        }
+
+        if (this.dom.episodesScroll) {
+            const activeCard = this.dom.episodesScroll.querySelector(`.player-episode-card[data-idx="${this.currentIndex}"]`);
+            if (activeCard) {
+                const scrollLeft = activeCard.offsetLeft - (this.dom.episodesScroll.clientWidth / 2) + (activeCard.clientWidth / 2);
+                this.dom.episodesScroll.scrollTo({ left: Math.max(0, scrollLeft), behavior: 'smooth' });
             }
         }
 
-        media.src = finalUrl;
-        this.applyVideoTransforms();
+        // 仅在全屏抽屉打开时滚动抽屉内部，避免对未展开的抽屉调用 scrollIntoView 导致祖先视窗发生意外横向位移
+        if (this.dom.drawerEpisodesList && this.dom.drawerEpisodes && this.dom.drawerEpisodes.classList.contains('open')) {
+            const activeFsItem = this.dom.drawerEpisodesList.querySelector(`.ap-fs-ep-item[data-idx="${this.currentIndex}"]`);
+            if (activeFsItem) {
+                const scrollTop = activeFsItem.offsetTop - (this.dom.drawerEpisodesList.clientHeight / 2) + (activeFsItem.clientHeight / 2);
+                this.dom.drawerEpisodesList.scrollTo({ top: Math.max(0, scrollTop), behavior: 'smooth' });
+            }
+        }
+    }
 
-        media.play().then(() => {
-            if (!isAudio) this.checkPlaybackResume(mediaItem);
-        }).catch(e => console.warn('Autoplay prevented or unsupported source:', e.message));
+    toggleDrawer(type) {
+        const isEpisodes = type === 'episodes';
+        const target = isEpisodes ? this.dom.drawerEpisodes : this.dom.drawerSettings;
+        const other = isEpisodes ? this.dom.drawerSettings : this.dom.drawerEpisodes;
 
-        this.renderPlaylist();
+        if (other) other.classList.remove('open');
+        if (target) {
+            const isOpen = target.classList.contains('open');
+            target.classList.toggle('open', !isOpen);
+            if (!isOpen && isEpisodes && this.dom.drawerEpisodesList) {
+                const activeFsItem = this.dom.drawerEpisodesList.querySelector(`.ap-fs-ep-item[data-idx="${this.currentIndex}"]`);
+                if (activeFsItem) {
+                    setTimeout(() => {
+                        const scrollTop = activeFsItem.offsetTop - (this.dom.drawerEpisodesList.clientHeight / 2) + (activeFsItem.clientHeight / 2);
+                        this.dom.drawerEpisodesList.scrollTo({ top: Math.max(0, scrollTop), behavior: 'smooth' });
+                    }, 60);
+                }
+            }
+        }
+    }
+
+    closeDrawers() {
+        if (this.dom.drawerEpisodes) this.dom.drawerEpisodes.classList.remove('open');
+        if (this.dom.drawerSettings) this.dom.drawerSettings.classList.remove('open');
+    }
+
+    takeSnapshot() {
+        if (!this.dom.media || !this.dom.media.videoWidth) {
+            this.showGestureToast('暂无视频画面可截取');
+            return;
+        }
+        try {
+            const video = this.dom.media;
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            const dataUrl = canvas.toDataURL('image/png');
+            const link = document.createElement('a');
+            const timeCode = this.formatTime(video.currentTime).replace(':', '_');
+            link.download = `Snapshot_${this.currentMedia ? this.currentMedia.name : 'video'}_${timeCode}.png`;
+            link.href = dataUrl;
+            link.click();
+
+            this.showGestureToast('画面截取成功');
+            this.showCenterBadge('✓');
+        } catch (e) {
+            this.showGestureToast('截帧失败: ' + e.message);
+        }
     }
 
     togglePlay() {
-        const { media } = this.dom;
-        if (!media) return;
-        if (media.paused) {
-            media.play().catch(e => console.warn('Playback error:', e.message));
+        if (!this.dom.media) return;
+        if (this.dom.media.paused) {
+            this.dom.media.play().catch(() => {});
+            this.showCenterBadge('▶');
         } else {
-            media.pause();
+            this.dom.media.pause();
+            this.showCenterBadge('⏸');
         }
+    }
+
+    prev() {
+        if (this.playlist.length <= 1) return;
+        this.currentIndex = (this.currentIndex - 1 + this.playlist.length) % this.playlist.length;
+        this.loadCurrentMedia();
+    }
+
+    next() {
+        if (this.playlist.length <= 1) return;
+        this.currentIndex = (this.currentIndex + 1) % this.playlist.length;
+        this.loadCurrentMedia();
+    }
+
+    seekDelta(seconds) {
+        if (!this.dom.media || !this.dom.media.duration) return;
+        this.dom.media.currentTime = Math.max(0, Math.min(this.dom.media.duration, this.dom.media.currentTime + seconds));
+        this.showGestureToast((seconds > 0 ? '⏭ +' : '⏮ ') + seconds + 's (' + this.formatTime(this.dom.media.currentTime) + ')');
+    }
+
+    toggleFullscreen() {
+        const target = this.dom.stageBox || this.dom.media;
+        if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+            try {
+                if (target.requestFullscreen) {
+                    target.requestFullscreen().catch(() => {});
+                } else if (target.webkitRequestFullscreen) {
+                    target.webkitRequestFullscreen();
+                } else if (this.dom.media.webkitEnterFullscreen) {
+                    this.dom.media.webkitEnterFullscreen();
+                }
+            } catch (e) {}
+
+            try {
+                if (screen.orientation && screen.orientation.lock) {
+                    screen.orientation.lock('landscape').catch(() => {});
+                }
+            } catch (e) {}
+        } else {
+            try {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen().catch(() => {});
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                }
+            } catch (e) {}
+
+            try {
+                if (screen.orientation && screen.orientation.unlock) {
+                    screen.orientation.unlock();
+                }
+            } catch (e) {}
+        }
+    }
+
+    onFullscreenChange() {
+        const isFull = !!(document.fullscreenElement || document.webkitFullscreenElement);
+        if (this.dom.stageBox) {
+            this.dom.stageBox.classList.toggle('is-fullscreen', isFull);
+        }
+        if (this.dom.fsBtnLabel) {
+            this.dom.fsBtnLabel.textContent = isFull ? '还原' : '全屏';
+        }
+    }
+
+    setPlaybackRate(rate) {
+        if (!this.dom.media) return;
+        this.dom.media.playbackRate = rate;
+        if (this.dom.btnSpeed) this.dom.btnSpeed.textContent = rate.toFixed(1) + 'x';
+        
+        const updateGrid = (grid) => {
+            if (grid) {
+                grid.querySelectorAll('.player-opt-pill').forEach(b => {
+                    b.classList.toggle('active', parseFloat(b.getAttribute('data-speed')) === rate);
+                });
+            }
+        };
+        updateGrid(this.dom.speedGrid);
+        updateGrid(this.dom.fsSpeedGrid);
+
+        this.showGestureToast('倍速: ' + rate.toFixed(1) + 'x');
+    }
+
+    setVideoFilter(preset) {
+        this.currentFilter = preset;
+        const filters = {
+            none: '',
+            warm: 'sepia(0.25) brightness(1.05)',
+            cinema: 'contrast(1.22) saturate(1.15)',
+            vivid: 'saturate(1.42) contrast(1.08)'
+        };
+        if (this.dom.media) this.dom.media.style.filter = filters[preset] || '';
+
+        const updateGrid = (grid) => {
+            if (grid) {
+                grid.querySelectorAll('.player-opt-pill').forEach(b => {
+                    b.classList.toggle('active', b.getAttribute('data-filter') === preset);
+                });
+            }
+        };
+        updateGrid(this.dom.filterGrid);
+        updateGrid(this.dom.fsFilterGrid);
+
+        const names = { none: '原画', warm: '夜间暖光', cinema: '影院高对比', vivid: '鲜艳生动' };
+        if (this.dom.btnFilterToggle) this.dom.btnFilterToggle.innerHTML = '<svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4 4 4 0 014-4c2 0 2-4 6-4 4 0 7 3 7 7a7 7 0 01-7 7H7z"/></svg><span>' + (names[preset] || '原画') + '</span>';
+        this.showGestureToast('画面色彩: ' + (names[preset] || '原画'));
+    }
+
+    setObjectFit(fit) {
+        this.objectFitMode = fit;
+        if (this.dom.media) this.dom.media.style.objectFit = fit;
+
+        const updateGrid = (grid) => {
+            if (grid) {
+                grid.querySelectorAll('.player-opt-pill[data-fit]').forEach(b => {
+                    b.classList.toggle('active', b.getAttribute('data-fit') === fit);
+                });
+            }
+        };
+        updateGrid(this.dom.fitGrid);
+        updateGrid(this.dom.fsFitGrid);
+
+        const names = { contain: '自适应', cover: '铺满全屏', fill: '拉伸全屏' };
+        if (this.dom.btnFitToggle) this.dom.btnFitToggle.innerHTML = '<svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg><span>' + (names[fit] || '自适应') + '</span>';
+        this.showGestureToast('画面比例: ' + (names[fit] || fit));
+    }
+
+    setLoopMode(mode) {
+        this.loopMode = mode;
+        const updateGrid = (grid) => {
+            if (grid) {
+                grid.querySelectorAll('.player-opt-pill[data-loop]').forEach(b => {
+                    b.classList.toggle('active', b.getAttribute('data-loop') === mode);
+                });
+            }
+        };
+        updateGrid(this.dom.fsLoopGrid);
+        const names = { all: '列表循环', one: '单曲循环', off: '顺序播放' };
+        this.showGestureToast('循环模式: ' + (names[mode] || mode));
+    }
+
+    rotateVideo() {
+        this.rotateAngle = (this.rotateAngle + 90) % 360;
+        if (this.dom.media) this.dom.media.style.transform = `rotate(${this.rotateAngle}deg)`;
+        this.showGestureToast('画面旋转 ' + this.rotateAngle + '°');
+    }
+
+    resetTransform() {
+        this.rotateAngle = 0;
+        if (this.dom.media) {
+            this.dom.media.style.transform = '';
+            this.dom.media.style.objectFit = this.objectFitMode;
+            if (this.currentFilter !== 'none') {
+                this.setVideoFilter(this.currentFilter);
+            }
+        }
+    }
+
+    toggleLock() {
+        this.isLocked = !this.isLocked;
+        if (this.dom.lockBtn) this.dom.lockBtn.classList.toggle('locked', this.isLocked);
+        if (this.dom.iconUnlock) this.dom.iconUnlock.style.display = this.isLocked ? 'none' : 'block';
+        if (this.dom.iconLock) this.dom.iconLock.style.display = this.isLocked ? 'block' : 'none';
+        this.showGestureToast(this.isLocked ? '已锁定屏幕' : '已解锁屏幕');
+    }
+
+    async togglePiP() {
+        if (!this.dom.media) return;
+        try {
+            if (document.pictureInPictureElement) {
+                await document.exitPictureInPicture();
+            } else if (this.dom.media.requestPictureInPicture) {
+                await this.dom.media.requestPictureInPicture();
+            }
+        } catch (e) {}
+    }
+
+    onTimeUpdate() {
+        const media = this.dom.media;
+        if (!media || !media.duration) return;
+
+        const current = media.currentTime;
+        const duration = media.duration;
+        const percent = Math.min(100, Math.max(0, (current / duration) * 100));
+
+        if (this.dom.progressFill) this.dom.progressFill.style.width = percent + '%';
+        if (this.dom.progressThumb) this.dom.progressThumb.style.left = percent + '%';
+        if (this.dom.timeText) this.dom.timeText.textContent = this.formatTime(current) + ' / ' + this.formatTime(duration);
+
+        // 实时字幕对齐与渲染
+        this.renderSubtitleCue(current);
+
+        if (current > 3 && duration > 10) {
+            const now = Date.now();
+            if (!this._lastHistorySave || now - this._lastHistorySave > 2500) {
+                this._lastHistorySave = now;
+                this.savePlayHistory(current, duration);
+            }
+        }
+    }
+
+    onProgress() {
+        const media = this.dom.media;
+        if (!media || !media.duration || media.buffered.length === 0) return;
+        const bufferedEnd = media.buffered.end(media.buffered.length - 1);
+        const percent = (bufferedEnd / media.duration) * 100;
+        if (this.dom.progressBuffer) this.dom.progressBuffer.style.width = percent + '%';
     }
 
     onPlayStateChange(playing) {
         this.isPlaying = playing;
-        const { iconPlay, iconPause, audioVinyl, centerBadge } = this.dom;
-        
-        if (playing) {
-            iconPlay.style.display = 'none';
-            iconPause.style.display = 'inline';
-            audioVinyl.classList.add('playing');
-            this.triggerCenterBadge('▶');
-        } else {
-            iconPlay.style.display = 'inline';
-            iconPause.style.display = 'none';
-            audioVinyl.classList.remove('playing');
-            this.triggerCenterBadge('❚❚');
-        }
+        if (this.dom.iconPlay) this.dom.iconPlay.style.display = playing ? 'none' : 'block';
+        if (this.dom.iconPause) this.dom.iconPause.style.display = playing ? 'block' : 'none';
+        if (this.dom.audioVinyl) this.dom.audioVinyl.classList.toggle('playing', playing);
     }
 
-    seekBy(seconds) {
-        const { media } = this.dom;
-        if (!media.duration) return;
-        media.currentTime = Math.max(0, Math.min(media.duration, media.currentTime + seconds));
-    }
-
-    playNext() {
-        if (this.playlist.length === 0) return;
-        if (this.loopMode === 'shuffle') {
-            this.currentIndex = Math.floor(Math.random() * this.playlist.length);
-        } else {
-            this.currentIndex = (this.currentIndex + 1) % this.playlist.length;
-        }
-        this.loadMedia(this.playlist[this.currentIndex]);
-    }
-
-    playPrev() {
-        if (this.playlist.length === 0) return;
-        this.currentIndex = (this.currentIndex - 1 + this.playlist.length) % this.playlist.length;
-        this.loadMedia(this.playlist[this.currentIndex]);
-    }
-
-    onMediaEnded() {
+    onEnded() {
         if (this.loopMode === 'one') {
             this.dom.media.currentTime = 0;
             this.dom.media.play();
         } else if (this.loopMode === 'off' && this.currentIndex === this.playlist.length - 1) {
-            this.onPlayStateChange(false);
+            this.showGestureToast('播放列表已结束');
         } else {
-            this.playNext();
+            this.next();
         }
     }
 
-    toggleLoopMode() {
-        const modes = ['off', 'one', 'all', 'shuffle'];
-        const nextIdx = (modes.indexOf(this.loopMode) + 1) % modes.length;
-        this.loopMode = modes[nextIdx];
-        
-        const { btnLoop } = this.dom;
-        if (this.loopMode === 'off') {
-            btnLoop.classList.remove('active');
-            btnLoop.title = '循环模式: 关闭';
-        } else {
-            btnLoop.classList.add('active');
-            btnLoop.title = `循环模式: ${this.loopMode === 'one' ? '单曲循环' : this.loopMode === 'all' ? '列表循环' : '随机播放'}`;
-        }
-    }
-
-    toggleMute() {
-        const { media } = this.dom;
-        media.muted = !media.muted;
-        this.updateVolumeIcon();
-    }
-
-    updateVolumeIcon() {
-        const { media, volumeSlider } = this.dom;
-        volumeSlider.value = media.muted ? 0 : media.volume;
-    }
-
-    onTimeUpdate() {
-        const { media, progressFill, progressThumb, timeDisplay } = this.dom;
-        if (!media.duration) return;
-
-        const current = media.currentTime;
-        const total = media.duration;
-        const percent = (current / total) * 100;
-
-        progressFill.style.width = `${percent}%`;
-        progressThumb.style.left = `${percent}%`;
-
-        if (this.showRemainingTime) {
-            const rem = total - current;
-            timeDisplay.textContent = `-${this.formatTime(rem)} / ${this.formatTime(total)}`;
-        } else {
-            timeDisplay.textContent = `${this.formatTime(current)} / ${this.formatTime(total)}`;
-        }
-
-        // 保存记忆断点
-        this.savePlaybackProgress();
-    }
-
-    onBufferUpdate() {
-        const { media, progressBuffer } = this.dom;
-        if (media.buffered.length > 0 && media.duration) {
-            const bufferedEnd = media.buffered.end(media.buffered.length - 1);
-            const percent = (bufferedEnd / media.duration) * 100;
-            progressBuffer.style.width = `${percent}%`;
-        }
+    onLoadedMetadata() {
+        this.onTimeUpdate();
+        this.onProgress();
     }
 
     formatTime(sec) {
-        if (isNaN(sec)) return '00:00';
+        if (!sec || isNaN(sec)) return '00:00';
         const m = Math.floor(sec / 60);
         const s = Math.floor(sec % 60);
-        const hh = Math.floor(m / 60);
-        const mm = m % 60;
-        if (hh > 0) {
-            return `${hh}:${mm < 10 ? '0' : ''}${mm}:${s < 10 ? '0' : ''}${s}`;
-        }
-        return `${mm < 10 ? '0' : ''}${mm}:${s < 10 ? '0' : ''}${s}`;
+        return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
     }
 
-    handleStageClick(e) {
-        const now = Date.now();
-        const stageWidth = this.dom.stage.clientWidth;
-        const clickX = e.clientX - this.dom.stage.getBoundingClientRect().left;
+    bindProgressEvents(wrap) {
+        if (!wrap) return;
+        const handleSeek = (e) => {
+            if (!this.dom.media || !this.dom.media.duration) return;
+            const rect = wrap.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const pos = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+            this.dom.media.currentTime = pos * this.dom.media.duration;
+        };
 
-        if (now - this.lastTapTime < 300) {
-            // 双击手势
-            if (clickX < stageWidth * 0.4) {
-                this.seekBy(-10);
-                this.triggerRipple('left');
-            } else if (clickX > stageWidth * 0.6) {
-                this.seekBy(10);
-                this.triggerRipple('right');
-            } else {
-                this.toggleFullscreen();
+        let dragging = false;
+        wrap.addEventListener('mousedown', (e) => { dragging = true; handleSeek(e); });
+        window.addEventListener('mousemove', (e) => { if (dragging) handleSeek(e); });
+        window.addEventListener('mouseup', () => { dragging = false; });
+
+        wrap.addEventListener('touchstart', (e) => { dragging = true; handleSeek(e); }, { passive: true });
+        window.addEventListener('touchmove', (e) => { if (dragging) handleSeek(e); }, { passive: true });
+        window.addEventListener('touchend', () => { dragging = false; });
+    }
+
+    bindStageGestures(box) {
+        if (!box) return;
+
+        box.addEventListener('click', (e) => {
+            if (this.isLocked) {
+                this.showGestureToast('已锁定屏幕，轻触解锁');
+                return;
             }
-        } else {
-            // 单击：切换播放/暂停
-            this.togglePlay();
-        }
-        this.lastTapTime = now;
-    }
 
-    triggerCenterBadge(text) {
-        const { centerBadge } = this.dom;
-        centerBadge.textContent = text;
-        centerBadge.classList.add('show');
-        setTimeout(() => centerBadge.classList.remove('show'), 600);
-    }
+            // 若有抽屉处于展开状态，点击视窗任意区域立即收起抽屉
+            const anyDrawerOpen = (this.dom.drawerEpisodes && this.dom.drawerEpisodes.classList.contains('open')) ||
+                                  (this.dom.drawerSettings && this.dom.drawerSettings.classList.contains('open'));
+            if (anyDrawerOpen) {
+                this.closeDrawers();
+                return;
+            }
 
-    triggerRipple(direction) {
-        const el = direction === 'left' ? this.dom.rippleLeft : this.dom.rippleRight;
-        el.classList.add('show');
-        setTimeout(() => el.classList.remove('show'), 600);
+            const now = Date.now();
+            if (now - this.lastTapTime < 280) {
+                const rect = box.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                if (clickX < rect.width * 0.35) {
+                    this.seekDelta(-10);
+                } else if (clickX > rect.width * 0.65) {
+                    this.seekDelta(10);
+                } else {
+                    this.togglePlay();
+                }
+            } else {
+                this.toggleControls();
+            }
+            this.lastTapTime = now;
+        });
+
+        box.addEventListener('touchstart', (e) => {
+            if (e.touches.length !== 1 || this.isLocked) return;
+            const touch = e.touches[0];
+            this.touchStartX = touch.clientX;
+            this.touchStartY = touch.clientY;
+            this.isSwiping = false;
+            this.swipeDirection = null;
+            this.startVolume = this.dom.media ? this.dom.media.volume : 1;
+            this.startBrightness = this.brightness;
+            this.startSeekTime = this.dom.media ? this.dom.media.currentTime : 0;
+
+            this.pressSpeedTimer = setTimeout(() => {
+                if (!this.isSwiping && this.isPlaying) {
+                    this.isPressSpeeding = true;
+                    this.prePressRate = this.dom.media.playbackRate;
+                    this.dom.media.playbackRate = 2.0;
+                    if (this.dom.speedBadge) this.dom.speedBadge.style.display = 'block';
+                }
+            }, 380);
+        }, { passive: true });
+
+        box.addEventListener('touchmove', (e) => {
+            if (e.touches.length !== 1 || this.isLocked) return;
+            const touch = e.touches[0];
+            const dx = touch.clientX - this.touchStartX;
+            const dy = touch.clientY - this.touchStartY;
+
+            if (!this.isSwiping && (Math.abs(dx) > 12 || Math.abs(dy) > 12)) {
+                clearTimeout(this.pressSpeedTimer);
+                this.isSwiping = true;
+                this.swipeDirection = Math.abs(dx) > Math.abs(dy) ? 'horizontal' : 'vertical';
+            }
+
+            if (this.isSwiping) {
+                if (this.swipeDirection === 'vertical') {
+                    const rect = box.getBoundingClientRect();
+                    const deltaPercent = (-dy / rect.height) * 100;
+                    if (this.touchStartX < rect.width * 0.5) {
+                        const newBrightness = Math.max(20, Math.min(150, this.startBrightness + deltaPercent * 1.2));
+                        this.brightness = newBrightness;
+                        if (this.dom.media) this.dom.media.style.filter = `brightness(${newBrightness}%)`;
+                        this.showBrightnessHUD(newBrightness);
+                    } else {
+                        const newVol = Math.max(0, Math.min(1, this.startVolume + (-dy / 160)));
+                        if (this.dom.media) this.dom.media.volume = newVol;
+                        this.showVolumeHUD(newVol);
+                    }
+                } else if (this.swipeDirection === 'horizontal') {
+                    if (!this.dom.media || !this.dom.media.duration) return;
+                    const deltaSec = (dx / 200) * 60;
+                    const targetSeek = Math.max(0, Math.min(this.dom.media.duration, this.startSeekTime + deltaSec));
+                    this.touchTargetSeek = targetSeek;
+                    this.showGestureToast('⏱️ ' + this.formatTime(targetSeek) + ' / ' + this.formatTime(this.dom.media.duration));
+                }
+            }
+        }, { passive: true });
+
+        const endTouch = () => {
+            clearTimeout(this.pressSpeedTimer);
+            if (this.isPressSpeeding) {
+                this.isPressSpeeding = false;
+                if (this.dom.media) this.dom.media.playbackRate = this.prePressRate;
+                if (this.dom.speedBadge) this.dom.speedBadge.style.display = 'none';
+            }
+            if (this.isSwiping && this.touchTargetSeek !== null) {
+                if (this.dom.media) this.dom.media.currentTime = this.touchTargetSeek;
+                this.touchTargetSeek = null;
+            }
+            this.hideHUDs();
+            this.hideGestureToast();
+        };
+
+        box.addEventListener('touchend', endTouch);
+        box.addEventListener('touchcancel', endTouch);
     }
 
     showControls() {
-        this.dom.header.classList.remove('hidden');
-        this.dom.controlsWrapper.classList.remove('hidden');
+        this.controlsVisible = true;
+        if (this.dom.controlsOverlay) this.dom.controlsOverlay.classList.remove('hidden');
+        clearTimeout(this._controlsTimer);
+        if (this.isPlaying) {
+            this._controlsTimer = setTimeout(() => {
+                this.controlsVisible = false;
+                if (this.dom.controlsOverlay) this.dom.controlsOverlay.classList.add('hidden');
+                this.closeDrawers();
+            }, 4000);
+        }
     }
 
-    hideControls() {
-        if (!this.isPlaying) return;
-        this.dom.header.classList.add('hidden');
-        this.dom.controlsWrapper.classList.add('hidden');
-        this.dom.speedPopover.classList.remove('open');
+    toggleControls() {
+        if (this.controlsVisible) {
+            this.controlsVisible = false;
+            if (this.dom.controlsOverlay) this.dom.controlsOverlay.classList.add('hidden');
+            this.closeDrawers();
+        } else {
+            this.showControls();
+        }
     }
 
-    toggleFullscreen() {
-        const { overlay, media } = this.dom;
-        if (media && media.webkitEnterFullscreen && !document.fullscreenEnabled) {
-            media.webkitEnterFullscreen();
+    showBrightnessHUD(val) {
+        if (!this.dom.hudBrightness) return;
+        this.dom.hudBrightness.classList.add('show');
+        const percent = Math.round((val / 150) * 100);
+        if (this.dom.hudBrightnessFill) this.dom.hudBrightnessFill.style.height = percent + '%';
+        if (this.dom.hudBrightnessVal) this.dom.hudBrightnessVal.textContent = Math.round(val) + '%';
+    }
+
+    showVolumeHUD(vol) {
+        if (!this.dom.hudVolume) return;
+        this.dom.hudVolume.classList.add('show');
+        const percent = Math.round(vol * 100);
+        if (this.dom.hudVolumeFill) this.dom.hudVolumeFill.style.height = percent + '%';
+        if (this.dom.hudVolumeVal) this.dom.hudVolumeVal.textContent = percent + '%';
+    }
+
+    hideHUDs() {
+        setTimeout(() => {
+            if (this.dom.hudBrightness) this.dom.hudBrightness.classList.remove('show');
+            if (this.dom.hudVolume) this.dom.hudVolume.classList.remove('show');
+        }, 500);
+    }
+
+    showGestureToast(msg) {
+        if (!this.dom.gestureToast) return;
+        this.dom.gestureToast.textContent = msg;
+        this.dom.gestureToast.classList.add('show');
+    }
+
+    hideGestureToast() {
+        setTimeout(() => {
+            if (this.dom.gestureToast) this.dom.gestureToast.classList.remove('show');
+        }, 800);
+    }
+
+    showCenterBadge(text) {
+        if (!this.dom.centerBadge) return;
+        this.dom.centerBadge.textContent = text;
+        this.dom.centerBadge.classList.add('show');
+        setTimeout(() => this.dom.centerBadge && this.dom.centerBadge.classList.remove('show'), 350);
+    }
+
+    savePlayHistory(current, duration) {
+        if (!this.currentMedia || !this.currentMedia.path) return;
+        const now = Date.now();
+        const curSec = Math.floor(current);
+        const durSec = Math.floor(duration);
+        const percentage = durSec > 0 ? Math.min(100, Math.max(0, Math.round((curSec / durSec) * 100))) : 0;
+
+        // 1. 写入本地 LocalStorage
+        try {
+            const raw = localStorage.getItem(this.historyStorageKey);
+            const history = raw ? JSON.parse(raw) : {};
+            history[this.currentMedia.path] = {
+                name: this.currentMedia.name,
+                path: this.currentMedia.path,
+                current: curSec,
+                duration: durSec,
+                percentage,
+                time: now
+            };
+            const keys = Object.keys(history);
+            if (keys.length > 80) {
+                keys.sort((a, b) => history[a].time - history[b].time);
+                while (keys.length > 80) {
+                    delete history[keys.shift()];
+                }
+            }
+            localStorage.setItem(this.historyStorageKey, JSON.stringify(history));
+        } catch (e) {}
+
+        // 2. 跨设备同步至服务端持久化数据库
+        try {
+            let authHeaders = { 'Content-Type': 'application/json' };
+            if (window.LanDiskAuth && typeof window.LanDiskAuth.authHeaders === 'function') {
+                authHeaders = window.LanDiskAuth.authHeaders(authHeaders);
+            }
+            fetch('/api/media/progress', {
+                method: 'POST',
+                headers: authHeaders,
+                body: JSON.stringify({
+                    path: this.currentMedia.path,
+                    time: curSec,
+                    duration: durSec
+                })
+            }).catch(() => {});
+        } catch (e) {}
+    }
+
+    async checkResumeHistory(item) {
+        if (!item || !item.path) return;
+        let record = null;
+
+        // 1. 优先尝试从服务端拉取最新的跨设备断点续播记录
+        try {
+            let authQ = '';
+            if (window.LanDiskAuth && typeof window.LanDiskAuth.authQuery === 'function') {
+                const q = window.LanDiskAuth.authQuery();
+                if (q) authQ = q.replace(/^\?/, '&');
+            }
+            const res = await fetch(`/api/media/progress?path=${encodeURIComponent(item.path)}${authQ}`);
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success && data.progress && data.progress.time > 8) {
+                    record = {
+                        current: data.progress.time,
+                        duration: data.progress.duration,
+                        percentage: data.progress.percentage
+                    };
+                }
+            }
+        } catch (e) {}
+
+        // 2. 本地回退检查
+        if (!record) {
+            try {
+                const raw = localStorage.getItem(this.historyStorageKey);
+                if (raw) {
+                    const history = JSON.parse(raw);
+                    const localRec = history[item.path];
+                    if (localRec && localRec.current > 8) {
+                        record = localRec;
+                    }
+                }
+            } catch (e) {}
+        }
+
+        if (record && record.current > 8 && (!record.duration || record.current < record.duration - 12)) {
+            const targetTime = record.current;
+            const formatted = this.formatTime(targetTime);
+            const percentStr = record.percentage ? ` · ${record.percentage}%` : '';
+            this.showResumeToast(`${formatted}${percentStr}`, () => {
+                if (this.dom.media) {
+                    this.dom.media.currentTime = targetTime;
+                    this.showGestureToast('已继续播放至 ' + formatted);
+                }
+            });
+        }
+    }
+
+    showResumeToast(formattedTime, onResume) {
+        if (!this.dom.resumeToast) return;
+        if (this.dom.resumeText) this.dom.resumeText.textContent = '上次播放至 ' + formattedTime;
+        this.dom.resumeToast.classList.add('show');
+
+        if (this.dom.btnResumeAction) {
+            this.dom.btnResumeAction.onclick = (e) => {
+                e.stopPropagation();
+                this.hideResumeToast();
+                if (onResume) onResume();
+            };
+        }
+
+        clearTimeout(this._resumeToastTimer);
+        this._resumeToastTimer = setTimeout(() => this.hideResumeToast(), 8000);
+    }
+
+    hideResumeToast() {
+        if (this.dom.resumeToast) this.dom.resumeToast.classList.remove('show');
+        clearTimeout(this._resumeToastTimer);
+    }
+
+    // ---------------- 字幕解析与调度引擎 ----------------
+    parseSRT(text) {
+        if (!text) return [];
+        const cues = [];
+        const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        const blocks = normalized.split(/\n\s*\n/);
+        
+        for (const block of blocks) {
+            const lines = block.trim().split('\n');
+            if (lines.length < 2) continue;
+            let timeLine = lines[0].includes('-->') ? lines[0] : (lines[1].includes('-->') ? lines[1] : null);
+            if (!timeLine) continue;
+            
+            const match = timeLine.match(/(\d{1,2}:\d{2}:\d{2}[,\.]\d{2,3})\s*-->\s*(\d{1,2}:\d{2}:\d{2}[,\.]\d{2,3})/);
+            if (!match) continue;
+            
+            const start = this.timeStrToSeconds(match[1]);
+            const end = this.timeStrToSeconds(match[2]);
+            const timeIdx = lines.indexOf(timeLine);
+            const textLines = lines.slice(timeIdx + 1).join('\n');
+            const cleanText = textLines.replace(/<[^>]+>/g, '').replace(/\{[^}]+\}/g, '').trim();
+            if (cleanText) {
+                cues.push({ start, end, text: cleanText });
+            }
+        }
+        return cues;
+    }
+
+    parseVTT(text) {
+        if (!text) return [];
+        return this.parseSRT(text.replace(/^WEBVTT[^\n]*\n+/i, ''));
+    }
+
+    parseASS(text) {
+        if (!text) return [];
+        const cues = [];
+        const lines = text.split(/\r?\n/);
+        for (const line of lines) {
+            if (line.startsWith('Dialogue:')) {
+                const parts = line.split(',');
+                if (parts.length >= 10) {
+                    const start = this.timeStrToSeconds(parts[1].trim());
+                    const end = this.timeStrToSeconds(parts[2].trim());
+                    const rawText = parts.slice(9).join(',');
+                    const cleanText = rawText.replace(/\{[^}]+\}/g, '').replace(/\\N/gi, '\n').trim();
+                    if (cleanText) {
+                        cues.push({ start, end, text: cleanText });
+                    }
+                }
+            }
+        }
+        return cues;
+    }
+
+    timeStrToSeconds(str) {
+        if (!str) return 0;
+        const normalized = str.replace(',', '.');
+        const parts = normalized.split(':');
+        if (parts.length === 3) {
+            return parseFloat(parts[0]) * 3600 + parseFloat(parts[1]) * 60 + parseFloat(parts[2]);
+        } else if (parts.length === 2) {
+            return parseFloat(parts[0]) * 60 + parseFloat(parts[1]);
+        }
+        return parseFloat(normalized) || 0;
+    }
+
+    async detectSubtitles(item) {
+        if (!item || !item.path) return;
+        this.subtitles = [];
+        this.currentSubtitleTrack = null;
+        this.subtitleCues = [];
+        this.updateSubtitleUI([]);
+
+        try {
+            let authQ = '';
+            if (window.LanDiskAuth && typeof window.LanDiskAuth.authQuery === 'function') {
+                const q = window.LanDiskAuth.authQuery();
+                if (q) authQ = q.replace(/^\?/, '&');
+            }
+            const res = await fetch(`/api/media/subtitles?path=${encodeURIComponent(item.path)}${authQ}`);
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success && Array.isArray(data.subtitles) && data.subtitles.length > 0) {
+                    this.subtitles = data.subtitles;
+                    this.updateSubtitleUI(this.subtitles);
+                    // 默认自动挂载探测到的第一个字幕
+                    this.loadSubtitleTrack(this.subtitles[0]);
+                } else {
+                    const label = '未发现同名字幕';
+                    if (this.dom.fsSubStatus) this.dom.fsSubStatus.textContent = label;
+                    if (this.dom.subStatus) this.dom.subStatus.textContent = label;
+                }
+            }
+        } catch (e) {}
+    }
+
+    updateSubtitleUI(tracks = []) {
+        const renderGrid = (grid) => {
+            if (!grid) return;
+            let html = `
+                <button class="player-opt-pill ${tracks.length > 0 ? 'active' : ''}" data-sub="auto">自动探测</button>
+                <button class="player-opt-pill ${tracks.length === 0 ? 'active' : ''}" data-sub="off">关闭字幕</button>
+            `;
+            tracks.forEach((track, idx) => {
+                html += `<button class="player-opt-pill ${idx === 0 ? 'active' : ''}" data-sub="track" data-sub-idx="${idx}">${track.name}</button>`;
+            });
+            grid.innerHTML = html;
+        };
+
+        renderGrid(this.dom.fsSubTracksGrid);
+        renderGrid(this.dom.subTracksGrid);
+    }
+
+    async loadSubtitleTrack(track) {
+        if (!track || !track.url) return;
+        this.currentSubtitleTrack = track;
+        try {
+            let authQ = '';
+            if (window.LanDiskAuth && typeof window.LanDiskAuth.authQuery === 'function') {
+                const q = window.LanDiskAuth.authQuery();
+                if (q) authQ = q.replace(/^\?/, '&');
+            }
+            const res = await fetch(track.url + authQ);
+            if (res.ok) {
+                const text = await res.text();
+                this.loadSubtitleText(text, track.name, track.format);
+            }
+        } catch (e) {
+            this.showGestureToast('字幕加载失败');
+        }
+    }
+
+    loadSubtitleText(text, trackName = '自定义字幕', format = 'srt') {
+        if (!text) return;
+        let cues = [];
+        if (format === 'ass' || format === 'ssa' || text.includes('[Script Info]')) {
+            cues = this.parseASS(text);
+        } else if (format === 'vtt' || text.startsWith('WEBVTT')) {
+            cues = this.parseVTT(text);
+        } else {
+            cues = this.parseSRT(text);
+        }
+
+        this.subtitleCues = cues.sort((a, b) => a.start - b.start);
+        this.subtitlesEnabled = true;
+        
+        const statusText = `已挂载字幕: ${trackName} (${cues.length} 句)`;
+        if (this.dom.fsSubStatus) this.dom.fsSubStatus.textContent = statusText;
+        if (this.dom.subStatus) this.dom.subStatus.textContent = statusText;
+        this.showGestureToast(statusText);
+    }
+
+    renderSubtitleCue(currentTime) {
+        if (!this.dom.subtitleText || !this.subtitlesEnabled || !this.subtitleCues.length) {
+            if (this.dom.subtitleText) {
+                this.dom.subtitleText.classList.remove('show');
+                this.dom.subtitleText.textContent = '';
+            }
             return;
         }
 
-        const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement || overlay.classList.contains('is-fullscreen'));
+        const t = currentTime + (this.subtitleOffset || 0);
+        let activeText = '';
 
-        if (!isFs) {
-            const req = overlay.requestFullscreen || overlay.webkitRequestFullscreen || overlay.mozRequestFullScreen || overlay.msRequestFullscreen;
-            if (req) {
-                req.call(overlay).catch(() => {
-                    overlay.classList.add('is-fullscreen');
-                });
-            } else {
-                overlay.classList.add('is-fullscreen');
+        for (let i = 0; i < this.subtitleCues.length; i++) {
+            const cue = this.subtitleCues[i];
+            if (t >= cue.start && t <= cue.end) {
+                activeText = cue.text;
+                break;
             }
+            if (cue.start > t) break;
+        }
+
+        if (activeText) {
+            if (this.dom.subtitleText.textContent !== activeText) {
+                this.dom.subtitleText.textContent = activeText;
+            }
+            this.dom.subtitleText.classList.add('show');
         } else {
-            if (document.fullscreenElement || document.webkitFullscreenElement) {
-                const exit = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen;
-                if (exit) exit.call(document).catch(() => {});
+            this.dom.subtitleText.classList.remove('show');
+        }
+    }
+
+    setSubtitleSize(size) {
+        this.subtitleSize = size;
+        if (this.dom.subtitleText) {
+            this.dom.subtitleText.classList.remove('sub-size-sm', 'sub-size-md', 'sub-size-lg', 'sub-size-xl');
+            this.dom.subtitleText.classList.add('sub-size-' + size);
+        }
+        [this.dom.fsSubSizeGrid, this.dom.subSizeGrid].forEach(grid => {
+            if (grid) {
+                grid.querySelectorAll('[data-subsize]').forEach(btn => {
+                    btn.classList.toggle('active', btn.getAttribute('data-subsize') === size);
+                });
             }
-            overlay.classList.remove('is-fullscreen');
-        }
+        });
+        const sizeNames = { sm: '小号 (14px)', md: '中号 (18px)', lg: '大号 (22px)', xl: '特大 (26px)' };
+        this.showGestureToast(`字幕字号: ${sizeNames[size] || size}`);
     }
 
-    renderPlaylist() {
-        const playlistBody = this.dom.playlistBody || document.getElementById('apple-playlist-body');
-        const playlistCount = this.dom.playlistCount || document.getElementById('apple-playlist-count');
-        if (playlistCount) {
-            playlistCount.textContent = this.playlist.length;
-        }
-
-        if (playlistBody) {
-            playlistBody.innerHTML = this.playlist.map((item, idx) => `
-                <div class="apple-playlist-item ${idx === this.currentIndex ? 'active' : ''}" onclick="AppleMediaPlayer.playIndex(${idx})">
-                    <div class="apple-playlist-item-icon">${item.type === 'audio' ? '🎵' : '🎬'}</div>
-                    <div class="apple-playlist-item-info">
-                        <div class="apple-playlist-item-name">${item.name}</div>
-                        <div class="apple-playlist-item-meta">${item.type === 'audio' ? '音频文件' : '视频文件'}</div>
-                    </div>
-                </div>
-            `).join('');
-        }
+    setSubtitleDelay(delay) {
+        this.subtitleOffset = parseFloat(delay) || 0;
+        [this.dom.fsSubDelayGrid, this.dom.subDelayGrid].forEach(grid => {
+            if (grid) {
+                grid.querySelectorAll('[data-subdelay]').forEach(btn => {
+                    btn.classList.toggle('active', parseFloat(btn.getAttribute('data-subdelay')) === this.subtitleOffset);
+                });
+            }
+        });
+        this.showGestureToast(`字幕时间轴: ${this.subtitleOffset > 0 ? '+' : ''}${this.subtitleOffset}s`);
     }
 
-    playIndex(index) {
-        if (index >= 0 && index < this.playlist.length) {
-            this.currentIndex = index;
-            this.loadMedia(this.playlist[this.currentIndex]);
+    toggleSubtitle(enabled) {
+        this.subtitlesEnabled = !!enabled;
+        if (!this.subtitlesEnabled && this.dom.subtitleText) {
+            this.dom.subtitleText.classList.remove('show');
+            this.dom.subtitleText.textContent = '';
         }
+        const label = this.subtitlesEnabled ? '字幕已开启' : '字幕已关闭';
+        if (this.dom.fsSubStatus) this.dom.fsSubStatus.textContent = label;
+        if (this.dom.subStatus) this.dom.subStatus.textContent = label;
+        this.showGestureToast(label);
     }
 
-    initAudioCanvas() {
+    initAudioVisualizer() {
         if (this.audioCtx) return;
         try {
             const AudioContext = window.AudioContext || window.webkitAudioContext;
             this.audioCtx = new AudioContext();
             this.audioAnalyser = this.audioCtx.createAnalyser();
+            this.audioAnalyser.fftSize = 64;
             this.audioSource = this.audioCtx.createMediaElementSource(this.dom.media);
             this.audioSource.connect(this.audioAnalyser);
             this.audioAnalyser.connect(this.audioCtx.destination);
-            this.audioAnalyser.fftSize = 64;
 
-            this.drawAudioVisualizer();
+            const canvas = this.dom.audioCanvas;
+            const ctx = canvas.getContext('2d');
+            const bufferLength = this.audioAnalyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+
+            const render = () => {
+                this.animFrameId = requestAnimationFrame(render);
+                this.audioAnalyser.getByteFrequencyData(dataArray);
+
+                canvas.width = canvas.offsetWidth;
+                canvas.height = canvas.offsetHeight;
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                const barWidth = (canvas.width / bufferLength) * 2;
+                let x = 0;
+                for (let i = 0; i < bufferLength; i++) {
+                    const barHeight = (dataArray[i] / 255) * canvas.height * 0.75;
+                    ctx.fillStyle = 'rgba(56, 189, 248, 0.45)';
+                    ctx.fillRect(x, canvas.height - barHeight, barWidth - 2, barHeight);
+                    x += barWidth;
+                }
+            };
+            render();
         } catch (e) {}
     }
 
-    drawAudioVisualizer() {
-        const canvas = this.dom.audioCanvas;
-        const ctx = canvas.getContext('2d');
-        const bufferLength = this.audioAnalyser ? this.audioAnalyser.frequencyBinCount : 0;
-        const dataArray = new Uint8Array(bufferLength);
+    onKeyDown(e) {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (!this.dom.view || !this.dom.view.classList.contains('active')) return;
 
-        const render = () => {
-            this.animFrameId = requestAnimationFrame(render);
-            if (!this.audioAnalyser) return;
-
-            this.audioAnalyser.getByteFrequencyData(dataArray);
-
-            canvas.width = canvas.parentElement.clientWidth;
-            canvas.height = canvas.parentElement.clientHeight;
-
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            const barWidth = (canvas.width / bufferLength) * 2;
-            let x = 0;
-
-            for (let i = 0; i < bufferLength; i++) {
-                const barHeight = (dataArray[i] / 255) * canvas.height;
-                
-                const gradient = ctx.createLinearGradient(0, canvas.height, 0, 0);
-                gradient.addColorStop(0, 'rgba(0, 122, 255, 0.2)');
-                gradient.addColorStop(1, 'rgba(139, 92, 246, 0.8)');
-
-                ctx.fillStyle = gradient;
-                ctx.fillRect(x, canvas.height - barHeight, barWidth - 2, barHeight);
-
-                x += barWidth;
-            }
-        };
-
-        render();
-    }
-
-    handleKeyDown(e) {
-        if (!this.dom.overlay.classList.contains('active')) return;
-
-        // 如果用户正在输入框中打字，不响应全局快捷键
-        if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
-
-        switch (e.key) {
+        switch (e.key.toLowerCase()) {
             case ' ':
-            case 'k':
-            case 'K':
                 e.preventDefault();
                 this.togglePlay();
                 break;
-            case 'ArrowLeft':
-            case 'j':
-            case 'J':
+            case 'arrowleft':
                 e.preventDefault();
-                this.seekBy(e.shiftKey ? -10 : -5);
+                this.seekDelta(-10);
                 break;
-            case 'ArrowRight':
-            case 'l':
-            case 'L':
+            case 'arrowright':
                 e.preventDefault();
-                this.seekBy(e.shiftKey ? 10 : 5);
-                break;
-            case 'ArrowUp':
-                e.preventDefault();
-                this.dom.media.volume = Math.min(1, this.dom.media.volume + 0.1);
-                this.updateVolumeIcon();
-                break;
-            case 'ArrowDown':
-                e.preventDefault();
-                this.dom.media.volume = Math.max(0, this.dom.media.volume - 0.1);
-                this.updateVolumeIcon();
+                this.seekDelta(10);
                 break;
             case 'f':
-            case 'F':
                 e.preventDefault();
                 this.toggleFullscreen();
                 break;
-            case 'm':
-            case 'M':
+            case 's':
                 e.preventDefault();
-                this.toggleMute();
+                this.takeSnapshot();
                 break;
-            case 'Escape':
-                e.preventDefault();
-                this.close();
+            case 'escape':
+                const anyDrawerOpen = (this.dom.drawerEpisodes && this.dom.drawerEpisodes.classList.contains('open')) ||
+                                      (this.dom.drawerSettings && this.dom.drawerSettings.classList.contains('open'));
+                if (anyDrawerOpen) {
+                    this.closeDrawers();
+                } else {
+                    this.close();
+                }
                 break;
         }
     }
-
-    close() {
-        if (!this.initialized) return;
-        this.dom.media.pause();
-        this.dom.media.src = '';
-        this.dom.overlay.classList.remove('active');
-        if (this.animFrameId) cancelAnimationFrame(this.animFrameId);
-    }
 }
 
-// 暴露全局单例
-window.AppleMediaPlayer = new AppleMediaPlayerEngine();
+window.AppleMediaPlayer = new AppleCinemaPlayerEngine();

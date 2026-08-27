@@ -27,7 +27,27 @@
             this.audioChunks = [];
             this.isRecording = false;
 
-            this.initStream();
+            // 无凭据（未登录）时不自动建连，等待登录成功后由 init() 启动，
+            // 避免登录前每 3 秒一次的 401 重连风暴
+            if (this.hasCredentials()) {
+                this.initStream();
+            }
+        }
+
+        hasCredentials() {
+            if (typeof global.LanDiskAuth !== 'undefined' && global.LanDiskAuth.hasCredentials) {
+                return global.LanDiskAuth.hasCredentials();
+            }
+            return !!this.getPin();
+        }
+
+        _authHeaders(extra) {
+            if (typeof global.LanDiskAuth !== 'undefined' && global.LanDiskAuth.authHeaders) {
+                return global.LanDiskAuth.authHeaders(extra);
+            }
+            const headers = extra ? Object.assign({}, extra) : {};
+            headers['x-pin'] = this.getPin();
+            return headers;
         }
 
         getDeviceId() {
@@ -42,12 +62,23 @@
         initStream() {
             if (this.eventSource && this.eventSource.readyState !== EventSource.CLOSED) return;
 
-            const pin = this.getPin();
             const getUrl = typeof this.getApiUrl === 'function' ? this.getApiUrl : (p => p);
-            const sseUrl = getUrl(`/api/chat/stream${pin ? `?pin=${encodeURIComponent(pin)}` : ''}`);
+            let query = '';
+            if (typeof global.LanDiskAuth !== 'undefined' && global.LanDiskAuth.authQuery) {
+                query = global.LanDiskAuth.authQuery();
+            } else {
+                const pin = this.getPin();
+                query = pin ? `?pin=${encodeURIComponent(pin)}` : '';
+            }
+            const sseUrl = getUrl(`/api/chat/stream${query}`);
 
             try {
                 this.eventSource = new EventSource(sseUrl);
+
+                this.eventSource.onopen = () => {
+                    // 连接成功，重置退避
+                    this._retryDelay = 3000;
+                };
 
                 this.eventSource.onmessage = (event) => {
                     try {
@@ -72,7 +103,12 @@
                         this.eventSource.close();
                         this.eventSource = null;
                     }
-                    setTimeout(() => this.initStream(), 3000);
+                    if (!this.hasCredentials()) return;
+                    // 指数退避：3s → 5s → 9s → … 封顶 30s，主机离线时不狂刷
+                    if (!this._retryDelay) this._retryDelay = 3000;
+                    const delay = this._retryDelay;
+                    this._retryDelay = Math.min(Math.round(this._retryDelay * 1.7), 30000);
+                    setTimeout(() => this.initStream(), delay);
                 };
             } catch (e) {
                 console.error('初始化 SSE 失败', e);
@@ -96,7 +132,14 @@
             if (!this.container) return;
 
             if (!messages || messages.length === 0) {
-                this.container.innerHTML = '<div style="text-align: center; color: var(--apple-text-muted); font-size: 12px; margin-top: 20px;">跨端加密实时传输中...</div>';
+                const chatIcon = global.Icons ? global.Icons.render('chat', 28) : '';
+                this.container.innerHTML = `
+                    <div class="chat-empty-state">
+                        <div class="chat-empty-icon">${chatIcon}</div>
+                        <div class="chat-empty-title">跨端实时消息互通</div>
+                        <div class="chat-empty-desc">局域网加密直连 · 支持文本、图片及语音实时双向互传</div>
+                    </div>
+                `;
                 return;
             }
 
@@ -105,10 +148,16 @@
         }
 
         appendMessage(message) {
+            // 他人新消息通知钩子：供两端 Dock 未读角标使用
+            const isMe = message && (message.sender === this.deviceId || (typeof window !== 'undefined' && window.api && message.sender === 'pc'));
+            if (!isMe && typeof global.onChatIncoming === 'function') {
+                try { global.onChatIncoming(message); } catch (e) {}
+            }
+
             this.ensureContainer();
             if (!this.container) return;
 
-            if (this.container.children.length === 1 && this.container.children[0].tagName === 'DIV' && !this.container.children[0].classList.contains('msg-bubble')) {
+            if (this.container.querySelector('.chat-empty-state') || (this.container.children.length === 1 && !this.container.children[0].classList.contains('chat-msg-row') && !this.container.children[0].classList.contains('msg-bubble'))) {
                 this.container.innerHTML = '';
             }
 
@@ -123,30 +172,32 @@
         }
 
         createMessageHTML(m) {
-            const isMe = m.sender === this.deviceId || m.sender === 'pc';
-            const timeStr = new Date(m.time || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const isMe = m.sender === this.deviceId || (typeof window !== 'undefined' && window.api && m.sender === 'pc');
+            const d = new Date(m.time || Date.now());
+            const isToday = new Date().toDateString() === d.toDateString();
+            const timeStr = isToday
+                ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                : `${d.getMonth() + 1}月${d.getDate()}日 ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+
+            let senderLabel = isMe ? '我' : (m.sender === 'pc' ? '电脑端' : (m.sender && m.sender.startsWith('dev_') ? '移动设备' : (m.sender || '其他设备')));
+            const isPeerPc = m.sender === 'pc';
+            const avatarIconName = isMe 
+                ? (typeof window !== 'undefined' && window.api ? 'monitor' : 'smartphone')
+                : (isPeerPc ? 'monitor' : 'smartphone');
+            const avatarSvg = global.Icons ? global.Icons.render(avatarIconName, 17) : '';
 
             let contentHtml = '';
+            const escapeHtml = global.escapeHtml || (str => typeof str === 'string' ? str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') : str);
+            
             if (m.type === 'image') {
-                contentHtml = `<img src="${m.text}" style="max-width:100%; border-radius:12px; display:block;" alt="chat picture">`;
+                contentHtml = `<img src="${escapeHtml(m.text)}" alt="图片" onclick="window.open(this.src)" title="点击查看大图">`;
             } else if (m.type === 'voice' || m.type === 'audio') {
-                contentHtml = `
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <span>🎙️ 语音消息</span>
-                        <audio src="${m.text}" controls style="max-width:200px; height:32px;"></audio>
-                    </div>
-                `;
+                contentHtml = `<div class="chat-audio-wrapper"><span style="display:inline-flex; align-items:center; gap:5px; font-size:12px; opacity:0.9;">${global.Icons ? global.Icons.render('mic', 15) : ''} 语音</span><audio src="${escapeHtml(m.text)}" controls></audio></div>`;
             } else {
-                const escapeHtml = str => typeof str === 'string' ? str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') : str;
-                contentHtml = escapeHtml(m.text || '').replace(/\n/g, '<br>');
+                contentHtml = escapeHtml((m.text || '').trim()).replace(/\n/g, '<br>');
             }
 
-            return `
-                <div class="msg-bubble ${isMe ? 'msg-right' : 'msg-left'}">
-                    <div>${contentHtml}</div>
-                    <div class="msg-time">${timeStr}</div>
-                </div>
-            `;
+            return `<div class="chat-msg-row ${isMe ? 'chat-msg-self' : 'chat-msg-peer'}"><div class="chat-avatar" title="${senderLabel}">${avatarSvg}</div><div class="chat-msg-body"><div class="chat-msg-meta"><span class="chat-sender-name">${senderLabel}</span><span class="chat-msg-time">${timeStr}</span></div><div class="chat-bubble ${isMe ? 'bubble-self msg-right' : 'bubble-peer msg-left'}">${contentHtml}</div></div></div>`;
         }
 
         async sendText(customText) {
@@ -161,14 +212,13 @@
                 this.inputElement.value = '';
             }
 
-            const pin = this.getPin();
             const getUrl = typeof this.getApiUrl === 'function' ? this.getApiUrl : (p => p);
             const chatUrl = getUrl('/api/chat');
 
             try {
                 const res = await fetch(chatUrl, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'x-pin': pin },
+                    headers: this._authHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({
                         text: text.trim(),
                         sender: this.deviceId,
@@ -178,29 +228,38 @@
 
                 if (!res.ok) {
                     const errData = await res.json().catch(() => ({}));
-                    alert('发送消息失败: ' + (errData.error || res.statusText));
+                    this._toast('发送消息失败: ' + (errData.error || res.statusText), 'error');
                 }
 
                 this.initStream();
             } catch (err) {
                 console.error('发送文本消息失败', err);
-                alert('发送文本消息失败: ' + err.message);
+                this._toast('发送文本消息失败: ' + err.message, 'error');
             }
+        }
+
+        _toast(msg, type) {
+            if (typeof global.LanDiskUI !== 'undefined' && global.LanDiskUI.toast) global.LanDiskUI.toast(msg, type);
+            else alert(msg);
         }
 
         async sendImage(file) {
             if (!file) return;
+            // 服务端限制 base64 后约 8MB，原图超过 5.5MB 会超限，提前拦截
+            if (file.size > 5.5 * 1024 * 1024) {
+                this._toast('图片过大（建议 5MB 以内），请压缩后再发送', 'error');
+                return;
+            }
             const reader = new FileReader();
             reader.onload = async (e) => {
                 const base64Data = e.target.result;
-                const pin = this.getPin();
                 const getUrl = typeof this.getApiUrl === 'function' ? this.getApiUrl : (p => p);
                 const chatUrl = getUrl('/api/chat');
 
                 try {
                     await fetch(chatUrl, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'x-pin': pin },
+                        headers: this._authHeaders({ 'Content-Type': 'application/json' }),
                         body: JSON.stringify({
                             text: base64Data,
                             sender: this.deviceId,
@@ -210,7 +269,7 @@
                     this.initStream();
                 } catch (err) {
                     console.error('发送图片消息失败', err);
-                    alert('发送图片消息失败: ' + err.message);
+                    this._toast('发送图片消息失败: ' + err.message, 'error');
                 }
             };
             reader.readAsDataURL(file);
@@ -226,7 +285,7 @@
 
         async startVoiceRecord() {
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                alert('当前浏览器环境不支持麦克风录音功能');
+                this._toast('当前浏览器环境不支持麦克风录音', 'error');
                 return;
             }
 
@@ -258,7 +317,7 @@
                 const statusEl = document.getElementById('voice-status');
                 if (statusEl) statusEl.style.display = 'block';
             } catch (err) {
-                alert('获取麦克风权限失败: ' + err.message);
+                this._toast('获取麦克风权限失败：' + err.message, 'error');
             }
         }
 
@@ -272,37 +331,47 @@
         }
 
         async sendVoiceMessage(base64Audio) {
-            const pin = this.getPin();
             const getUrl = typeof this.getApiUrl === 'function' ? this.getApiUrl : (p => p);
             const chatUrl = getUrl('/api/chat');
+
+            // 服务端音频上限 8MB（base64 后），超长录音提前拦截
+            if (base64Audio && base64Audio.length > 7.5 * 1024 * 1024) {
+                this._toast('语音过长（约超 5 分钟），请缩短后重试', 'error');
+                return;
+            }
 
             try {
                 await fetch(chatUrl, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'x-pin': pin },
+                    headers: this._authHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({
                         text: base64Audio,
                         sender: this.deviceId,
-                        type: 'voice'
+                        type: 'audio' // 服务端仅认 text/image/audio；旧版 voice 会被强转成文本乱码
                     })
                 });
                 this.initStream();
             } catch (err) {
                 console.error('发送语音失败', err);
+                this._toast('发送语音失败', 'error');
             }
         }
 
         async clearHistory() {
-            if (!confirm('确定要清空所有聊天记录吗？')) return;
+            if (global.LanDiskUI && global.LanDiskUI.confirmDialog) {
+                const ok = await global.LanDiskUI.confirmDialog({ title: '清空聊天记录', message: '所有设备上的聊天记录都会被清空。', danger: true, confirmText: '清空' });
+                if (!ok) return;
+            } else if (!confirm('确定要清空所有聊天记录吗？')) {
+                return;
+            }
 
-            const pin = this.getPin();
             const getUrl = typeof this.getApiUrl === 'function' ? this.getApiUrl : (p => p);
             const chatUrl = getUrl('/api/chat');
 
             try {
                 await fetch(chatUrl, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'x-pin': pin },
+                    headers: this._authHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({
                         text: 'clear',
                         action: 'clear',

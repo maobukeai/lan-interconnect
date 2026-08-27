@@ -41,10 +41,16 @@ router.post('/tools/kick-device', (req, res) => {
     res.json({ success: true, ip });
 });
 
+// IPv4 格式校验，防止把任意字符串写进黑名单持久化文件
+function isValidIPv4(ip) {
+    return typeof ip === 'string' && /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.test(ip) &&
+        ip.split('.').every(part => parseInt(part, 10) >= 0 && parseInt(part, 10) <= 255);
+}
+
 // 拉黑指定 IP (踢出并屏蔽访问)
 router.post('/tools/block-ip', (req, res) => {
     const { ip } = req.body;
-    if (!ip) return res.status(400).json({ error: '缺少 IP 参数' });
+    if (!isValidIPv4(ip)) return res.status(400).json({ error: 'IP 格式不合法' });
     if (ip === '127.0.0.1') return res.status(400).json({ error: '无法封禁本机回环地址 (127.0.0.1)' });
     state.blockedIps.add(ip);
     delete state.connectedDevices[ip];

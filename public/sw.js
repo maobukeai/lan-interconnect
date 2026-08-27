@@ -1,18 +1,48 @@
-const CACHE_NAME = 'lan-disk-video-cache-v1';
+const STATIC_CACHE_NAME = 'lan-disk-static-v2';
+const VIDEO_CACHE_NAME = 'lan-disk-video-cache-v1';
 
-// 安装时跳过等待，立即接管
+const PRECACHE_ASSETS = [
+    '/',
+    '/index.html',
+    '/app.js',
+    '/favicon.svg',
+    '/manifest.json',
+    '/shared/apple-theme.css',
+    '/shared/apple-player.css',
+    '/shared/icons.js',
+    '/shared/auth.js',
+    '/shared/ui.js',
+    '/shared/apple-player.js',
+    '/shared/components/file-explorer.js',
+    '/shared/components/file-bookmarks.js',
+    '/shared/components/file-batch.js',
+    '/shared/components/media-theater.js',
+    '/shared/components/imessage-chat.js',
+    '/shared/components/whiteboard.js',
+    '/shared/components/process-monitor.js',
+    '/shared/components/web-terminal.js',
+    '/shared/components/remote-control.js'
+];
+
+// 安装阶段：预缓存核心前端资产并跳过等待
 self.addEventListener('install', (event) => {
-    self.skipWaiting();
+    event.waitUntil(
+        caches.open(STATIC_CACHE_NAME).then((cache) => {
+            return cache.addAll(PRECACHE_ASSETS).catch((err) => {
+                console.warn('[SW] Precache partial error:', err);
+            });
+        }).then(() => self.skipWaiting())
+    );
 });
 
-// 激活时清除旧缓存并立即控制页面
+// 激活阶段：清理废弃旧缓存并立即接管所有客户端
 self.addEventListener('activate', (event) => {
     event.waitUntil(
-        caches.keys().then((cacheNames) => {
+        caches.keys().then((keys) => {
             return Promise.all(
-                cacheNames.map((cacheName) => {
-                    if (cacheName !== CACHE_NAME) {
-                        return caches.delete(cacheName);
+                keys.map((key) => {
+                    if (key !== STATIC_CACHE_NAME && key !== VIDEO_CACHE_NAME) {
+                        return caches.delete(key);
                     }
                 })
             );
@@ -20,18 +50,39 @@ self.addEventListener('activate', (event) => {
     );
 });
 
-// 拦截网络请求，对视频流进行特殊处理 (Range Request 缓存代理)
+// 拦截请求分发
 self.addEventListener('fetch', (event) => {
     const request = event.request;
     const url = new URL(request.url);
 
-    // 仅拦截视频流 API
+    // 1. 针对视频流 API 的 Range 切片秒播缓存
     if (url.pathname === '/api/stream' && request.headers.has('range')) {
         event.respondWith(handleVideoRangeRequest(request, event));
-    } else {
-        // 其他请求直接放行
-        event.respondWith(fetch(request));
+        return;
     }
+
+    // 2. 忽略非 GET 请求、其他 API 动态接口与 WebSocket 连接
+    if (request.method !== 'GET' || url.pathname.startsWith('/api/') || url.pathname.startsWith('/ws')) {
+        return;
+    }
+
+    // 3. 对静态文件采用 Stale-While-Revalidate（缓存优先秒开，后台异步更新）
+    event.respondWith(
+        caches.open(STATIC_CACHE_NAME).then(async (cache) => {
+            const cachedResponse = await cache.match(request);
+            
+            // 后台异步向网络请求最新资源
+            const fetchPromise = fetch(request).then((networkResponse) => {
+                if (networkResponse && networkResponse.status === 200) {
+                    cache.put(request, networkResponse.clone());
+                }
+                return networkResponse;
+            }).catch(() => null);
+
+            // 如果本地已有缓存，0 毫秒即刻返回给用户呈现 UI；否则等待网络响应
+            return cachedResponse || (await fetchPromise) || new Response('Offline', { status: 503 });
+        })
+    );
 });
 
 const MAX_VIDEO_CACHE_ITEMS = 60;
@@ -40,7 +91,6 @@ async function trimVideoCache(cache) {
     try {
         const keys = await cache.keys();
         if (keys.length > MAX_VIDEO_CACHE_ITEMS) {
-            // 删除最早的 15 项切片，防止占用磁盘过量
             for (let i = 0; i < 15; i++) {
                 if (keys[i]) await cache.delete(keys[i]);
             }
@@ -49,37 +99,29 @@ async function trimVideoCache(cache) {
 }
 
 async function handleVideoRangeRequest(request, event) {
-    const cache = await caches.open(CACHE_NAME);
+    const cache = await caches.open(VIDEO_CACHE_NAME);
     const rangeHeader = request.headers.get('range');
+    const url = new URL(request.url);
+
+    const cacheKey = url.origin + url.pathname + url.search + (url.search ? '&' : '?') + 'range=' + encodeURIComponent(rangeHeader);
     
-    // 生成一个带有 Range 标记的唯一缓存 Key
-    const cacheKey = request.url + '&range=' + rangeHeader;
-    
-    // 1. 检查本地是否有此片段的缓存
+    // 1. 检查是否有本地视频切片缓存
     const cachedResponse = await cache.match(cacheKey);
     if (cachedResponse) {
-        // 缓存命中，直接从手机内存/闪存返回，实现 0 延迟秒播
         return cachedResponse;
     }
 
-    // 2. 如果没有缓存，则向服务器发起请求
+    // 2. 向服务端请求 Range
     try {
         const networkResponse = await fetch(request);
-        
-        // 只有成功的 206 Partial Content 才值得缓存
         if (networkResponse.status === 206) {
-            // 复制一份响应放入缓存，不阻塞原响应返回给播放器
             const responseToCache = networkResponse.clone();
-            
-            // 异步存入缓存并检查切片总量上限
             event.waitUntil(
                 cache.put(cacheKey, responseToCache).then(() => trimVideoCache(cache))
             );
         }
-        
         return networkResponse;
     } catch (error) {
-        console.error('Service Worker Fetch Failed:', error);
         return new Response('', { status: 504, statusText: 'Gateway Timeout' });
     }
 }

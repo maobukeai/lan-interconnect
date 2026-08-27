@@ -14,19 +14,41 @@
             this.getPin = config.getPin || (() => localStorage.getItem('lan_disk_pin') || '');
             this.getApiUrl = config.getApiUrl || (url => url);
             this.onUploadComplete = config.onUploadComplete || null;
+            // 单文件粒度状态回调：({name, size, percent, speed, state: 'uploading'|'merging'|'instant'|'done'|'error'})
+            this.onFileStatus = config.onFileStatus || null;
+        }
+
+        _status(info) {
+            if (this.onFileStatus) this.onFileStatus(info);
+        }
+
+        _toast(msg, type) {
+            if (typeof global.LanDiskUI !== 'undefined' && global.LanDiskUI.toast) global.LanDiskUI.toast(msg, type);
+        }
+
+        _fmtSpeed(bps) {
+            return bps > 1024 * 1024 ? (bps / 1024 / 1024).toFixed(1) + ' MB/s' : (bps / 1024).toFixed(1) + ' KB/s';
+        }
+
+        _authHeaders(extra) {
+            if (typeof global.LanDiskAuth !== 'undefined' && global.LanDiskAuth.authHeaders) {
+                return global.LanDiskAuth.authHeaders(extra);
+            }
+            const headers = extra ? Object.assign({}, extra) : {};
+            headers['x-pin'] = this.getPin();
+            return headers;
         }
 
         async uploadFiles(filesList, currentPath, isRoot) {
             if (!filesList || !filesList.length) return;
             if (isRoot || !currentPath || currentPath === '根目录') {
-                alert('请先进入一个磁盘或文件夹才能上传文件！');
+                this._toast('请先进入一个磁盘或文件夹再上传', 'info');
                 return;
             }
 
             const files = Array.from(filesList);
             if (this.progressContainer) this.progressContainer.style.display = 'block';
 
-            const pin = this.getPin();
             const uploadStartTime = Date.now();
             let totalBytesUploaded = 0;
 
@@ -43,19 +65,25 @@
                 try {
                     // 1. 检查秒传 / 断点
                     const checkUrl = this.getApiUrl(`/api/upload/check?fileHash=${encodeURIComponent(fileHash)}&filename=${encodeURIComponent(file.name)}&path=${encodeURIComponent(currentPath)}`);
-                    const checkRes = await fetch(checkUrl, { headers: { 'x-pin': pin } });
+                    const checkRes = await fetch(checkUrl, { headers: this._authHeaders() });
+                    if (!checkRes.ok) {
+                        const errData = await checkRes.json().catch(() => ({}));
+                        throw new Error(errData.error || `鉴权或参数校验失败 (HTTP ${checkRes.status})`);
+                    }
                     const checkData = await checkRes.json();
 
                     if (checkData.exists) {
                         if (this.progressFill) this.progressFill.style.width = '100%';
                         if (this.progressText) {
-                            this.progressText.innerHTML = `<span>⚡ [${file.name}] 极速秒传完成！</span><span>100%</span>`;
+                            this.progressText.innerHTML = `<span>${global.Icons ? global.Icons.render('sparkles', 13) : ''} [${(global.escapeHtml || String)(file.name)}] 极速秒传完成</span><span>100%</span>`;
                         }
+                        this._status({ name: file.name, size: file.size, percent: 100, state: 'instant' });
                         await new Promise(r => setTimeout(r, 600));
                         continue;
                     }
 
                     const uploadedChunkIndices = new Set(checkData.uploadedChunkIndices || []);
+                    this._status({ name: file.name, size: file.size, percent: 0, state: 'uploading', speed: '...' });
 
                     // 2. 上传未完成切片
                     for (let c = 0; c < totalChunks; c++) {
@@ -66,16 +94,17 @@
                         const chunkBlob = file.slice(start, end);
                         const chunkSizeCurrent = end - start;
 
+                        // 字段放在文件前面（multipart 顺序敏感场景更稳，服务端已兼容任意顺序）
                         const formData = new FormData();
-                        formData.append('chunk', chunkBlob);
                         formData.append('fileHash', fileHash);
                         formData.append('chunkIndex', c);
                         formData.append('totalChunks', totalChunks);
+                        formData.append('chunk', chunkBlob);
 
                         const uploadUrl = this.getApiUrl('/api/upload/chunk');
                         const res = await fetch(uploadUrl, {
                             method: 'POST',
-                            headers: { 'x-pin': pin },
+                            headers: this._authHeaders(),
                             body: formData
                         });
 
@@ -84,25 +113,25 @@
                         totalBytesUploaded += chunkSizeCurrent;
                         const elapsedTime = (Date.now() - uploadStartTime) / 1000;
                         const speedBytesPerSec = elapsedTime > 0 ? (totalBytesUploaded / elapsedTime) : 0;
-                        const speedStr = speedBytesPerSec > 1024 * 1024
-                            ? (speedBytesPerSec / 1024 / 1024).toFixed(1) + ' MB/s'
-                            : (speedBytesPerSec / 1024).toFixed(1) + ' KB/s';
+                        const speedStr = this._fmtSpeed(speedBytesPerSec);
 
                         const percent = Math.round(((c + 1) / totalChunks) * 100);
                         if (this.progressFill) this.progressFill.style.width = percent + '%';
                         if (this.progressText) {
-                            this.progressText.innerHTML = `<span>⚡ ${speedStr} | 上传 (${i + 1}/${files.length}): ${file.name}</span><span>${percent}%</span>`;
+                            this.progressText.innerHTML = `<span>${global.Icons ? global.Icons.render('zap', 13) : ''} ${speedStr} | 上传 (${i + 1}/${files.length}): ${(global.escapeHtml || String)(file.name)}</span><span>${percent}%</span>`;
                         }
+                        this._status({ name: file.name, size: file.size, percent, speed: speedStr, state: 'uploading' });
                     }
 
                     // 3. 请求后端合并分片
                     if (this.progressText) {
-                        this.progressText.innerHTML = `<span>正在合并文件 ${file.name}...</span><span>99%</span>`;
+                        this.progressText.innerHTML = `<span>正在合并 ${(global.escapeHtml || String)(file.name)} ...</span><span>99%</span>`;
                     }
+                    this._status({ name: file.name, size: file.size, percent: 99, state: 'merging' });
                     const mergeUrl = this.getApiUrl('/api/upload/merge');
                     const mergeRes = await fetch(mergeUrl, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'x-pin': pin },
+                        headers: this._authHeaders({ 'Content-Type': 'application/json' }),
                         body: JSON.stringify({
                             fileHash: fileHash,
                             filename: file.name,
@@ -113,14 +142,16 @@
 
                     const mergeData = await mergeRes.json();
                     if (!mergeData.success) throw new Error(mergeData.error || '分片合并失败');
+                    this._status({ name: file.name, size: file.size, percent: 100, state: 'done' });
 
                 } catch (err) {
-                    alert(`文件 [${file.name}] 上传失败: ${err.message}`);
+                    this._toast(`文件 [${file.name}] 上传失败: ${err.message}`, 'error');
+                    this._status({ name: file.name, size: file.size, percent: 0, state: 'error', error: err.message });
                 }
             }
 
             if (this.progressText) {
-                this.progressText.innerHTML = `<span>🎉 所有文件上传完成！</span><span>100%</span>`;
+                this.progressText.innerHTML = `<span>${global.Icons ? global.Icons.render('check', 13) : ''} 所有文件上传完成</span><span>100%</span>`;
             }
 
             setTimeout(() => {

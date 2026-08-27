@@ -25,6 +25,9 @@ build.log
 .DS_Store
 Thumbs.db
 .lingma/
+.zcode/
 # Runtime Data Files
 blocked_ips.json
 device_aliases.json
+temp_chunks/
+server/temp_chunks/

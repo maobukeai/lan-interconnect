@@ -113,14 +113,13 @@
             this.appendLine(`$ ${cmd}`, 'command');
 
             const cwd = this.getCwd();
-            const pin = this.getPin();
             const getUrl = typeof this.getApiUrl === 'function' ? this.getApiUrl : (p => p);
             const terminalUrl = getUrl('/api/terminal');
 
             try {
                 const res = await fetch(terminalUrl, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'x-pin': pin },
+                    headers: (global.LanDiskAuth ? global.LanDiskAuth.authHeaders({ 'Content-Type': 'application/json' }) : { 'Content-Type': 'application/json', 'x-pin': this.getPin() }),
                     body: JSON.stringify({
                         command: cmd,
                         cwd: cwd

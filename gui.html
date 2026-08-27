@@ -3,2448 +3,1120 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>猫步互联 - 高级控制中心</title>
-    <link rel="stylesheet" href="shared/apple-theme.css">
-    <link rel="stylesheet" href="shared/apple-player.css">
-    <script src="shared/apple-player.js"></script>
+    <title>猫步互联 Pro</title>
+    <link rel="stylesheet" href="shared/apple-theme.css?v=20260828_v39">
+    <link rel="stylesheet" href="shared/apple-player.css?v=20260828_v39">
+    <!-- 基础引擎与共享组件库（与 Web 端完全同源） -->
+    <script src="shared/icons.js"></script>
+    <script src="shared/auth.js"></script>
+    <script src="shared/ui.js?v=20260828_v39"></script>
+    <script src="shared/apple-player.js?v=20260828_v39"></script>
     <script src="shared/components/file-bookmarks.js"></script>
     <script src="shared/components/file-batch.js"></script>
     <script src="shared/components/file-uploader.js"></script>
     <script src="shared/components/file-explorer.js"></script>
     <script src="shared/components/media-hub.js"></script>
+    <script src="shared/components/media-theater.js"></script>
     <script src="shared/components/imessage-chat.js"></script>
     <script src="shared/components/whiteboard.js"></script>
     <script src="shared/components/process-monitor.js"></script>
     <script src="shared/components/web-terminal.js"></script>
+    <script src="shared/components/remote-control.js?v=20260828_v39"></script>
     <style>
-        body {
+                /* ---------- 自定义标题栏与窗体圆角 ---------- */
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
             height: 100vh;
             overflow: hidden;
-            display: flex;
-            flex-direction: column;
-            background-color: var(--apple-bg-base);
+            background: var(--apple-bg-base);
+            user-select: none;
+            border-radius: 16px;
         }
 
-        /* macOS 窗体标题栏 */
-        .mac-titlebar {
-            height: 48px;
-            background: rgba(10, 12, 20, 0.8);
-            backdrop-filter: blur(25px) saturate(190%);
-            -webkit-backdrop-filter: blur(25px) saturate(190%);
+        .app-titlebar {
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            height: 46px;
+            z-index: 500;
             display: flex;
             align-items: center;
-            justify-content: space-between;
+            padding: 0 14px;
+            gap: 12px;
+            background: rgba(14, 18, 28, 0.65);
+            backdrop-filter: blur(36px) saturate(190%);
+            -webkit-backdrop-filter: blur(36px) saturate(190%);
             border-bottom: 1px solid var(--apple-border);
-            z-index: 1000;
-        }
-
-        .mac-titlebar-drag {
-            flex: 1;
-            height: 100%;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+            border-top-left-radius: 16px;
+            border-top-right-radius: 16px;
             -webkit-app-region: drag;
+            user-select: none;
+        }
+
+        :root[data-theme="light"] .app-titlebar {
+            background: rgba(255, 255, 255, 0.82);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+            box-shadow: inset 0 1px 0 #ffffff;
+        }
+
+        .titlebar-name {
             display: flex;
             align-items: center;
-            padding-left: 18px;
-            gap: 12px;
-            font-size: 13px;
-            font-weight: 600;
-            letter-spacing: -0.2px;
-        }
-
-        /* macOS 经典 Traffic Lights 窗口控制按钮 */
-        .mac-traffic-lights {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            -webkit-app-region: no-drag;
-        }
-
-        .mac-light {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            cursor: pointer;
-            transition: var(--apple-transition);
-        }
-
-        .mac-light-close { background: #ff5f56; border: 1px solid #e0443e; }
-        .mac-light-min { background: #ffbd2e; border: 1px solid #dea123; }
-        .mac-light-max { background: #27c93f; border: 1px solid #1aab29; }
-        .mac-light:hover { opacity: 0.85; transform: scale(1.1); }
-
-        .win-btn {
-            background: transparent;
-            border: none;
-            color: var(--apple-text-muted);
-            font-size: 11px;
-            padding: 4px 8px;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: var(--apple-transition);
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            font-family: inherit;
-        }
-
-        .win-btn:hover {
-            background: rgba(255, 255, 255, 0.12);
-            color: white;
-        }
-
-        .win-btn-close:hover {
-            background: rgba(255, 59, 48, 0.3);
-            color: #ff453a;
-        }
-
-        .win-btn-quit {
-            background: rgba(255, 59, 48, 0.15);
-            border: 1px solid rgba(255, 59, 48, 0.3);
-            color: #ff453a;
-            font-weight: 600;
-        }
-
-        .win-btn-quit:hover {
-            background: var(--apple-system-red);
-            color: white;
-            box-shadow: 0 2px 10px rgba(255, 59, 48, 0.4);
-        }
-
-        /* macOS 整体双栏布局 */
-        .mac-app-body {
+            gap: 9px;
             flex: 1;
-            display: flex;
+            text-align: left;
+            -webkit-app-region: drag;
             overflow: hidden;
+            white-space: nowrap;
         }
 
-        /* macOS 侧边栏 */
-        .mac-sidebar {
-            width: 235px;
-            background: rgba(15, 17, 26, 0.7);
-            backdrop-filter: blur(30px);
-            border-right: 1px solid var(--apple-border);
-            padding: 16px 12px;
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            overflow-y: auto;
+        .titlebar-logo {
+            width: 22px;
+            height: 22px;
+            border-radius: 6px;
+            object-fit: contain;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+            pointer-events: none;
             flex-shrink: 0;
         }
 
-        .mac-sidebar-section-title {
-            font-size: 10px;
+        .titlebar-title-text {
+            font-size: 13.5px;
             font-weight: 700;
-            text-transform: uppercase;
-            color: var(--apple-text-subtle);
-            padding: 8px 12px 4px;
-            letter-spacing: 0.5px;
-            white-space: nowrap;
+            letter-spacing: -0.01em;
+            color: var(--apple-text-main);
+            pointer-events: none;
         }
 
-        .mac-nav-item {
+        .titlebar-actions {
             display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 10px 14px;
-            border-radius: var(--apple-radius-medium);
-            color: var(--apple-text-muted);
-            font-size: 13px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: var(--apple-transition);
-            white-space: nowrap;
-        }
-
-        .mac-nav-item:hover {
-            color: white;
-            background: rgba(255, 255, 255, 0.06);
-        }
-
-        .mac-nav-item.active {
-            color: white;
-            background: var(--apple-system-blue);
-            box-shadow: 0 4px 15px var(--apple-glow-blue);
-        }
-
-        .mac-nav-item svg {
-            width: 18px;
-            height: 18px;
+            gap: 8px;
+            -webkit-app-region: no-drag !important;
             flex-shrink: 0;
+            z-index: 502;
+        }
+        .titlebar-actions .apple-btn-icon {
+            width: 30px;
+            height: 30px;
+            border-radius: 9px;
+            -webkit-app-region: no-drag !important;
+            cursor: pointer;
+        }
+        .titlebar-actions .apple-btn-icon * {
+            pointer-events: none;
+            -webkit-app-region: no-drag !important;
         }
 
-        /* 右侧主内容视口 */
-        .mac-viewport {
-            flex: 1;
-            padding: 24px;
+        /* Windows 风格窗口控制区（右对齐、通高按钮、禁止拖拽拦截） */
+        .win-controls {
+            display: flex;
+            align-self: stretch;
+            margin-right: -14px;
+            -webkit-app-region: no-drag !important;
+            flex-shrink: 0;
+            z-index: 501;
+        }
+
+        .win-ctl {
+            width: 46px;
+            height: 100%;
+            border: none;
+            background: transparent;
+            color: var(--apple-text-main);
+            cursor: pointer;
+            padding: 0;
+            display: grid;
+            place-items: center;
+            transition: background 0.12s, color 0.12s;
+            outline: none;
+            -webkit-app-region: no-drag !important;
+            user-select: none;
+        }
+        .win-ctl * { pointer-events: none; }
+        .win-ctl:hover { background: rgba(128, 128, 138, 0.22); }
+        .win-ctl:active { background: rgba(128, 128, 138, 0.34); }
+        .win-ctl-close:hover { background: #e81123 !important; color: #ffffff !important; }
+        .win-ctl-close:active { background: #c50f1f !important; color: #ffffff !important; }
+
+        /* ---------- 主画布 ---------- */
+        .app-viewport {
+            position: fixed;
+            inset: 46px 0 0 0;
             overflow-y: auto;
-            min-width: 0;
+            overflow-x: hidden;
         }
 
-        /* Tab 面板极简平滑无闪烁动画 (避免 position 突变造成的布局抖动与闪烁) */
-        .mac-tab-panel {
-            display: none;
-            opacity: 0;
+        .view-wrap {
+            max-width: 1060px;
+            margin: 0 auto;
+            padding: 24px 24px calc(120px + env(safe-area-inset-bottom));
         }
 
-        .mac-tab-panel.active {
-            display: block;
-            animation: macTabFadeIn 0.22s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+        .view-section { display: none; }
+        .view-section.active { display: block; animation: viewIn 0.3s cubic-bezier(0.25, 1, 0.5, 1); }
+
+        @keyframes viewIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
-        @keyframes macTabFadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(6px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        /* 文件列表卡片 */
-        .apple-file-card {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid var(--apple-border);
-            border-radius: var(--apple-radius-medium);
-            padding: 12px 16px;
+        /* ---------- 服务主卡（Home 头部） ---------- */
+        .service-hero {
             display: flex;
             align-items: center;
-            justify-content: space-between;
-            transition: var(--apple-transition);
-            cursor: pointer;
-            margin-bottom: 8px;
-        }
-
-        .apple-file-card:hover {
-            background: rgba(255, 255, 255, 0.08);
-            border-color: var(--apple-border-strong);
-            transform: translateY(-1px);
-        }
-
-        /* iMessage 风格聊天 */
-        .apple-chat-container {
-            height: 380px;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            padding: 16px;
-            background: rgba(0, 0, 0, 0.25);
-            border-radius: var(--apple-radius-medium);
-            border: 1px solid var(--apple-border);
+            gap: 18px;
+            padding: 20px 22px;
             margin-bottom: 16px;
         }
 
-        .msg-bubble {
-            max-width: 75%;
-            padding: 10px 14px;
-            border-radius: 18px;
-            font-size: 13px;
-            line-height: 1.5;
-            word-break: break-word;
+        .service-hero-light {
+            width: 52px; height: 52px;
+            border-radius: 16px;
+            display: grid;
+            place-items: center;
+            flex-shrink: 0;
+            background: rgba(48, 209, 88, 0.14);
+            color: var(--apple-system-green);
+            box-shadow: 0 0 24px var(--apple-glow-green);
         }
+        .service-hero-light.off { background: rgba(140, 148, 170, 0.15); color: var(--apple-text-subtle); box-shadow: none; }
 
-        .msg-right {
-            align-self: flex-end;
-            background: linear-gradient(135deg, var(--apple-system-blue), #0056b3);
-            color: white;
-            border-bottom-right-radius: 4px;
-        }
-
-        .msg-left {
-            align-self: flex-start;
-            background: rgba(255, 255, 255, 0.08);
-            backdrop-filter: blur(16px);
+        /* ---------- 传输抽屉 ---------- */
+        .transfer-drawer {
+            position: fixed;
+            right: 18px;
+            bottom: 96px;
+            width: 320px;
+            z-index: 400;
+            background: var(--mat-thick);
+            backdrop-filter: blur(var(--blur-l)) saturate(180%);
+            -webkit-backdrop-filter: blur(var(--blur-l)) saturate(180%);
             border: 1px solid var(--apple-border);
-            color: white;
-            border-bottom-left-radius: 4px;
+            border-radius: 20px;
+            box-shadow: var(--shadow-3);
+            overflow: hidden;
+            animation: drawerIn 0.3s var(--ease-spring);
+        }
+
+        @keyframes drawerIn {
+            from { opacity: 0; transform: translateY(14px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .transfer-drawer-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 11px 14px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--hairline);
+        }
+
+        .transfer-drawer-body { max-height: 220px; overflow-y: auto; padding: 8px 14px; }
+        .transfer-drawer.collapsed .transfer-drawer-body { display: none; }
+
+        .transfer-item { padding: 8px 0; border-bottom: 1px solid var(--hairline); }
+        .transfer-item:last-child { border-bottom: none; }
+
+        /* ---------- 设置页 ---------- */
+        .settings-nav { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
+        .settings-panel { display: none; }
+        .settings-panel.active { display: block; animation: viewIn 0.25s ease; }
+
+        .device-card {
+            display: flex; align-items: center; gap: 12px;
+            padding: 12px 14px;
+            background: var(--apple-bg-card);
+            border: 1px solid var(--hairline);
+            border-radius: 14px;
+            margin-bottom: 8px;
+        }
+
+        .log-view {
+            font-family: ui-monospace, Consolas, monospace;
+            font-size: 12px;
+            line-height: 1.7;
+            max-height: 380px;
+            overflow-y: auto;
+            background: var(--mat-ultrathin);
+            border-radius: 14px;
+            padding: 14px;
+        }
+        .log-line.info { color: var(--apple-text-muted); }
+        .log-line.ok { color: var(--apple-system-green); }
+        .log-line.warn { color: var(--apple-system-orange); }
+        .log-line.error { color: var(--apple-system-red); }
+
+        .blacklist-chip {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: rgba(255, 69, 58, 0.12);
+            border: 1px solid rgba(255, 69, 58, 0.25);
+            color: var(--apple-system-red);
+            padding: 4px 6px 4px 11px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 600;
         }
     </style>
 </head>
 <body>
 
-<!-- 全局提示 Toast -->
-<div id="share-toast" style="position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(10px); background:rgba(30,30,40,0.95); backdrop-filter:blur(20px); border:1px solid rgba(255,255,255,0.18); border-radius:14px; padding:12px 20px; font-size:13px; color:white; opacity:0; transition:all 0.3s ease; z-index:9999; white-space:nowrap; pointer-events:none;"></div>
-
-
-<!-- 背景光芒 -->
+<!-- 背景光晕 -->
 <div class="apple-bg-orbs">
     <div class="apple-orb apple-orb-1"></div>
     <div class="apple-orb apple-orb-2"></div>
+    <div class="apple-orb apple-orb-3"></div>
+    <div class="apple-orb apple-orb-4"></div>
 </div>
 
-<!-- macOS 标题栏 -->
-<div class="mac-titlebar">
-    <div class="mac-titlebar-drag">
-        <div class="mac-traffic-lights">
-            <div class="mac-light mac-light-close" onclick="window.api.invoke('close-window')" title="关闭窗口 (缩小至托盘)"></div>
-            <div class="mac-light mac-light-min" onclick="window.api.invoke('minimize-window')" title="最小化窗口"></div>
-            <div class="mac-light mac-light-max" onclick="window.api.invoke('maximize-window')" title="最大化 / 全屏"></div>
-        </div>
-        <div style="display:flex; align-items:center; gap:8px; margin-left:8px; white-space:nowrap;">
-            <img src="shared/app-icon.jpg" style="width:20px; height:20px; border-radius:5px; object-fit:cover; box-shadow:0 2px 6px var(--apple-glow-blue);">
-            猫步互联 Pro - 全能工作台
-        </div>
+<!-- 标题栏（Windows 布局：标题居左，窗口控制按钮居右） -->
+<header class="app-titlebar">
+    <div class="titlebar-name">
+        <img src="icon.png" class="titlebar-logo" alt="logo">
+        <span class="titlebar-title-text">猫步互联 Pro</span>
     </div>
-    <div style="padding-right: 14px; -webkit-app-region: no-drag; display: flex; align-items: center; gap: 8px;">
-        <span class="apple-badge apple-badge-info" id="pc-status-badge"><span class="apple-badge-dot"></span> 未启动</span>
-        <button class="apple-btn-icon" onclick="window.api.invoke('open-dev-tools')" title="开发者工具">⚙️</button>
-
-        <div style="display:flex; align-items:center; gap:3px; margin-left:6px; background:rgba(255,255,255,0.05); padding:3px 6px; border-radius:10px; border:1px solid var(--apple-border);">
-            <button class="win-btn" onclick="window.api.invoke('minimize-window')" title="最小化窗口">一</button>
-            <button class="win-btn" onclick="window.api.invoke('maximize-window')" title="最大化 / 还原窗口">口</button>
-            <button class="win-btn win-btn-close" onclick="window.api.invoke('close-window')" title="关闭窗口 (缩小至托盘)">✕</button>
-        </div>
+    <div class="titlebar-actions">
+        <button class="apple-btn-icon" id="btn-theme" title="深浅主题"></button>
+        <button class="apple-btn-icon" id="btn-devtools" title="开发者调试工具 (F12)"><span data-icon="terminal" data-icon-size="15"></span></button>
     </div>
-</div>
+    <div class="win-controls" style="-webkit-app-region: no-drag;">
+        <button class="win-ctl" id="win-min" title="最小化" style="-webkit-app-region: no-drag;"></button>
+        <button class="win-ctl" id="win-max" title="最大化 / 还原" style="-webkit-app-region: no-drag;"></button>
+        <button class="win-ctl win-ctl-close" id="win-close" title="关闭" style="-webkit-app-region: no-drag;"></button>
+    </div>
+</header>
 
-<!-- 主体双栏框架 -->
-<div class="mac-app-body">
-    <!-- 侧边栏 -->
-    <nav class="mac-sidebar">
-        <div class="mac-sidebar-section-title">服务控制与管理</div>
-        <div class="mac-nav-item active" onclick="switchPCTab('control', this)">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-            控制中心
-        </div>
-        <div class="mac-nav-item" onclick="switchPCTab('devices', this)">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
-            连线设备
-        </div>
-        <div class="mac-nav-item" onclick="switchPCTab('config', this)">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path></svg>
-            高级配置
-        </div>
-        <div class="mac-nav-item" onclick="switchPCTab('tools', this)">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path></svg>
-            系统工具
-        </div>
-        <div class="mac-nav-item" onclick="switchPCTab('logs', this)">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-            运行日志
+<!-- 主画布 -->
+<main class="app-viewport">
+<div class="view-wrap">
+
+    <!-- 1. 主页 -->
+    <section id="view-home" class="view-section active">
+        <div class="glass-card service-hero">
+            <div class="service-hero-light" id="service-light"><span data-icon="zap" data-icon-size="24"></span></div>
+            <div style="flex:1; min-width:0">
+                <div class="row" style="gap:10px">
+                    <span style="font-size:19px; font-weight:700; letter-spacing:-0.02em" id="service-title">服务未启动</span>
+                    <span class="apple-badge" id="service-badge"><span class="apple-badge-dot"></span>离线</span>
+                </div>
+                <div class="muted ellipsis" style="font-size:12.5px; margin-top:3px" id="service-sub">点击右侧按钮启动局域网共享服务</div>
+            </div>
+            <div class="row" style="flex-shrink:0">
+                <button class="apple-btn apple-btn-glass" id="btn-show-qr" title="查看连接二维码" style="display:none"><span data-icon="qr" data-icon-size="15"></span>扫码连接</button>
+                <button class="apple-btn apple-btn-primary" id="btn-service-toggle" style="min-width:96px"><span data-icon="power" data-icon-size="15"></span>启动服务</button>
+            </div>
         </div>
 
-        <div class="mac-sidebar-section-title" style="margin-top:12px;">应用与内容 Hub</div>
-        <div class="mac-nav-item" onclick="switchPCTab('files', this)">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
-            文件磁盘
-        </div>
-        <div class="mac-nav-item" onclick="switchPCTab('media', this)">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-            影音大盘
-        </div>
-        <div class="mac-nav-item" onclick="switchPCTab('chat', this)">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
-            跨端消息
-        </div>
-        <div class="mac-nav-item" onclick="switchPCTab('draw', this)">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
-            随手涂鸦
-        </div>
-    </nav>
+        <div class="bento-grid" style="margin-bottom:16px">
+            <!-- 1. CPU 处理器 -->
+            <div class="bento-tile col-3">
+                <div class="tile-header">
+                    <div class="tile-label"><span data-icon="cpu"></span>处理器</div>
+                    <span class="status-dot on" title="监控就绪"></span>
+                </div>
+                <div class="tile-value-row">
+                    <div class="tile-value" id="dash-cpu">--</div>
+                </div>
+                <svg class="sparkline" id="spark-cpu"></svg>
+                <div class="tile-sub ellipsis" id="dash-cpu-name" title="处理器型号">--</div>
+            </div>
 
-    <!-- 右侧内容视口 -->
-    <main class="mac-viewport">
+            <!-- 2. 内存 -->
+            <div class="bento-tile col-3">
+                <div class="tile-header">
+                    <div class="tile-label"><span data-icon="memory"></span>运行内存</div>
+                </div>
+                <div class="tile-value-row">
+                    <div class="tile-value" id="dash-mem">--</div>
+                </div>
+                <svg class="sparkline" id="spark-mem"></svg>
+                <div class="tile-sub ellipsis" id="dash-mem-sub">系统负载正常</div>
+            </div>
 
-        <!-- 1. 控制中心 (高密度精凑大盘：无需滚动，一屏掌控所有状态、速率、安全防护与系统资源) -->
-        <div id="pc-tab-control" class="mac-tab-panel active">
-            <!-- 1.1 核心状态、二维码与实时网速 (单卡片紧凑横向排布) -->
-            <div class="apple-glass-card" style="margin-bottom: 12px; padding: 14px 18px;">
-                <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
-                    <!-- 左侧：服务状态与访问地址 -->
-                    <div style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 260px;">
-                        <img id="qr-img" src="" style="width: 64px; height: 64px; border-radius: 10px; border: 1px solid var(--apple-border); display: none; flex-shrink: 0;">
-                        <div style="flex: 1; min-width: 0;">
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <h2 style="font-size: 16px; font-weight: 700; margin: 0;" id="pc-server-title">服务就绪中...</h2>
-                            </div>
-                            <div style="font-size: 12px; color: var(--apple-system-blue); font-weight: 600; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="server-url">点击右侧按钮开启互传</div>
-                            <div id="qr-btn-group" style="display: none; gap: 8px; margin-top: 4px;">
-                                <button class="apple-btn apple-btn-glass" style="padding: 2px 8px; font-size: 11px;" onclick="showQrModal()">📱 扫码</button>
-                                <button class="apple-btn apple-btn-glass" style="padding: 2px 8px; font-size: 11px;" onclick="copyUrl()">复制地址</button>
-                                <button class="apple-btn apple-btn-glass" style="padding: 2px 8px; font-size: 11px;" onclick="openWebUrl()">在浏览器打开</button>
-                            </div>
-                        </div>
+            <!-- 3. 存储磁盘 -->
+            <div class="bento-tile col-3">
+                <div class="tile-header">
+                    <div class="tile-label"><span data-icon="drive"></span>共享存储</div>
+                </div>
+                <div class="tile-value-row">
+                    <div class="tile-value" id="dash-disk" style="font-size:21px">--</div>
+                </div>
+                <div class="apple-progress-track" style="margin: 9px 0 5px;">
+                    <div class="apple-progress-fill" id="dash-disk-bar" style="width: 50%; background: linear-gradient(90deg, #007aff, #5856d6);"></div>
+                </div>
+                <div class="tile-sub ellipsis" id="dash-disk-sub">可用空间充足</div>
+            </div>
+
+            <!-- 4. 实时网络带宽 -->
+            <div class="bento-tile col-3">
+                <div class="tile-header">
+                    <div class="tile-label"><span data-icon="activity"></span>网络流速</div>
+                    <div class="speed-capsules">
+                        <span class="speed-pill tx" title="发送速度"><b id="dash-tx-speed">0 B/s</b> ↑</span>
+                        <span class="speed-pill rx" title="接收速度"><b id="dash-rx-speed">0 B/s</b> ↓</span>
                     </div>
+                </div>
+                <svg class="sparkline" id="spark-net" style="height:36px; margin-top:auto;"></svg>
+                <div class="tile-sub ellipsis" id="dash-net-sub">局域网广播就绪</div>
+            </div>
 
-                    <!-- 中间：实时网络传输速率 -->
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <div style="background: rgba(52,199,89,0.08); border: 1px solid rgba(52,199,89,0.2); border-radius: 8px; padding: 6px 12px; min-width: 95px; text-align: center;">
-                            <div style="font-size: 10px; color: var(--apple-text-muted);">下行速率 ↓</div>
-                            <div style="font-size: 14px; font-weight: 700; color: var(--apple-system-green);" id="ctrl-rx-speed">0 B/s</div>
-                        </div>
-                        <div style="background: rgba(0,122,255,0.08); border: 1px solid rgba(0,122,255,0.2); border-radius: 8px; padding: 6px 12px; min-width: 95px; text-align: center;">
-                            <div style="font-size: 10px; color: var(--apple-text-muted);">上行速率 ↑</div>
-                            <div style="font-size: 14px; font-weight: 700; color: var(--apple-system-blue);" id="ctrl-tx-speed">0 B/s</div>
-                        </div>
+            <!-- 5. 在线设备总览 (占 4 列) -->
+            <div class="bento-tile col-4">
+                <div class="tile-header">
+                    <div class="tile-label"><span data-icon="devices"></span>互联设备</div>
+                    <span class="apple-badge apple-badge-sm" id="dash-device-badge"><span class="apple-badge-dot"></span><span id="dash-device-status-text">局域网待命</span></span>
+                </div>
+                <div class="device-count-box">
+                    <div class="device-count-radar">
+                        <div class="tile-value large" id="dash-device-count">0</div>
                     </div>
-
-                    <!-- 右侧：启动/停止按钮与浏览器快捷键 -->
-                    <div style="display: flex; gap: 8px;">
-                        <button class="apple-btn apple-btn-primary" id="btn-start-server" style="padding: 8px 18px; font-size: 13px;" onclick="toggleServer()">启动服务</button>
-                        <button class="apple-btn apple-btn-glass" style="padding: 8px 16px; font-size: 13px;" onclick="openWebUrl()">🌐 在浏览器打开</button>
+                    <div class="device-count-info">
+                        <div class="device-count-title" id="dash-device-sub">等待终端扫码连接</div>
+                        <div class="subtle" style="font-size:11px; margin-top:2px;">免安装 · 跨设备秒级直连</div>
                     </div>
                 </div>
             </div>
 
-            <!-- 1.2 左右双列精凑布局 -->
-            <div style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 12px;">
-                <!-- 左列：🛡️ 数据安全防护与网络配置 -->
-                <div class="apple-glass-card" style="padding: 14px 16px;">
-                    <div class="apple-card-title" style="margin-bottom: 10px;">
-                        <span class="apple-card-title-text" style="font-size: 13px;">🛡️ 数据安全与权限防护</span>
-                        <button class="apple-btn apple-btn-primary" style="padding: 2px 8px; font-size: 11px;" onclick="saveConfig()">保存配置</button>
-                    </div>
-
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                        <div>
-                            <label style="font-size: 11px; color: var(--apple-text-muted); display: block; margin-bottom: 4px;">共享范围</label>
-                            <div style="display: flex; gap: 4px;">
-                                <label class="apple-btn apple-btn-glass" style="flex: 1; padding: 4px 6px; font-size: 11px; cursor: pointer; justify-content: flex-start;">
-                                    <input type="radio" name="cfg-mode" id="mode-full" value="full" checked onchange="onModeChange()"> 全盘
-                                </label>
-                                <label class="apple-btn apple-btn-glass" style="flex: 1; padding: 4px 6px; font-size: 11px; cursor: pointer; justify-content: flex-start;">
-                                    <input type="radio" name="cfg-mode" id="mode-shared" value="shared" onchange="onModeChange()"> 指定文件夹
-                                </label>
-                            </div>
-                        </div>
-
-                        <div>
-                            <label style="font-size: 11px; color: var(--apple-text-muted); display: block; margin-bottom: 4px;">PIN 密码 (留空免密)</label>
-                            <div class="apple-input-box">
-                                <input type="password" id="cfg-pin" class="apple-input" placeholder="设置密码" style="font-size:11px; padding: 4px 8px;">
-                            </div>
-                        </div>
-                    </div>
-
-                    <div id="custom-dir-group" style="display: none; margin-top: 8px;">
-                        <label style="font-size: 11px; color: var(--apple-text-muted); display: block; margin-bottom: 4px;">自定义文件夹路径</label>
-                        <div style="display: flex; gap: 6px;">
-                            <div class="apple-input-box" style="flex: 1;">
-                                <input type="text" id="custom-dir-input" class="apple-input" placeholder="选择文件夹..." style="font-size:11px; padding: 4px 8px;">
-                            </div>
-                            <button class="apple-btn apple-btn-glass" onclick="selectCustomFolder()" style="font-size:11px; padding: 4px 8px;">选择</button>
-                        </div>
-                    </div>
-
-                    <div style="margin-top: 10px; background: rgba(0,0,0,0.18); border-radius: 8px; padding: 8px 10px; border: 1px solid var(--apple-border);">
-                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                            <span style="font-weight: 600; font-size: 11px; color: white;">IP 白名单访问防护</span>
-                            <label class="apple-switch" style="transform: scale(0.85);">
-                                <input type="checkbox" id="whitelist-toggle">
-                                <span class="apple-slider"></span>
-                            </label>
-                        </div>
-                        <div class="apple-input-box">
-                            <input type="text" id="whitelist-ips-input" class="apple-input" placeholder="允许访问的 IP (如: 192.168.0.100, 192.168.0.105)" style="font-size:11px; padding: 4px 8px;">
-                        </div>
-                    </div>
+            <!-- 6. 设备与通信明细 (占 8 列) -->
+            <div class="bento-tile col-8 clickable" id="tile-devices">
+                <div class="tile-header">
+                    <div class="tile-label"><span data-icon="smartphone"></span>已连接设备与通信节点</div>
+                    <span class="subtle" style="font-size:11.5px;" id="dash-devices-summary">点击管理</span>
                 </div>
-
-                <!-- 右列：🚀 快捷系统操作 & 性能大盘 -->
-                <div style="display: flex; flex-direction: column; gap: 12px;">
-                    <!-- 性能大盘 -->
-                    <div class="apple-glass-card" style="padding: 14px 16px;">
-                        <div class="apple-card-title" style="margin-bottom: 8px;">
-                            <span class="apple-card-title-text" style="font-size: 13px;">⚡ 系统资源大盘</span>
-                        </div>
-                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
-                            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--apple-border); border-radius: 8px; padding: 8px; text-align: center;">
-                                <div style="font-size: 10px; color: var(--apple-text-muted);">CPU</div>
-                                <div style="font-size: 16px; font-weight: 700; color: var(--apple-system-blue);" id="pc-cpu-val">0%</div>
-                            </div>
-                            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--apple-border); border-radius: 8px; padding: 8px; text-align: center;">
-                                <div style="font-size: 10px; color: var(--apple-text-muted);">内存</div>
-                                <div style="font-size: 16px; font-weight: 700; color: var(--apple-system-purple);" id="pc-mem-val">0%</div>
-                            </div>
-                            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--apple-border); border-radius: 8px; padding: 8px; text-align: center;">
-                                <div style="font-size: 10px; color: var(--apple-text-muted);">C 盘空闲</div>
-                                <div style="font-size: 14px; font-weight: 700; color: var(--apple-system-green); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="pc-disk-space">0 GB</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 快捷系统操作 -->
-                    <div class="apple-glass-card" style="padding: 14px 16px; flex: 1;">
-                        <div class="apple-card-title" style="margin-bottom: 8px;">
-                            <span class="apple-card-title-text" style="font-size: 13px;">🚀 快捷系统工具</span>
-                        </div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                            <button class="apple-btn apple-btn-glass" style="padding: 6px; font-size: 11px; justify-content: center;" onclick="window.api.invoke('open-root')">📁 打开 C 盘根目录</button>
-                            <button class="apple-btn apple-btn-glass" style="padding: 6px; font-size: 11px; justify-content: center;" onclick="window.api.invoke('open-firewall')">🛡️ 防火墙设置</button>
-                            <button class="apple-btn apple-btn-glass" style="padding: 6px; font-size: 11px; justify-content: center;" onclick="testPing()">⚡ 测试外网</button>
-                            <button class="apple-btn apple-btn-glass" style="padding: 6px; font-size: 11px; justify-content: center;" onclick="cleanLinks()">🧹 清理分享链接</button>
-                        </div>
-                    </div>
+                <div id="dash-devices-list" class="devices-grid">
+                    <!-- 动态注入设备列表或空状态引导 -->
                 </div>
             </div>
         </div>
 
-        <!-- 2. 文件磁盘 (Files Explorer) -->
-        <div id="pc-tab-files" class="mac-tab-panel">
-            <div style="display: flex; gap: 12px; margin-bottom: 16px; align-items: center; flex-wrap: wrap;">
-                <button class="apple-btn apple-btn-glass" onclick="pcGoUp()">
-                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"></path></svg>
-                    返回上级
+        <div class="row wrap" style="gap:10px; margin-bottom:16px">
+            <button class="apple-btn apple-btn-glass" id="qa-remote-control"><span data-icon="remoteControl" data-icon-size="15"></span>便携遥控</button>
+            <button class="apple-btn apple-btn-glass" id="qa-open-shared"><span data-icon="external" data-icon-size="15"></span>打开共享目录</button>
+            <button class="apple-btn apple-btn-glass" id="qa-firewall"><span data-icon="shield" data-icon-size="15"></span>防火墙设置</button>
+            <button class="apple-btn apple-btn-glass" id="qa-shutdown"><span data-icon="clock" data-icon-size="15"></span>定时关机</button>
+            <button class="apple-btn apple-btn-glass" id="qa-copy-link"><span data-icon="copy" data-icon-size="15"></span>复制访问地址</button>
+        </div>
+
+        <div class="glass-card">
+            <div class="apple-card-title">
+                <span class="apple-card-title-text"><span data-icon="history"></span>最近传输</span>
+                <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-home-history-refresh">刷新</button>
+            </div>
+            <div id="home-history"><div class="empty-state">暂无传输记录</div></div>
+        </div>
+    </section>
+
+    <!-- 2. 文件 -->
+    <section id="view-files" class="view-section">
+                <div class="toolbar-row file-toolbar-row">
+            <button class="apple-btn apple-btn-glass file-tool-btn" id="btn-go-up" title="返回上级"><span data-icon="chevronUp" data-icon-size="16"></span></button>
+            <div class="apple-input-box file-search-box">
+                <svg class="file-search-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                <input type="text" id="search-input" class="apple-input" placeholder="搜索当前目录…">
+            </div>
+            <button class="apple-btn apple-btn-glass file-tool-btn" id="btn-mkdir" title="新建文件夹"><span data-icon="folderPlus" data-icon-size="16"></span></button>
+            <button class="apple-btn apple-btn-glass file-tool-btn" id="btn-explorer-refresh" title="刷新"><span data-icon="refresh" data-icon-size="16"></span></button>
+            <label class="apple-btn apple-btn-primary file-upload-btn" id="btn-upload-label" title="上传文件">
+                <span id="btn-upload-icon"></span>
+                <span>上传</span>
+                <input type="file" id="file-input" multiple style="display:none">
+            </label>
+        </div>
+
+        <div id="progress-container" class="glass-card" style="display:none; margin-bottom:14px; padding:16px">
+            <div id="progress-text" class="row-between" style="font-size:13px; margin-bottom:8px">
+                <span>准备上传…</span><span>0%</span>
+            </div>
+            <div class="progress-track"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+        </div>
+
+                <div class="path-bookmarks-card" id="path-bookmarks-panel">
+            <div class="path-header-row">
+                <div class="path-location-box">
+                    <svg class="path-location-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+                    <div class="path-breadcrumb-text" id="current-path">根目录</div>
+                </div>
+                <button class="path-bookmark-btn" id="btn-add-bookmark" title="收藏当前路径">
+                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/></svg>
+                    <span>收藏路径</span>
                 </button>
-                <div class="apple-input-box" style="flex: 1; min-width: 180px;">
-                    <input type="text" id="pc-file-search" class="apple-input" placeholder="检索当前目录文件...">
-                </div>
-                <button class="apple-btn apple-btn-glass" onclick="pcMkdir()" title="新建文件夹">📁 新建</button>
-                <button class="apple-btn apple-btn-primary" onclick="pcRefreshCurrentPath()">刷新目录</button>
             </div>
-
-            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--apple-border); padding: 10px 16px; border-radius: 12px; margin-bottom: 10px; font-size: 13px; color: var(--apple-text-muted); display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
-                <div style="min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">当前路径: <span id="pc-current-path" style="color: white; font-weight: 600;">根目录</span></div>
-                <div style="display:flex; gap:8px; flex-shrink:0;">
-                    <button onclick="pcAddBookmark()" style="padding:4px 10px; font-size:11px; border-radius:6px; border:1px solid rgba(255,215,0,0.3); background:rgba(255,215,0,0.1); color:#ffd700; cursor:pointer; white-space:nowrap;" onmouseover="this.style.background='rgba(255,215,0,0.2)'" onmouseout="this.style.background='rgba(255,215,0,0.1)'">⭐ 收藏此路径</button>
-                    <button onclick="pcCopyCurrentPath()" style="padding:4px 10px; font-size:11px; border-radius:6px; border:1px solid var(--apple-border); background:rgba(255,255,255,0.06); color:var(--apple-text-muted); cursor:pointer; white-space:nowrap;" onmouseover="this.style.color='white'" onmouseout="this.style.color='var(--apple-text-muted)'">📋 复制路径</button>
-                </div>
-            </div>
-
-            <!-- 常用书签栏 (Bookmark Chips Grid) -->
-            <div id="pc-bookmarks-bar" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px; padding:8px 12px; background:rgba(0,0,0,0.2); border-radius:10px; border:1px solid var(--apple-border);">
-                <span style="font-size:11px; color:var(--apple-text-muted); font-weight:600; flex-shrink:0;">⭐ 常用书签:</span>
-                <div id="pc-bookmarks-list" style="display:flex; gap:6px; flex-wrap:wrap; align-items:center; flex:1;"></div>
-            </div>
-
-            <!-- 拖拽上传区 -->
-            <div id="pc-upload-zone" style="border:2px dashed rgba(255,255,255,0.2); border-radius:14px; padding:18px; text-align:center; color:var(--apple-text-muted); font-size:13px; cursor:pointer; transition:all 0.25s; margin-bottom:12px;" onclick="document.getElementById('pc-file-upload').click()" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
-                ⬆️ 拖拽文件到此处上传，或点击选择文件上传到当前目录
-                <input type="file" id="pc-file-upload" multiple style="display:none" onchange="handleFileUpload(event)">
-            </div>
-
-            <div id="pc-file-list" style="display: flex; flex-direction: column; gap: 8px;">
-                <div style="text-align: center; color: var(--apple-text-muted); padding: 40px;">服务未启动，点击控制中心启动服务</div>
+            <div class="bookmarks-scroll-row" id="web-bookmarks-bar">
+                <span class="bookmarks-label">
+                    <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/></svg>
+                    <span>常用</span>
+                </span>
+                <div class="bookmarks-pill-container" id="web-bookmarks-list"></div>
             </div>
         </div>
 
+        <div class="apple-file-grid" id="file-list">
+            <div class="skeleton" style="height:52px"></div>
+            <div class="skeleton" style="height:52px"></div>
+        </div>
+        <p class="subtle" style="font-size:11.5px; text-align:center; margin-top:14px">右键文件：分享 / 重命名 / 删除 · 拖拽文件到此页直接上传</p>
+    </section>
 
-        <!-- 3. 影音大盘 (Media Hub) -->
-        <div id="pc-tab-media" class="mac-tab-panel">
-            <div class="apple-glass-card" style="margin-bottom: 16px;">
-                <div class="apple-card-title">
-                    <span class="apple-card-title-text">🎬 局域网影音与多媒体中心</span>
-                </div>
-                <p style="font-size: 13px; color: var(--apple-text-muted);">一键直接唤起 Apple 极简播放器，享受带动态频域波形与 10s 双击快进快退的播放体验。</p>
-            </div>
-            <div id="pc-media-list" style="display: flex; flex-direction: column; gap: 8px;">
-                <div style="text-align: center; color: var(--apple-text-muted); padding: 40px;">暂无媒体文件或未启动服务</div>
+    <!-- 3. 影音 -->
+    <section id="view-media" class="view-section">
+        <div class="toolbar-row" style="flex-wrap:wrap; gap:8px; align-items:center">
+            <button class="apple-btn apple-btn-glass" id="btn-media-folder"><span data-icon="folder" data-icon-size="15"></span>+ 添加媒体目录</button>
+            <button class="apple-btn apple-btn-primary" id="btn-media-scan"><span data-icon="search" data-icon-size="15"></span>扫描全部媒体</button>
+            <span class="subtle ellipsis" id="media-folder-label" style="font-size:12px; flex:1; min-width:100px">0 个媒体源</span>
+        </div>
+        <div class="media-folders-chip-row" id="media-folders-chip-row"></div>
+        <div class="poster-grid" id="poster-grid">
+            <div class="empty-state" style="grid-column:1/-1">
+                <span data-icon="playCircle" data-icon-size="34"></span>
+                添加电脑上的电影/音乐文件夹，即刻享受局域网影音剧院
             </div>
         </div>
+    </section>
 
-        <!-- 4. 跨端消息 (iMessage Chat) -->
-        <div id="pc-tab-chat" class="mac-tab-panel">
-            <div class="apple-glass-card">
-                <div class="apple-card-title">
-                    <span class="apple-card-title-text">💬 iMessage 桌面实时通信</span>
-                </div>
-
-                <div class="apple-chat-container" id="pc-chat-messages">
-                    <div style="text-align: center; color: var(--apple-text-muted); font-size: 12px; margin-top: 20px;">跨端加密实时传输中...</div>
-                </div>
-
-                <div style="display: flex; gap: 10px; align-items: flex-end;">
-                    <div class="apple-input-box" style="flex: 1;">
-                        <input type="text" id="pc-chat-input" class="apple-input" placeholder="输入桌面端消息..." onkeypress="if(event.key==='Enter') sendPCChatMessage()">
-                    </div>
-                    <button class="apple-btn apple-btn-primary" onclick="sendPCChatMessage()">发送消息</button>
-                </div>
-            </div>
+    <!-- 播放器专属视图 (影院级标准播放页) -->
+    <section id="view-player" class="view-section" style="padding-bottom: 24px;">
+        <!-- 顶部返回与导航 -->
+        <div class="player-nav-header">
+            <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-player-back">
+                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                <span>返回</span>
+            </button>
+            <div class="player-nav-title ellipsis" id="player-nav-title">正在播放</div>
+            <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-player-pip" title="画中画">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+            </button>
         </div>
 
-        <!-- 5. 随手涂鸦 (Apple Notes Draw) -->
-        <div id="pc-tab-draw" class="mac-tab-panel">
-            <div class="apple-glass-card">
-                <div class="apple-card-title">
-                    <span class="apple-card-title-text">🎨 Apple Notes 随手涂鸦板</span>
-                </div>
-                <div style="background: white; border-radius: 16px; overflow: hidden; margin-bottom: 12px; touch-action: none;">
-                    <canvas id="pc-whiteboard" width="300" height="260" style="width: 100%; display: block;"></canvas>
-                </div>
-                <div style="display: flex; gap: 10px;">
-                    <button class="apple-btn apple-btn-glass" style="flex: 1;" onclick="clearPCWhiteboard()">清空画布</button>
-                    <button class="apple-btn apple-btn-primary" style="flex: 1;" onclick="savePCWhiteboard()">保存涂鸦图像</button>
-                </div>
-            </div>
-        </div>
+        <!-- 16:9 标准视频核心视窗容器 (Apple 原生无 AI 痕迹精细化体系) -->
+        <div class="player-stage-container" id="player-stage-container">
+            <div class="player-stage-box" id="player-stage-box">
+                <!-- 核心 Video 标签 -->
+                <video id="apple-media-element" playsinline webkit-playsinline x5-playsinline x5-video-player-type="h5" preload="metadata"></video>
 
-        <!-- 6. 连线设备 (Connected Devices) -->
-        <div id="pc-tab-devices" class="mac-tab-panel">
-            <div class="apple-glass-card">
-                <div class="apple-card-title">
-                    <span class="apple-card-title-text">🌐 实时连接设备与带宽</span>
-                    <div class="apple-card-controls">
-                        <button class="apple-btn apple-btn-danger" style="padding:4px 12px; font-size:12px;" onclick="kickDevices()">🚫 断开所有设备</button>
-                        <button class="apple-btn apple-btn-glass" style="padding:4px 12px; font-size:12px;" onclick="loadDevicesPC()">刷新</button>
-                    </div>
-                </div>
-                <div id="pc-devices-container" style="display: flex; flex-direction: column; gap: 10px; margin-top: 12px;">
-                    <div style="text-align: center; color: var(--apple-text-muted); padding: 30px;">未启动服务或暂无网络设备连接</div>
-                </div>
-            </div>
-
-            <!-- 黑名单管理 -->
-            <div class="apple-glass-card" style="margin-top: 16px;">
-                <div class="apple-card-title">
-                    <span class="apple-card-title-text">⛔ 封禁 IP 黑名单管理</span>
-                    <button class="apple-btn apple-btn-danger" style="padding:4px 12px; font-size:12px;" onclick="promptBlockIp()">➕ 手动添加封禁 IP</button>
-                </div>
-                <div id="pc-blocked-container" style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
-                    <div style="text-align: center; color: var(--apple-text-muted); padding: 15px; font-size: 12px;">暂无被封禁的 IP 地址</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- 7. 高级系统偏好 (Preferences) -->
-        <div id="pc-tab-config" class="mac-tab-panel">
-            <div class="apple-glass-card">
-                <div class="apple-card-title"><span class="apple-card-title-text">⚙️ 软件高级偏好设置</span></div>
-                <div style="display: flex; flex-direction: column; gap: 18px;">
-                    <div>
-                        <label style="font-size: 13px; color: var(--apple-text-muted); display: block; margin-bottom: 6px;">监听网络接口 (网卡绑定)</label>
-                        <div class="apple-input-box">
-                            <select id="network-select" class="apple-select" onchange="saveConfig()">
-                                <option value="">全部分配的 IPv4 网卡 (推荐)</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div style="display: flex; flex-direction: column; gap: 14px; padding-top: 6px;">
-                        <div style="display: flex; align-items: center; justify-content: space-between;">
-                            <div>
-                                <div style="font-weight: 600; font-size: 14px; color: white;">系统开机自动启动</div>
-                                <div style="font-size: 12px; color: var(--apple-text-muted);">Windows 登录时自动后台启动程序</div>
+                <!-- 音频专属全景黑胶舞台 -->
+                <div class="ap-audio-layer" id="ap-audio-layer">
+                    <div class="ap-audio-mesh"></div>
+                    <div class="ap-audio-vinyl-box">
+                        <div class="ap-audio-vinyl" id="ap-audio-vinyl">
+                            <div class="ap-audio-center">
+                                <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/></svg>
                             </div>
-                            <label class="apple-switch">
-                                <input type="checkbox" id="autostart-toggle">
-                                <span class="apple-slider"></span>
-                            </label>
+                        </div>
+                    </div>
+                    <canvas class="ap-audio-canvas" id="ap-audio-canvas"></canvas>
+                </div>
+
+                <!-- 外挂字幕实时渲染层 (Apple Cinematic Subtitles) -->
+                <div class="ap-subtitle-layer" id="ap-subtitle-layer">
+                    <div class="ap-subtitle-text sub-size-md" id="ap-subtitle-text"></div>
+                </div>
+
+                <!-- 浮动控制遮罩层 (Apple QuickTime / Vision 极简通透全套控制) -->
+                <div class="player-controls-overlay" id="player-controls-overlay">
+                    <!-- 顶部精致无边框水晶栏 -->
+                    <div class="player-ctrl-top" id="player-ctrl-top">
+                        <div class="player-ctrl-top-left">
+                            <button class="player-top-icon-btn" id="ap-btn-top-back" title="返回 / 退出全屏">
+                                <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M15 19l-7-7 7-7"/></svg>
+                            </button>
+                            <span class="player-ctrl-title ellipsis" id="ap-video-title">媒体名称</span>
+                            <span class="ap-status-badge" id="ap-video-badge"><span class="ap-status-dot"></span>4K HDR</span>
+                        </div>
+                        <div class="player-ctrl-top-right">
+                            <button class="player-top-icon-btn" id="ap-btn-snapshot" title="一键截帧">
+                                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><circle cx="12" cy="13" r="3" stroke-width="2"/></svg>
+                            </button>
+                            <button class="player-top-icon-btn" id="ap-btn-pip" title="画中画">
+                                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                            </button>
+                            <button class="player-top-icon-btn" id="ap-btn-top-episodes" title="剧集列表">
+                                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+                            </button>
+                            <button class="player-top-icon-btn" id="ap-btn-top-settings" title="影院级设置">
+                                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 屏幕中央 HUD 状态反馈 -->
+                    <div class="player-ctrl-center" id="ap-center-badge">
+                        <svg id="ap-center-icon-play" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                    </div>
+
+                    <!-- 锁屏按钮 (Apple 悬浮水晶气泡) -->
+                    <button class="ap-lock-btn" id="ap-lock-btn" title="锁定全屏屏幕">
+                        <svg id="ap-icon-unlock" width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
+                        <svg id="ap-icon-lock" width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="display:none;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+                    </button>
+
+                    <!-- 2.0X 极速长按胶囊 -->
+                    <div class="ap-speed-badge" id="ap-speed-badge">2.0X 极速播放中</div>
+                    <div class="ap-gesture-toast" id="ap-gesture-toast"></div>
+
+                    <!-- 断点续播浮动胶囊 -->
+                    <div class="ap-resume-toast" id="ap-resume-toast">
+                        <span id="ap-resume-text">上次播放至 00:00</span>
+                        <button id="ap-btn-resume-action">继续播放</button>
+                        <button id="ap-btn-resume-dismiss">✕</button>
+                    </div>
+
+                    <!-- 左侧亮度 HUD -->
+                    <div class="ap-hud left" id="ap-hud-brightness">
+                        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                        <div class="ap-hud-track"><div class="ap-hud-fill" id="ap-hud-brightness-fill"></div></div>
+                        <div class="ap-hud-val" id="ap-hud-brightness-val">100%</div>
+                    </div>
+
+                    <!-- 右侧音量 HUD -->
+                    <div class="ap-hud right" id="ap-hud-volume">
+                        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
+                        <div class="ap-hud-track"><div class="ap-hud-fill" id="ap-hud-volume-fill"></div></div>
+                        <div class="ap-hud-val" id="ap-hud-volume-val">100%</div>
+                    </div>
+
+                    <!-- 底部全套控制栏面板 -->
+                    <div class="player-ctrl-bottom">
+                        <!-- 极光双色流光进度条 -->
+                        <div class="ap-progress-wrap" id="ap-progress-wrap">
+                            <div class="ap-progress-track">
+                                <div class="ap-progress-buffer" id="ap-progress-buffer"></div>
+                                <div class="ap-progress-fill" id="ap-progress-fill"></div>
+                            </div>
+                            <div class="ap-progress-thumb" id="ap-progress-thumb"></div>
                         </div>
 
-                        <div style="display: flex; align-items: center; justify-content: space-between;">
-                            <div>
-                                <div style="font-weight: 600; font-size: 14px; color: white;">打开应用时自动开启服务</div>
-                                <div style="font-size: 12px; color: var(--apple-text-muted);">启动软件后无需手动点击“启动服务”</div>
+                        <!-- 底部功能按钮行 (响应式优雅排布) -->
+                        <div class="player-ctrl-row">
+                            <div class="player-ctrl-left">
+                                <button class="player-btn-icon ap-btn-desktop-only" id="ap-btn-prev" title="上一集">
+                                    <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+                                </button>
+                                <button class="player-btn-icon player-main-play-btn" id="ap-btn-play" title="播放/暂停">
+                                    <svg id="ap-icon-play" width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                    <svg id="ap-icon-pause" width="16" height="16" fill="currentColor" viewBox="0 0 24 24" style="display:none;"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                                </button>
+                                <button class="player-btn-icon" id="ap-btn-next" title="下一集">
+                                    <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+                                </button>
+                                <span class="player-time-display" id="ap-time-text">00:00 / 00:00</span>
                             </div>
-                            <label class="apple-switch">
-                                <input type="checkbox" id="auto-serve-toggle" onchange="saveConfig()">
-                                <span class="apple-slider"></span>
-                            </label>
+                            <div class="player-ctrl-right">
+                                <button class="player-btn-pill" id="ap-btn-speed">1.0x</button>
+                                <button class="player-btn-pill ap-btn-desktop-only" id="ap-btn-fit-toggle" title="画面比例">
+                                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+                                    <span>自适应</span>
+                                </button>
+                                <button class="player-btn-pill ap-btn-desktop-only" id="ap-btn-filter-toggle" title="色彩风格">
+                                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4 4 4 0 014-4c2 0 2-4 6-4 4 0 7 3 7 7a7 7 0 01-7 7H7z"/></svg>
+                                    <span>原画</span>
+                                </button>
+                                <button class="player-btn-pill player-btn-fullscreen" id="ap-btn-fullscreen" title="全屏 / 还原">
+                                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+                                    <span id="ap-fs-btn-label">全屏</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 全屏内嵌半透毛玻璃抽屉：选集抽屉 -->
+                <div class="ap-fs-drawer" id="ap-fs-drawer-episodes">
+                    <div class="ap-fs-drawer-header">
+                        <div class="row" style="gap:6px;">
+                            <span style="font-weight:600; font-size:13.5px; color:#fff;">剧集与播放列表</span>
+                            <span class="subtle" id="ap-fs-episodes-count" style="font-size:12px; color:#94a3b8;">(0)</span>
+                        </div>
+                        <button class="ap-fs-drawer-close" id="ap-fs-drawer-episodes-close">✕</button>
+                    </div>
+                    <div style="padding: 0 16px 6px 16px;">
+                        <div class="ap-fs-ep-ranges" id="ap-fs-ep-ranges">
+                            <!-- 动态注入全屏选集分页胶囊 -->
+                        </div>
+                    </div>
+                    <div class="ap-fs-drawer-body" id="ap-fs-drawer-episodes-list">
+                        <!-- 动态注入全屏选集卡片 -->
+                    </div>
+                </div>
+
+                <!-- 全屏内嵌半透毛玻璃抽屉：影院级设置抽屉 -->
+                <div class="ap-fs-drawer" id="ap-fs-drawer-settings">
+                    <div class="ap-fs-drawer-header">
+                        <span style="font-weight:600; font-size:13.5px; color:#fff;">影院级播放设置</span>
+                        <button class="ap-fs-drawer-close" id="ap-fs-drawer-settings-close">✕</button>
+                    </div>
+                    <div class="ap-fs-drawer-body">
+                        <div class="player-control-group">
+                            <div class="player-group-title">播放倍速</div>
+                            <div class="player-pill-grid" id="ap-fs-speed-grid">
+                                <button class="player-opt-pill" data-speed="0.5">0.5x</button>
+                                <button class="player-opt-pill" data-speed="0.75">0.75x</button>
+                                <button class="player-opt-pill active" data-speed="1.0">1.0x</button>
+                                <button class="player-opt-pill" data-speed="1.25">1.25x</button>
+                                <button class="player-opt-pill" data-speed="1.5">1.5x</button>
+                                <button class="player-opt-pill" data-speed="2.0">2.0x</button>
+                                <button class="player-opt-pill" data-speed="3.0">3.0x</button>
+                            </div>
+                        </div>
+
+                        <div class="player-control-group" style="margin-top: 16px;">
+                            <div class="player-group-title">画面色彩风格</div>
+                            <div class="player-pill-grid" id="ap-fs-filter-grid">
+                                <button class="player-opt-pill active" data-filter="none">原画</button>
+                                <button class="player-opt-pill" data-filter="warm">夜间暖光</button>
+                                <button class="player-opt-pill" data-filter="cinema">影院高对比</button>
+                                <button class="player-opt-pill" data-filter="vivid">鲜艳生动</button>
+                            </div>
+                        </div>
+
+                        <div class="player-control-group" style="margin-top: 16px;">
+                            <div class="player-group-title">画面填充与旋转</div>
+                            <div class="player-pill-grid" id="ap-fs-fit-grid">
+                                <button class="player-opt-pill active" data-fit="contain">自适应</button>
+                                <button class="player-opt-pill" data-fit="cover">铺满全屏</button>
+                                <button class="player-opt-pill" data-fit="fill">拉伸全屏</button>
+                                <button class="player-opt-pill" id="ap-fs-btn-rotate">旋转 90°</button>
+                            </div>
+                        </div>
+
+                        <div class="player-control-group" style="margin-top: 16px;">
+                            <div class="player-group-title">循环模式</div>
+                            <div class="player-pill-grid" id="ap-fs-loop-grid">
+                                <button class="player-opt-pill active" data-loop="all">列表循环</button>
+                                <button class="player-opt-pill" data-loop="one">单曲循环</button>
+                                <button class="player-opt-pill" data-loop="off">顺序播放</button>
+                            </div>
+                        </div>
+
+                        <!-- 外挂字幕设置 -->
+                        <div class="player-control-group" style="margin-top: 16px;">
+                            <div class="player-group-title" style="display:flex; justify-content:space-between; align-items:center;">
+                                <span>外挂字幕</span>
+                                <span class="subtle" style="font-size:11px;" id="ap-fs-sub-status">自动加载同名字幕</span>
+                            </div>
+                            <div class="player-pill-grid" id="ap-fs-sub-tracks-grid" style="margin-bottom:8px;">
+                                <button class="player-opt-pill active" data-sub="auto">自动探测</button>
+                                <button class="player-opt-pill" data-sub="off">关闭字幕</button>
+                            </div>
+                            <div class="row" style="gap:6px; margin-top:8px;">
+                                <label class="apple-btn apple-btn-glass apple-btn-sm" style="flex:1; cursor:pointer; font-size:11.5px; justify-content:center;">
+                                    <input type="file" id="ap-fs-input-custom-sub" accept=".srt,.vtt,.ass" style="display:none">
+                                    <span>+ 导入本地字幕 (.srt/.vtt)</span>
+                                </label>
+                            </div>
+                            <div class="player-group-title" style="margin-top:10px; font-size:11px;">字幕字号与时间轴微调</div>
+                            <div class="player-pill-grid" id="ap-fs-sub-size-grid">
+                                <button class="player-opt-pill" data-subsize="sm">小</button>
+                                <button class="player-opt-pill active" data-subsize="md">中</button>
+                                <button class="player-opt-pill" data-subsize="lg">大</button>
+                                <button class="player-opt-pill" data-subsize="xl">特大</button>
+                            </div>
+                            <div class="player-pill-grid" id="ap-fs-sub-delay-grid" style="margin-top:6px;">
+                                <button class="player-opt-pill" data-subdelay="-0.5">-0.5s</button>
+                                <button class="player-opt-pill active" data-subdelay="0">0s 正常</button>
+                                <button class="player-opt-pill" data-subdelay="0.5">+0.5s</button>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- 8. 系统工具 (Tools) -->
-        <div id="pc-tab-tools" class="mac-tab-panel">
-            <div class="apple-glass-card" style="margin-bottom: 24px;">
-                <div class="apple-card-title"><span class="apple-card-title-text">⏱️ 系统定时关机设置</span></div>
-                <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-                    <div class="apple-input-box" style="flex: 1; min-width: 160px;">
-                        <input type="number" id="shutdown-minutes" class="apple-input" placeholder="倒计时分钟数 (例如: 60)" value="60">
+        <!-- 下部：标准功能与选集控制面板 -->
+        <div class="player-info-section">
+            <!-- 媒体信息卡片 -->
+            <div class="glass-card" style="margin-bottom: 12px; padding: 14px 16px;">
+                <div class="row-between">
+                    <div style="flex:1; min-width:0;">
+                        <div class="player-main-title ellipsis" id="player-card-title">媒体名称</div>
+                        <div class="subtle" style="font-size:11.5px; margin-top:4px;" id="player-card-sub">局域网 4K HDR 硬件加速直连</div>
                     </div>
-                    <button class="apple-btn apple-btn-primary" onclick="scheduleShutdown()">设置定时关机</button>
-                    <button class="apple-btn apple-btn-glass" onclick="cancelShutdown()">取消关机</button>
                 </div>
             </div>
 
-            <div class="apple-glass-card" style="margin-bottom: 24px;">
-                <div class="apple-card-title">
-                    <span class="apple-card-title-text">💻 进程管理器</span>
-                    <div class="apple-card-controls">
-                        <label class="apple-label-nowrap">
-                            <input type="checkbox" id="pc-process-auto" onchange="toggleAutoRefreshPC()"> 3s 自动刷新
+            <!-- 选集列表 (横向滑动卡片 + 分页区间胶囊) -->
+            <div class="glass-card" style="margin-bottom: 12px; padding: 14px 16px;">
+                <div class="row-between" style="margin-bottom: 10px; gap: 8px; flex-wrap: wrap;">
+                    <div class="row" style="gap:6px; flex-shrink: 0;">
+                        <span class="apple-card-title-text"><span data-icon="playCircle"></span>剧集与播放列表</span>
+                        <span class="subtle" id="player-episodes-count" style="font-size:12px;">(0)</span>
+                    </div>
+                    <div class="player-ep-ranges-container" id="player-ep-ranges-container">
+                        <!-- 动态注入选集分页胶囊，如 [ 01-30 ] [ 31-60 ] [ 61-92 ] -->
+                    </div>
+                </div>
+                <div class="player-episodes-scroll" id="player-episodes-scroll">
+                    <!-- 动态注入选集卡片 -->
+                </div>
+            </div>
+
+            <!-- 快捷播放控制卡片 (倍速 / 滤镜 / 比例 / 循环) -->
+            <div class="glass-card" style="margin-bottom: 12px; padding: 14px 16px;">
+                <div class="player-control-group">
+                    <div class="player-group-title">播放倍速</div>
+                    <div class="player-pill-grid" id="player-speed-grid">
+                        <button class="player-opt-pill" data-speed="0.5">0.5x</button>
+                        <button class="player-opt-pill" data-speed="0.75">0.75x</button>
+                        <button class="player-opt-pill active" data-speed="1.0">1.0x</button>
+                        <button class="player-opt-pill" data-speed="1.25">1.25x</button>
+                        <button class="player-opt-pill" data-speed="1.5">1.5x</button>
+                        <button class="player-opt-pill" data-speed="2.0">2.0x</button>
+                        <button class="player-opt-pill" data-speed="3.0">3.0x</button>
+                    </div>
+                </div>
+
+                <div class="player-control-group" style="margin-top: 14px;">
+                    <div class="player-group-title">画面色彩风格</div>
+                    <div class="player-pill-grid" id="player-filter-grid">
+                        <button class="player-opt-pill active" data-filter="none">原画</button>
+                        <button class="player-opt-pill" data-filter="warm">夜间暖光</button>
+                        <button class="player-opt-pill" data-filter="cinema">影院高对比</button>
+                        <button class="player-opt-pill" data-filter="vivid">鲜艳生动</button>
+                    </div>
+                </div>
+
+                <div class="player-control-group" style="margin-top: 14px;">
+                    <div class="player-group-title">画面比例与循环</div>
+                    <div class="player-pill-grid" id="player-fit-grid">
+                        <button class="player-opt-pill active" data-fit="contain">自适应</button>
+                        <button class="player-opt-pill" data-fit="cover">铺满全屏</button>
+                        <button class="player-opt-pill" data-fit="fill">拉伸</button>
+                        <button class="player-opt-pill" id="btn-player-rotate">旋转 90°</button>
+                    </div>
+                </div>
+
+                <div class="player-control-group" style="margin-top: 14px;">
+                    <div class="player-group-title" style="display:flex; justify-content:space-between; align-items:center;">
+                        <span>外挂字幕</span>
+                        <span class="subtle" style="font-size:11px;" id="player-sub-status">自动加载同名字幕</span>
+                    </div>
+                    <div class="player-pill-grid" id="player-sub-tracks-grid" style="margin-bottom:8px;">
+                        <button class="player-opt-pill active" data-sub="auto">自动探测</button>
+                        <button class="player-opt-pill" data-sub="off">关闭字幕</button>
+                    </div>
+                    <div class="row" style="gap:6px; margin-top:8px;">
+                        <label class="apple-btn apple-btn-glass apple-btn-sm" style="flex:1; cursor:pointer; font-size:11.5px; justify-content:center;">
+                            <input type="file" id="player-input-custom-sub" accept=".srt,.vtt,.ass" style="display:none">
+                            <span>+ 导入本地字幕 (.srt/.vtt)</span>
                         </label>
-                        <div class="apple-input-box" style="padding: 4px 8px;">
-                            <select id="pc-process-sort" class="apple-select" onchange="renderProcessesPC()">
-                                <option value="mem">内存 (从大到小)</option>
-                                <option value="pid">PID (从大到小)</option>
-                                <option value="name">按进程名称排序</option>
-                            </select>
-                        </div>
-                        <button class="apple-btn apple-btn-glass" style="padding: 6px 14px; font-size: 12px;" onclick="loadProcessesPC()">刷新</button>
                     </div>
-                </div>
-                <div class="apple-input-box" style="margin-bottom: 12px;">
-                    <input type="text" id="pc-proc-search" class="apple-input" placeholder="搜索 PID 或进程名..." oninput="renderProcessesPC()">
-                </div>
-                <div id="pc-proc-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 280px; overflow-y: auto;">
-                    <div style="color: var(--apple-text-muted); text-align: center; padding: 20px;">请先启动服务</div>
-                </div>
-            </div>
-
-            <div class="apple-glass-card">
-                <div class="apple-card-title"><span class="apple-card-title-text">🖥️ Shell 控制台</span></div>
-                <div id="pc-term-output" style="background: #000; border-radius: 12px; padding: 14px; font-family: monospace; font-size: 13px; color: #34c759; height: 160px; overflow-y: auto; white-space: pre-wrap; border: 1px solid var(--apple-border);">Shell Terminal ready...</div>
-                <div style="display: flex; gap: 10px; margin-top: 10px;">
-                    <div class="apple-input-box" style="flex: 1;">
-                        <input type="text" id="pc-term-input" class="apple-input" placeholder="输入命令..." onkeypress="if(event.key==='Enter') executePCTerminal()">
+                    <div class="player-group-title" style="margin-top:10px; font-size:11px;">字幕字号与时间轴微调</div>
+                    <div class="player-pill-grid" id="player-sub-size-grid">
+                        <button class="player-opt-pill" data-subsize="sm">小</button>
+                        <button class="player-opt-pill active" data-subsize="md">中</button>
+                        <button class="player-opt-pill" data-subsize="lg">大</button>
+                        <button class="player-opt-pill" data-subsize="xl">特大</button>
                     </div>
-                    <button class="apple-btn apple-btn-primary" onclick="executePCTerminal()">执行</button>
+                    <div class="player-pill-grid" id="player-sub-delay-grid" style="margin-top:6px;">
+                        <button class="player-opt-pill" data-subdelay="-0.5">-0.5s</button>
+                        <button class="player-opt-pill active" data-subdelay="0">0s 正常</button>
+                        <button class="player-opt-pill" data-subdelay="0.5">+0.5s</button>
+                    </div>
                 </div>
             </div>
         </div>
+    </section>
 
-        <!-- 9. 运行日志 (Logs) -->
-        <div id="pc-tab-logs" class="mac-tab-panel">
-            <div class="apple-glass-card">
-                <div class="apple-card-title">
-                    <span class="apple-card-title-text">📝 系统运行日志</span>
-                    <button class="apple-btn apple-btn-glass" style="padding: 4px 10px; font-size: 12px;" onclick="document.getElementById('pc-log-box').innerHTML=''">清空日志</button>
+    <!-- 4. 消息 -->
+    <section id="view-chat" class="view-section">
+        <div class="glass-card">
+            <div class="apple-card-title">
+                <span class="apple-card-title-text"><span data-icon="chat"></span>跨端消息</span>
+                <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-chat-clear">清空记录</button>
+            </div>
+            <div class="apple-chat-container" id="chat-messages"></div>
+                        <div class="chat-input-row" id="chat-input-toolbar">
+                <label class="chat-tool-btn" title="发送图片" style="cursor:pointer">
+                    <span data-icon="camera"></span>
+                    <input type="file" accept="image/*" style="display:none" id="chat-image-input">
+                </label>
+                <button class="chat-tool-btn" id="btn-voice" title="按住录音"><span data-icon="mic"></span></button>
+                <div class="apple-input-box chat-input-capsule">
+                    <input type="text" id="chat-input" class="apple-input" placeholder="输入消息…" autocomplete="off">
                 </div>
-                <div id="pc-log-box" style="background: #000; border-radius: 12px; padding: 16px; font-family: monospace; font-size: 12px; color: #f8fafc; height: 350px; overflow-y: auto; white-space: pre-wrap; border: 1px solid var(--apple-border);">[Info] 局域网互联 Pro 工作台初始化成功</div>
+                <button class="apple-btn apple-btn-primary chat-send-btn" id="btn-chat-send">
+                    <span>发送</span>
+                </button>
+            </div>
+            <div id="voice-status" style="display:none; color:var(--apple-system-red); font-size:12px; margin-top:8px; text-align:center">正在录音中…再次点击完成发送</div>
+        </div>
+    </section>
+
+    <!-- 5. 工具 -->
+    <section id="view-tools" class="view-section">
+        <div id="desktop-remote-control-container" style="margin-bottom:16px;"></div>
+
+        <div class="glass-card" style="margin-bottom:16px">
+            <div class="apple-card-title">
+                <span class="apple-card-title-text"><span data-icon="clipboard"></span>剪贴板互通</span>
+                <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-clip-pull">拉取电脑剪贴板</button>
+            </div>
+            <div class="apple-input-box" style="margin-bottom:10px">
+                <textarea id="clip-text" class="apple-input" rows="3" placeholder="输入文本推送到剪贴板（手机端也可拉取/推送）" style="resize:vertical; min-height:64px; line-height:1.5"></textarea>
+            </div>
+            <button class="apple-btn apple-btn-primary" id="btn-clip-push" style="width:100%">推送到系统剪贴板</button>
+        </div>
+
+        <div class="glass-card" style="margin-bottom:16px">
+            <div class="apple-card-title">
+                <span class="apple-card-title-text"><span data-icon="cpu"></span>系统进程</span>
+                <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-proc-refresh">刷新进程</button>
+            </div>
+            <div class="apple-input-box" style="margin-bottom:12px">
+                <input type="text" id="process-search" class="apple-input" placeholder="搜索 PID 或进程名…">
+            </div>
+            <div id="process-list" style="max-height:300px; overflow-y:auto"></div>
+        </div>
+
+        <div class="glass-card" style="margin-bottom:16px">
+            <div class="apple-card-title"><span class="apple-card-title-text"><span data-icon="terminal"></span>Shell 控制台</span></div>
+            <div id="terminal-output" class="mono" style="background:#0b0d14; border-radius:12px; padding:14px; font-size:12.5px; color:#34c759; height:190px; overflow-y:auto; white-space:pre-wrap; border:1px solid var(--apple-border)">ready — 本机 Shell 控制台</div>
+            <div class="row" style="margin-top:12px">
+                <div class="apple-input-box" style="flex:1">
+                    <input type="text" id="terminal-input" class="apple-input mono" placeholder="输入 Shell 命令…">
+                </div>
+                <button class="apple-btn apple-btn-primary" id="btn-terminal-run">执行</button>
             </div>
         </div>
 
-    </main>
+        <div class="glass-card">
+            <div class="apple-card-title"><span class="apple-card-title-text"><span data-icon="palette"></span>随手涂鸦</span></div>
+            <div style="background:#fff; border-radius:16px; overflow:hidden; margin-bottom:12px; touch-action:none">
+                <canvas id="whiteboard" width="700" height="420" style="width:100%; display:block"></canvas>
+            </div>
+            <div class="row">
+                <button class="apple-btn apple-btn-glass" id="btn-draw-clear" style="flex:1">清空画布</button>
+                <button class="apple-btn apple-btn-primary" id="btn-draw-save" style="flex:1">保存到共享目录</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- 6. 设置 -->
+    <section id="view-settings" class="view-section">
+        <div class="settings-nav" id="settings-nav">
+            <button class="apple-btn apple-btn-glass apple-btn-sm active" data-panel="security"><span data-icon="shield" data-icon-size="14"></span>服务与安全</button>
+            <button class="apple-btn apple-btn-glass apple-btn-sm" data-panel="devices"><span data-icon="devices" data-icon-size="14"></span>设备管理</button>
+            <button class="apple-btn apple-btn-glass apple-btn-sm" data-panel="trash"><span data-icon="trash" data-icon-size="14"></span>回收站</button>
+            <button class="apple-btn apple-btn-glass apple-btn-sm" data-panel="shares"><span data-icon="qr" data-icon-size="14"></span>分享管理</button>
+            <button class="apple-btn apple-btn-glass apple-btn-sm" data-panel="history"><span data-icon="history" data-icon-size="14"></span>传输记录</button>
+            <button class="apple-btn apple-btn-glass apple-btn-sm" data-panel="app"><span data-icon="settings" data-icon-size="14"></span>应用</button>
+            <button class="apple-btn apple-btn-glass apple-btn-sm" data-panel="logs"><span data-icon="list" data-icon-size="14"></span>日志</button>
+        </div>
+
+        <!-- 服务与安全 -->
+        <div class="settings-panel active glass-card" data-panel="security">
+            <div class="apple-card-title"><span class="apple-card-title-text"><span data-icon="shield"></span>服务与安全</span>
+                <button class="apple-btn apple-btn-primary apple-btn-sm" id="btn-apply-config">应用配置并重启服务</button>
+            </div>
+            <div class="kv-row">
+                <div class="kv-row-label"><span data-icon="lock" data-icon-size="16"></span><div>访问密码 PIN<div class="kv-row-desc">留空 = 免密模式（敏感操作仅限本机）</div></div></div>
+                <div class="apple-input-box" style="width:170px"><input type="text" id="cfg-pin" class="apple-input" placeholder="如 123456"></div>
+            </div>
+            <div class="kv-row">
+                <div class="kv-row-label"><span data-icon="server" data-icon-size="16"></span><div>共享范围<div class="kv-row-desc">全盘模式可浏览所有磁盘；互传模式仅共享目录</div></div></div>
+                <div class="segmented" id="cfg-mode">
+                    <button class="segmented-item active" data-v="full">全盘模式</button>
+                    <button class="segmented-item" data-v="shared">互传模式</button>
+                </div>
+            </div>
+            <div class="kv-row">
+                <div class="kv-row-label"><span data-icon="folder" data-icon-size="16"></span><div>共享目录<div class="kv-row-desc ellipsis" id="cfg-dir-label" style="max-width:340px">默认：下载/LanDiskShared</div></div></div>
+                <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-select-dir">选择目录</button>
+            </div>
+            <div class="kv-row">
+                <div class="kv-row-label"><span data-icon="globe" data-icon-size="16"></span><div>端口<div class="kv-row-desc">局域网访问端口</div></div></div>
+                <div class="apple-input-box" style="width:120px"><input type="number" id="cfg-port" class="apple-input" placeholder="3000" min="1024" max="65535"></div>
+            </div>
+            <div class="kv-row">
+                <div class="kv-row-label"><span data-icon="wifi" data-icon-size="16"></span><div>绑定网卡<div class="kv-row-desc">仅监听指定网卡，默认全部</div></div></div>
+                <div class="apple-input-box" style="width:220px"><select id="cfg-bindip" class="apple-select"><option value="">全部网卡 (0.0.0.0)</option></select></div>
+            </div>
+            <div class="kv-row">
+                <div class="kv-row-label"><span data-icon="check" data-icon-size="16"></span><div>IP 白名单<div class="kv-row-desc">开启后仅白名单内 IP 可访问</div></div></div>
+                <label class="apple-switch"><input type="checkbox" id="cfg-whitelist"><span class="apple-slider"></span></label>
+            </div>
+            <div id="cfg-whitelist-row" style="display:none; padding:4px 0 8px">
+                <div class="apple-input-box"><input type="text" id="cfg-whitelist-ips" class="apple-input mono" placeholder="逗号分隔，如 192.168.0.5,192.168.0.8"></div>
+            </div>
+        </div>
+
+        <!-- 设备管理 -->
+        <div class="settings-panel glass-card" data-panel="devices">
+            <div class="apple-card-title"><span class="apple-card-title-text"><span data-icon="devices"></span>在线设备</span>
+                <button class="apple-btn apple-btn-danger apple-btn-sm" id="btn-kick-all">断开全部</button>
+            </div>
+            <div id="devices-list"></div>
+            <div class="apple-card-title" style="margin-top:20px"><span class="apple-card-title-text"><span data-icon="warning"></span>IP 黑名单</span></div>
+            <div class="row wrap" id="blacklist-list"><span class="subtle" style="font-size:12.5px">暂无封禁 IP</span></div>
+        </div>
+
+        <!-- 回收站 -->
+        <div class="settings-panel glass-card" data-panel="trash">
+            <div class="apple-card-title"><span class="apple-card-title-text"><span data-icon="trash"></span>回收站</span>
+                <div class="row">
+                    <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-trash-refresh">刷新</button>
+                    <button class="apple-btn apple-btn-danger apple-btn-sm" id="btn-trash-clear">清空回收站</button>
+                </div>
+            </div>
+            <div id="trash-list"><div class="empty-state">回收站为空</div></div>
+        </div>
+
+        <!-- 分享管理 -->
+        <div class="settings-panel glass-card" data-panel="shares">
+            <div class="apple-card-title"><span class="apple-card-title-text"><span data-icon="qr"></span>活动分享链接</span>
+                <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-shares-refresh">刷新</button>
+            </div>
+            <div id="shares-list"><div class="empty-state">暂无活动分享<br><span class="subtle" style="font-size:11.5px">在文件页右键文件即可生成分享</span></div></div>
+        </div>
+
+        <!-- 传输记录 -->
+        <div class="settings-panel glass-card" data-panel="history">
+            <div class="apple-card-title"><span class="apple-card-title-text"><span data-icon="history"></span>传输记录</span>
+                <button class="apple-btn apple-btn-danger apple-btn-sm" id="btn-history-clear">清空记录</button>
+            </div>
+            <div id="settings-history"><div class="empty-state">暂无传输记录</div></div>
+        </div>
+
+        <!-- 应用 -->
+        <div class="settings-panel glass-card" data-panel="app">
+            <div class="apple-card-title"><span class="apple-card-title-text"><span data-icon="settings"></span>应用设置</span></div>
+            <div class="kv-row">
+                <div class="kv-row-label"><span data-icon="power" data-icon-size="16"></span><div>开机自启动</div></div>
+                <label class="apple-switch"><input type="checkbox" id="cfg-autostart"><span class="apple-slider"></span></label>
+            </div>
+            <div class="kv-row">
+                <div class="kv-row-label"><span data-icon="zap" data-icon-size="16"></span><div>启动软件即开服务</div></div>
+                <label class="apple-switch"><input type="checkbox" id="cfg-autoserve" checked><span class="apple-slider"></span></label>
+            </div>
+                        <div class="kv-row">
+                <div class="kv-row-label"><span data-icon="close" data-icon-size="16"></span><div>关闭窗口动作<div class="kv-row-desc">点击右上角关闭或快捷键时的行为</div></div></div>
+                <div class="segmented" id="cfg-close-action">
+                    <button class="segmented-item active" data-v="ask">每次询问</button>
+                    <button class="segmented-item" data-v="minimize">后台运行</button>
+                    <button class="segmented-item" data-v="quit">完全退出</button>
+                </div>
+            </div>
+            <div class="kv-row">
+                <div class="kv-row-label"><span data-icon="moon" data-icon-size="16"></span><div>外观主题</div></div>
+                <div class="segmented" id="cfg-theme">
+                    <button class="segmented-item active" data-v="auto">跟随系统</button>
+                    <button class="segmented-item" data-v="light">浅色</button>
+                    <button class="segmented-item" data-v="dark">深色</button>
+                </div>
+            </div>
+            <div class="kv-row">
+                <div class="kv-row-label"><span data-icon="external" data-icon-size="16"></span><div>打开数据目录<div class="kv-row-desc">回收站 / 记录等数据存放处</div></div></div>
+                <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-open-home">打开 ~/.landisk</button>
+            </div>
+            <div class="kv-row">
+                <div class="kv-row-label"><span data-icon="logout" data-icon-size="16"></span><div>退出应用<div class="kv-row-desc">同时停止共享服务</div></div></div>
+                <button class="apple-btn apple-btn-danger apple-btn-sm" id="btn-quit">退出</button>
+            </div>
+        </div>
+
+        <!-- 日志 -->
+        <div class="settings-panel glass-card" data-panel="logs">
+            <div class="apple-card-title"><span class="apple-card-title-text"><span data-icon="list"></span>运行日志</span>
+                <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-logs-clear">清空</button>
+            </div>
+            <div class="log-view" id="log-view"></div>
+        </div>
+    </section>
+
+</div>
+</main>
+
+<!-- 悬浮 Dock (带苹果灵动滑动指示器) -->
+<nav class="dock" id="main-dock">
+    <div class="dock-glider" id="dock-glider"></div>
+    <button class="dock-item active" data-view="home"><span data-icon="home" data-icon-size="22"></span><span class="dock-tip">主页</span></button>
+    <button class="dock-item" data-view="files"><span data-icon="folder" data-icon-size="22"></span><span class="dock-tip">文件</span></button>
+    <button class="dock-item" data-view="media"><span data-icon="playCircle" data-icon-size="22"></span><span class="dock-tip">影音</span></button>
+    <button class="dock-item" data-view="chat"><span data-icon="chat" data-icon-size="22"></span><span class="dock-tip">消息</span></button>
+    <button class="dock-item" data-view="tools"><span data-icon="tools" data-icon-size="22"></span><span class="dock-tip">工具</span></button>
+    <button class="dock-item" data-view="settings"><span data-icon="settings" data-icon-size="22"></span><span class="dock-tip">设置</span></button>
+</nav>
+
+<!-- 传输抽屉 -->
+<div class="transfer-drawer collapsed" id="transfer-drawer" style="display:none">
+    <div class="transfer-drawer-head" id="transfer-drawer-head">
+        <div class="row" style="gap:8px; font-size:13px; font-weight:600"><span data-icon="zap" data-icon-size="15"></span>传输任务</div>
+        <span class="subtle" id="transfer-count" style="font-size:12px">0</span>
+    </div>
+    <div class="transfer-drawer-body" id="transfer-body"></div>
 </div>
 
-<!-- 📱 扫码连接弹窗 -->
-<div id="pc-qr-modal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.85); backdrop-filter:blur(20px); align-items:center; justify-content:center;">
-    <div style="background:var(--apple-bg-dark); border:1px solid var(--apple-border); border-radius:24px; padding:24px; text-align:center; max-width:320px; width:90%;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-            <div style="font-weight:700; font-size:16px; color:white;">📱 扫码快速连接</div>
-            <button class="apple-btn-icon" onclick="document.getElementById('pc-qr-modal').style.display='none'">✕</button>
-        </div>
-        <img id="modal-qr-img" src="" style="width:240px; height:240px; border-radius:16px; background:white; padding:8px; display:block; margin:0 auto 16px;">
-        <div style="font-size:12px; color:var(--apple-text-muted);">使用手机微信 / 浏览器扫描二维码直达互联 Web 端</div>
+<!-- 图片 / 文本 模态框（组件依赖） -->
+<div id="image-modal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(4,6,12,0.94); backdrop-filter:blur(20px); align-items:center; justify-content:center; flex-direction:column; padding:20px">
+    <div style="width:100%; max-width:900px" class="row-between">
+        <div id="image-gallery-title" style="font-weight:600; font-size:14px; color:#fff; max-width:70%" class="ellipsis"></div>
+        <button class="apple-btn-icon" id="image-modal-close" style="flex-shrink:0; color:#fff"></button>
+    </div>
+    <div style="max-width:90vw; max-height:80vh; position:relative" class="row">
+        <button class="apple-gallery-nav-btn" id="img-prev" style="position:absolute; left:-14px; z-index:10">‹</button>
+        <img id="image-viewer" src="" alt="preview" style="max-width:100%; max-height:75vh; border-radius:16px; object-fit:contain; box-shadow:0 20px 50px rgba(0,0,0,0.8)">
+        <button class="apple-gallery-nav-btn" id="img-next" style="position:absolute; right:-14px; z-index:10">›</button>
     </div>
 </div>
 
+<div id="text-modal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(4,6,12,0.9); backdrop-filter:blur(20px); align-items:center; justify-content:center; padding:20px">
+    <div style="width:min(92vw,700px)" class="glass-card">
+        <div class="row-between" style="margin-bottom:14px">
+            <div id="text-title" style="font-weight:600"></div>
+            <button class="apple-btn-icon" id="text-modal-close"></button>
+        </div>
+        <div id="text-viewer" class="mono" style="background:#0b0d14; padding:16px; border-radius:12px; white-space:pre-wrap; max-height:55vh; overflow-y:auto; font-size:12.5px; color:#e8eaf0"></div>
+    </div>
+</div>
+
+<!-- 桌面端脚本 -->
+<script src="desktop/ipc.js"></script>
+<script src="desktop/app.js"></script>
 <script>
-    let isRunning = false;
-    let currentServerUrl = 'http://127.0.0.1:3000';
-    function getServerUrl() {
-        if (currentServerUrl && currentServerUrl.startsWith('http')) return currentServerUrl;
-        const portEl = document.getElementById('cfg-port');
-        const port = portEl ? (portEl.value || '3000') : '3000';
-        return `http://127.0.0.1:${port}`;
-    }
-    let pcCurrentPath = '';
-    let pcIsRoot = true;
-    let pcCurrentFiles = [];
-    let sysInfoTimer = null;
-    let devicesAutoTimer = null;
+    // 窗口控制直连保障与原生兜底
+    (function() {
+        function attachDirectWindowControls() {
+            const minBtn = document.getElementById('win-min');
+            const maxBtn = document.getElementById('win-max');
+            const closeBtn = document.getElementById('win-close');
 
-    // Toast 通知（非阻塞替代 alert）
-    function showToast(msg, duration = 2500) {
-        const el = document.getElementById('share-toast');
-        el.textContent = msg;
-        el.style.opacity = '1';
-        el.style.transform = 'translateX(-50%) translateY(0)';
-        clearTimeout(el._timer);
-        el._timer = setTimeout(() => {
-            el.style.opacity = '0';
-            el.style.transform = 'translateX(-50%) translateY(10px)';
-        }, duration);
-    }
-
-    window.isGuiWindowMinimized = false;
-    if (window.api && window.api.on) {
-        window.api.on('window-state-changed', (data) => {
-            window.isGuiWindowMinimized = !!(data && data.minimized);
-        });
-    }
-
-    function switchPCTab(tab, el) {
-        document.querySelectorAll('.mac-nav-item').forEach(e => e.classList.remove('active'));
-        document.querySelectorAll('.mac-tab-panel').forEach(e => e.classList.remove('active'));
-        
-        if (el) el.classList.add('active');
-        document.getElementById(`pc-tab-${tab}`).classList.add('active');
-
-        // 功能 Tab 需要服务已启动，给出提示但不强制启动
-        if (!isRunning && tab !== 'control' && tab !== 'config' && tab !== 'logs') {
-            addLog(`提示：「${tab}」功能需要先在控制中心启动服务`, 'warn');
-        }
-
-        if (tab === 'files') {
-            if (!isRunning) {
-                document.getElementById('pc-file-list').innerHTML = '<div style="text-align:center; color:var(--apple-text-muted); padding:40px;">服务未启动，请先在【控制中心】面板点击【启动服务】</div>';
-            } else {
-                pcIsRoot ? pcLoadDrives() : pcLoadPath(pcCurrentPath);
+            if (minBtn && !minBtn._directAttached) {
+                minBtn._directAttached = true;
+                minBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    if (window.api && window.api.minimizeWindow) window.api.minimizeWindow();
+                    else if (window.api && window.api.invoke) window.api.invoke('minimize-window');
+                }, true);
             }
-        }
-        if (tab === 'media') pcLoadMediaHub();
-        if (tab === 'chat' && isRunning) pcInitChatStream();
-        if (tab === 'draw') pcResizeCanvas();
-        if (tab === 'devices' && isRunning) loadDevicesPC();
-        if (tab === 'tools' && isRunning) loadProcessesPC();
-    }
-
-    function addLog(msg, level='info') {
-        const box = document.getElementById('pc-log-box');
-        const time = new Date().toLocaleTimeString();
-        box.innerHTML += `\n[${time}] [${level.toUpperCase()}] ${msg}`;
-        box.scrollTop = box.scrollHeight;
-    }
-
-    function formatBytes(bytes) {
-        if (!+bytes) return '0 B';
-        const k = 1024, dm = 1, sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
-    }
-
-    function getFileIcon(name, isDir) {
-        if (isDir) return '📁';
-        if (/\.(mp4|mkv|webm|mov|avi)$/i.test(name)) return '🎬';
-        if (/\.(jpg|png|gif|webp)$/i.test(name)) return '🖼️';
-        if (/\.(mp3|wav|flac|aac|m4a)$/i.test(name)) return '🎵';
-        if (/\.(zip|rar|7z)$/i.test(name)) return '📦';
-        return '📄';
-    }
-
-    // 书签/常用路径收藏逻辑
-    function getDefaultBookmarks() {
-        return [
-            { name: '💻 根目录', path: '', system: true },
-            { name: '🖥️ 桌面', path: 'C:\\Users\\20269\\Desktop', system: true },
-            { name: '📁 下载', path: 'C:\\Users\\20269\\Downloads', system: true }
-        ];
-    }
-
-    function getBookmarksPC() {
-        try {
-            const raw = localStorage.getItem('lan_disk_bookmarks');
-            if (raw) return JSON.parse(raw);
-        } catch(e) {}
-        return getDefaultBookmarks();
-    }
-
-    function saveBookmarksPC(list) {
-        try {
-            localStorage.setItem('lan_disk_bookmarks', JSON.stringify(list));
-        } catch(e) {}
-    }
-
-    function loadBookmarksPC() {
-        const list = getBookmarksPC();
-        const container = document.getElementById('pc-bookmarks-list');
-        if (!container) return;
-
-        container.innerHTML = list.map((item, idx) => {
-            const safePath = (item.path || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-            const safeName = escapeHtml(item.name);
-            return `
-                <div class="apple-btn apple-btn-glass" style="padding: 3px 10px; font-size: 11px; border-radius: 14px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;" onclick="jumpBookmark('${safePath}')" title="${escapeHtml(item.path || '根目录')}">
-                    <span>${safeName}</span>
-                    ${!item.system ? `<span style="color:#ff453a; font-weight:bold; font-size:10px; opacity:0.7; padding:0 2px;" onclick="event.stopPropagation(); removeBookmarkPC(${idx})" title="删除书签">✕</span>` : ''}
-                </div>
-            `;
-        }).join('');
-    }
-
-    function pcAddBookmark() {
-        if (pcIsRoot || !pcCurrentPath || pcCurrentPath === '根目录') {
-            showToast('⭐ 根目录已在系统默认书签中');
-            return;
-        }
-
-        const list = getBookmarksPC();
-        if (list.some(b => b.path === pcCurrentPath)) {
-            showToast('⭐ 该路径已在书签收藏列表中');
-            return;
-        }
-
-        // 提取文件夹名作为默认书签名
-        const pathParts = pcCurrentPath.replace(/\\$/,'').split('\\');
-        const folderName = pathParts[pathParts.length - 1] || pcCurrentPath;
-        const customName = prompt(`请输入书签名称:`, `📁 ${folderName}`);
-        if (customName === null) return;
-
-        const name = customName.trim() || `📁 ${folderName}`;
-        list.push({ name, path: pcCurrentPath, system: false });
-        saveBookmarksPC(list);
-        loadBookmarksPC();
-        showToast(`⭐ 已添加书签: [${name}]`);
-    }
-
-    function jumpBookmark(path) {
-        if (!path || path === '根目录') {
-            pcLoadDrives();
-        } else {
-            pcLoadPath(path);
-        }
-    }
-
-    function removeBookmarkPC(idx) {
-        const list = getBookmarksPC();
-        if (idx >= 0 && idx < list.length) {
-            const removed = list.splice(idx, 1);
-            saveBookmarksPC(list);
-            loadBookmarksPC();
-            showToast(`🗑️ 已删除书签: [${removed[0]?.name || ''}]`);
-        }
-    }
-
-    // 1. 文件磁盘
-    async function pcLoadDrives() {
-        pcIsRoot = true; pcCurrentPath = '根目录';
-        document.getElementById('pc-current-path').textContent = pcCurrentPath;
-        if (!isRunning) {
-            document.getElementById('pc-file-list').innerHTML = '<div style="text-align:center; color:var(--apple-text-muted); padding:40px;">请先在“控制中心”面板中点击【启动服务】</div>';
-            return;
-        }
-        try {
-            const pinEl = document.getElementById('cfg-pin');
-            const pin = pinEl ? pinEl.value.trim() : '';
-            const res = await fetch(`${currentServerUrl}/api/drives`, { headers: { 'x-pin': pin } });
-            const data = await res.json().catch(() => null);
-
-            if (!res.ok || (data && data.error)) {
-                const errMsg = (data && data.error) ? data.error : `HTTP ${res.status}`;
-                document.getElementById('pc-file-list').innerHTML = `<div style="padding:40px; text-align:center; color:var(--apple-system-red);">访问受限 (${errMsg})，请在控制中心核对密码配置</div>`;
-                return;
+            if (maxBtn && !maxBtn._directAttached) {
+                maxBtn._directAttached = true;
+                maxBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    if (window.api && window.api.maximizeWindow) window.api.maximizeWindow();
+                    else if (window.api && window.api.invoke) window.api.invoke('maximize-window');
+                }, true);
             }
-
-            let drives = Array.isArray(data) ? data : [];
-            // 如果后端未返回盘符，自动进行本地 C/D 盘兜底保障
-            if (!drives.length) {
-                drives = [{ path: 'C:\\', name: '本地磁盘 (C:)', free: 0, total: 0 }];
-            }
-
-            document.getElementById('pc-file-list').innerHTML = drives.map(drive => {
-                const safePath = drive.path.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                const spaceText = drive.total > 0 ? `可用 ${formatBytes(drive.free)} / 共 ${formatBytes(drive.total)}` : drive.path;
-                return `
-                    <div class="apple-file-card" onclick="pcLoadPath('${safePath}')" style="background:rgba(255,255,255,0.03); border:1px solid var(--apple-border); border-radius:12px; padding:14px 16px; display:flex; align-items:center; justify-content:space-between; cursor:pointer; margin-bottom:6px; transition:var(--apple-transition);">
-                        <div style="display:flex; align-items:center; gap:14px;">
-                            <div style="width:40px; height:40px; border-radius:10px; background:rgba(0,122,255,0.12); color:var(--apple-system-blue); display:flex; align-items:center; justify-content:center; font-size:20px; flex-shrink:0;">💾</div>
-                            <div>
-                                <div style="font-weight:600; font-size:14px; color:white;">${escapeHtml(drive.name)}</div>
-                                <div style="font-size:11px; color:var(--apple-text-muted); margin-top:2px;">${spaceText}</div>
-                            </div>
-                        </div>
-                        <div style="color:var(--apple-text-muted); font-size:13px; font-weight:600;">进入磁盘 ➔</div>
-                    </div>
-                `;
-            }).join('');
-        } catch(e){
-            document.getElementById('pc-file-list').innerHTML = '<div style="padding:40px; text-align:center; color:var(--apple-system-red);">获取驱动器数据失败，请确认服务已正常运行</div>';
-        }
-    }
-
-    async function pcLoadPath(path) {
-        try {
-            const pinEl = document.getElementById('cfg-pin');
-            const pin = pinEl ? pinEl.value.trim() : '';
-            const res = await fetch(`${currentServerUrl}/api/files?path=${encodeURIComponent(path)}`, { headers: { 'x-pin': pin } });
-            const data = await res.json().catch(() => null);
-            if (!res.ok || !data || data.error) {
-                showToast('❌ 无法打开目录: ' + (data?.error || `HTTP ${res.status}`));
-                pcGoUp();
-                return;
-            }
-            pcIsRoot = false; pcCurrentPath = data.currentPath;
-            document.getElementById('pc-current-path').textContent = pcCurrentPath;
-            pcCurrentFiles = data.files || [];
-            pcRenderFiles(pcCurrentFiles);
-        } catch(e){ pcGoUp(); }
-    }
-
-    function escapeHtml(str) {
-        if (typeof str !== 'string') return str;
-        return str
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
-    }
-
-    /** 统一获取 PIN 密码，避免全局直接访问 DOM 元素导致潜在的 null 异常 */
-    function getPin() {
-        const el = document.getElementById('cfg-pin');
-        return el ? el.value.trim() : '';
-    }
-
-    function isSystemHiddenFile(name) {
-        if (!name) return false;
-        const list = [
-            '$recycle.bin', 'system volume information', 'recovery',
-            'config.msi', 'programdata', 'dumpstack.log.tmp',
-            'pagefile.sys', 'hiberfil.sys', 'swapfile.sys'
-        ];
-        return list.includes(name.toLowerCase());
-    }
-
-    function pcRenderFiles(files) {
-        const list = document.getElementById('pc-file-list');
-        const validFiles = (files || []).filter(f => !isSystemHiddenFile(f.name));
-
-        if (!validFiles.length) { list.innerHTML = '<div style="padding:40px; text-align:center; color:var(--apple-text-muted);">文件夹为空</div>'; return; }
-        const btnStyle = 'padding:3px 8px; font-size:11px; border-radius:6px; border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.06); color:var(--apple-text-muted); cursor:pointer; white-space:nowrap; transition:all 0.2s;';
-        
-        list.innerHTML = validFiles.map(file => {
-            const safePath = file.path.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-            const safeName = file.name.replace(/'/g, "\\'");
-            const escapedName = escapeHtml(file.name);
-            const isDir = file.isDirectory;
-
-            let actionBtns = '';
-            if (!isDir) {
-                if (/\.(mp4|mkv|webm|mov|avi|mp3|wav|flac|aac|m4a)$/i.test(file.name)) {
-                    const type = /\.(mp3|wav|flac|aac|m4a)$/i.test(file.name) ? 'audio' : 'video';
-                    actionBtns += `<button style="${btnStyle} color:var(--apple-system-blue); border-color:rgba(0,122,255,0.3);" onclick="pcPlayMedia('${type}','${safePath}','${safeName}'); event.stopPropagation()">▶</button>`;
-                }
-                if (/\.(md|mb|txt|json|js|ts|jsx|tsx|css|html|xml|log|py|sh|bat|ini|conf|yaml|yml|mdx|c|cpp|h|java|go|rs|sql)$/i.test(file.name)) {
-                    actionBtns += `<button style="${btnStyle} color:var(--apple-system-green); border-color:rgba(52,199,89,0.3);" onclick="pcOpenTextEditor('${safePath}','${safeName}'); event.stopPropagation()" title="编辑与Markdown预览">✏️ 编辑</button>`;
-                }
-                actionBtns += `<button style="${btnStyle}" onclick="pcDownloadFile('${safePath}'); event.stopPropagation()" title="下载">⬇</button>`;
-                actionBtns += `<button style="${btnStyle}" onclick="pcShareFile('${safePath}'); event.stopPropagation()" title="生成分享链接">🔗</button>`;
-            }
-            actionBtns += `<button style="${btnStyle}" onclick="pcCopyPath('${safePath}'); event.stopPropagation()" title="复制路径">📋</button>`;
-            actionBtns += `<button style="${btnStyle} color:var(--apple-system-red); border-color:rgba(255,59,48,0.3);" onclick="pcDeleteFile('${safePath}','${safeName}'); event.stopPropagation()" title="删除">🗑</button>`;
-
-            const icon = getFileIcon(file.name, isDir);
-            const bgGlow = isDir ? 'background:rgba(255,149,0,0.12); color:var(--apple-system-orange);' : 'background:rgba(0,122,255,0.12); color:var(--apple-system-blue);';
-
-            let clickHandler = `pcLoadPath('${safePath}')`;
-            if (!isDir) {
-                if (/\.(mp4|mkv|webm|mov|avi|mp3|wav|flac|aac|m4a)$/i.test(file.name)) {
-                    const type = /\.(mp3|wav|flac|aac|m4a)$/i.test(file.name) ? 'audio' : 'video';
-                    clickHandler = `pcPlayMedia('${type}','${safePath}','${safeName}')`;
-                } else if (/\.(md|mb|txt|json|js|ts|jsx|tsx|css|html|xml|log|py|sh|bat|ini|conf|yaml|yml|mdx|c|cpp|h|java|go|rs|sql)$/i.test(file.name)) {
-                    clickHandler = `pcOpenTextEditor('${safePath}','${safeName}')`;
-                } else {
-                    clickHandler = `pcDownloadFile('${safePath}')`;
-                }
-            }
-
-            return `
-                <div class="apple-file-card" onclick="${clickHandler}" style="background:rgba(255,255,255,0.03); border:1px solid var(--apple-border); border-radius:12px; padding:12px 14px; display:flex; align-items:center; justify-content:space-between; gap:12px; transition:var(--apple-transition); margin-bottom:4px; cursor:pointer;">
-                    <div style="display:flex; align-items:center; gap:12px; flex:1; min-width:0; overflow:hidden;">
-                        <div style="width:36px; height:36px; border-radius:10px; ${bgGlow} display:flex; align-items:center; justify-content:center; font-size:20px; flex-shrink:0;">${icon}</div>
-                        <div style="flex:1; min-width:0;">
-                            <div style="font-weight:600; font-size:13px; color:white; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapedName}</div>
-                            <div style="font-size:11px; color:var(--apple-text-subtle); margin-top:2px;">${isDir ? '文件夹' : formatBytes(file.size)}</div>
-                        </div>
-                    </div>
-                    <div style="display:flex; gap:5px; align-items:center; flex-shrink:0; margin-left:8px;">${actionBtns}</div>
-                </div>
-            `;
-        }).join('');
-    }
-
-    // 文件下载
-    function pcDownloadFile(filePath) {
-        const pin = getPin();
-        const url = `${currentServerUrl}/api/download?path=${encodeURIComponent(filePath)}&pin=${encodeURIComponent(pin)}`;
-        const a = document.createElement('a');
-        a.href = url; a.download = ''; document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    }
-
-    // 生成分享链接并复制
-    async function pcShareFile(filePath) {
-        if (!isRunning) return showToast('❌ 请先启动服务');
-        try {
-            const pin = getPin();
-            const res = await fetch(`${currentServerUrl}/api/share`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'x-pin': pin },
-                body: JSON.stringify({ path: filePath, expireHours: 1 })
-            });
-            const data = await res.json();
-            if (data.shareId) {
-                const shareUrl = `${currentServerUrl}/api/shared/download/${data.shareId}`;
-                await navigator.clipboard.writeText(shareUrl);
-                showToast('✅ 分享链接已复制 (有效1小时)');
-                addLog(`生成分享链接: ${shareUrl}`, 'info');
-            } else {
-                showToast('❌ ' + (data.error || '生成失败'));
-            }
-        } catch(e) { showToast('❌ 操作失败: ' + e.message); }
-    }
-
-    // 复制文件路径
-    async function pcCopyPath(filePath) {
-        try { await navigator.clipboard.writeText(filePath); showToast('✅ 路径已复制'); }
-        catch(e) { showToast('❌ 复制失败'); }
-    }
-
-    // 复制当前目录路径
-    async function pcCopyCurrentPath() {
-        if (!pcCurrentPath || pcCurrentPath === '根目录') return showToast('❌ 当前在根目录，无路径可复制');
-        try { await navigator.clipboard.writeText(pcCurrentPath); showToast('✅ 当前路径已复制'); }
-        catch(e) {}
-    }
-
-    // 删除文件/文件夹
-    async function pcDeleteFile(filePath, fileName) {
-        if (!confirm(`确定删除「${decodeURIComponent(fileName.replace(/\\'/g, "'"))}」？\n此操作不可撤销！`)) return;
-        try {
-            const pin = getPin();
-            const res = await fetch(`${currentServerUrl}/api/files?path=${encodeURIComponent(filePath)}`, {
-                method: 'DELETE', headers: { 'x-pin': pin }
-            });
-            const data = await res.json();
-            showToast(data.message ? '✅ 删除成功' : '❌ ' + (data.error || '删除失败'));
-            if (data.message) { addLog(`删除: ${filePath}`, 'warn'); pcRefreshCurrentPath(); }
-        } catch(e) { showToast('❌ 操作失败'); }
-    }
-
-    // 新建文件夹
-    async function pcMkdir() {
-        if (!isRunning) return showToast('❌ 请先启动服务');
-        if (pcIsRoot) return showToast('❌ 请先进入某个磁盘目录');
-        const name = prompt('请输入新文件夹名称:');
-        if (!name || !name.trim()) return;
-        const cleanName = name.trim().replace(/[/\\?%*:|"<>]/g, '-');
-        const newPath = pcCurrentPath.replace(/\\$/, '') + '\\' + cleanName;
-        try {
-            const pin = getPin();
-            const res = await fetch(`${currentServerUrl}/api/mkdir?path=${encodeURIComponent(newPath)}`, {
-                method: 'POST', headers: { 'x-pin': pin }
-            });
-            const data = await res.json();
-            if (data.success) { showToast('✅ 文件夹已创建'); pcRefreshCurrentPath(); }
-            else showToast('❌ ' + (data.error || '创建失败'));
-        } catch(e) { showToast('❌ 操作失败'); }
-    }
-
-    // 拖拽上传处理
-    function handleDragOver(e) {
-        e.preventDefault();
-        document.getElementById('pc-upload-zone').style.borderColor = 'var(--apple-system-blue)';
-        document.getElementById('pc-upload-zone').style.background = 'rgba(0,122,255,0.06)';
-    }
-    function handleDragLeave(e) {
-        document.getElementById('pc-upload-zone').style.borderColor = 'rgba(255,255,255,0.2)';
-        document.getElementById('pc-upload-zone').style.background = 'transparent';
-    }
-    function handleDrop(e) {
-        e.preventDefault();
-        handleDragLeave(e);
-        uploadFiles(Array.from(e.dataTransfer.files));
-    }
-    function handleFileUpload(e) { uploadFiles(Array.from(e.target.files)); e.target.value = ''; }
-
-    // --------------------------------------------------------
-    // 大文件自适应分片上传、秒传、断点续传与 macOS 悬浮传输面板引擎
-    // --------------------------------------------------------
-    let transferQueue = [];
-    let transferDrawerCollapsed = false;
-
-    function toggleTransferDrawer() {
-        const listEl = document.getElementById('drawer-task-list');
-        const btnEl = document.getElementById('drawer-toggle-btn');
-        if (!listEl) return;
-        transferDrawerCollapsed = !transferDrawerCollapsed;
-        listEl.style.display = transferDrawerCollapsed ? 'none' : 'flex';
-        btnEl.textContent = transferDrawerCollapsed ? '▲' : '▼';
-    }
-
-    function updateTransferDrawerUI() {
-        const drawer = document.getElementById('mac-transfer-drawer');
-        const titleEl = document.getElementById('drawer-title');
-        const speedEl = document.getElementById('drawer-global-speed');
-        const listEl = document.getElementById('drawer-task-list');
-        if (!drawer) return;
-
-        if (!transferQueue.length) {
-            drawer.style.display = 'none';
-            return;
-        }
-
-        drawer.style.display = 'flex';
-        const activeTasks = transferQueue.filter(t => t.status === 'uploading' || t.status === 'checking');
-        titleEl.textContent = `传输队列 (${activeTasks.length}/${transferQueue.length})`;
-
-        let totalSpeedBps = 0;
-        activeTasks.forEach(t => { totalSpeedBps += (t.speedBps || 0); });
-        speedEl.textContent = formatBytes(totalSpeedBps) + '/s';
-
-        listEl.innerHTML = transferQueue.map(task => {
-            const percent = Math.min(100, Math.max(0, task.percent || 0));
-            let statusBadge = '';
-            if (task.status === 'checking') statusBadge = '<span style="color:var(--apple-system-blue);">🔍 校验 Hash...</span>';
-            else if (task.status === 'secondPass') statusBadge = '<span style="color:var(--apple-system-green);">⚡ 100% 极速秒传</span>';
-            else if (task.status === 'completed') statusBadge = '<span style="color:var(--apple-system-green);">✅ 完成</span>';
-            else if (task.status === 'paused') statusBadge = '<span style="color:var(--apple-system-orange);">⏸️ 已暂停</span>';
-            else if (task.status === 'error') statusBadge = `<span style="color:var(--apple-system-red);">❌ 失败: ${escapeHtml(task.error || '')}</span>`;
-            else statusBadge = `<span style="color:var(--apple-system-blue);">${formatBytes(task.speedBps || 0)}/s • 剩余 ${task.etaStr || '--'}</span>`;
-
-            return `
-                <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--apple-border); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px;">
-                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-                        <div style="font-size: 12px; font-weight: 600; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1;">
-                            ${escapeHtml(task.name)}
-                        </div>
-                        <div style="display: flex; gap: 4px; flex-shrink: 0;">
-                            ${task.status === 'uploading' ? `<button style="border:none; background:transparent; color:var(--apple-text-muted); cursor:pointer; font-size:11px;" onclick="pauseTask('${task.id}')" title="暂停">⏸️</button>` : ''}
-                            ${task.status === 'paused' ? `<button style="border:none; background:transparent; color:var(--apple-text-muted); cursor:pointer; font-size:11px;" onclick="resumeTask('${task.id}')" title="继续">▶️</button>` : ''}
-                            ${(task.status === 'uploading' || task.status === 'paused') ? `<button style="border:none; background:transparent; color:#ff453a; cursor:pointer; font-size:11px;" onclick="cancelTask('${task.id}')" title="取消">✕</button>` : ''}
-                        </div>
-                    </div>
-
-                    <div style="display: flex; align-items: center; justify-content: space-between; font-size: 10px; color: var(--apple-text-subtle);">
-                        <span>${statusBadge}</span>
-                        <span>${percent.toFixed(1)}% (${formatBytes(task.uploadedBytes)} / ${formatBytes(task.size)})</span>
-                    </div>
-
-                    <div style="height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden;">
-                        <div style="height: 100%; width: ${percent}%; background: var(--apple-system-blue); transition: width 0.2s;"></div>
-                    </div>
-                </div>
-            `;
-        }).join('');
-    }
-
-    async function uploadFiles(files) {
-        if (!isRunning) return showToast('❌ 请先启动服务');
-        if (pcIsRoot) return showToast('❌ 请先进入某个目录再上传');
-        if (!files || !files.length) return;
-
-        for (const file of files) {
-            processChunkUpload(file, pcCurrentPath);
-        }
-    }
-
-    async function processChunkUpload(file, uploadDir) {
-        const taskId = 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
-        const pinEl = document.getElementById('cfg-pin');
-        const pin = pinEl ? pinEl.value.trim() : '';
-        const fileHash = `${file.name}_${file.size}_${file.lastModified}`;
-
-        // 动态自适应分片大小
-        let chunkSize = 2 * 1024 * 1024;
-        if (file.size > 100 * 1024 * 1024) chunkSize = 8 * 1024 * 1024;
-        else if (file.size > 10 * 1024 * 1024) chunkSize = 4 * 1024 * 1024;
-
-        const totalChunks = Math.ceil(file.size / chunkSize);
-
-        const taskObj = {
-            id: taskId,
-            name: file.name,
-            size: file.size,
-            file: file,
-            uploadDir: uploadDir,
-            fileHash: fileHash,
-            chunkSize: chunkSize,
-            totalChunks: totalChunks,
-            status: 'checking',
-            uploadedBytes: 0,
-            percent: 0,
-            speedBps: 0,
-            etaStr: '--',
-            isPaused: false,
-            isCancelled: false
-        };
-
-        transferQueue.unshift(taskObj);
-        updateTransferDrawerUI();
-
-        try {
-            // 1. 断点 / 秒传校验
-            const checkUrl = `${currentServerUrl}/api/upload/check?fileHash=${encodeURIComponent(fileHash)}&filename=${encodeURIComponent(file.name)}&path=${encodeURIComponent(uploadDir)}`;
-            const checkRes = await fetch(checkUrl, { headers: { 'x-pin': pin } });
-            const checkData = await checkRes.json();
-
-            if (checkData.exists) {
-                taskObj.status = 'secondPass';
-                taskObj.percent = 100;
-                taskObj.uploadedBytes = file.size;
-                updateTransferDrawerUI();
-                showToast(`⚡ 文件 [${file.name}] 100% 极速秒传！`);
-                pcRefreshCurrentPath();
-                return;
-            }
-
-            const uploadedChunkIndices = new Set(checkData.uploadedChunkIndices || []);
-            taskObj.status = 'uploading';
-
-            let lastTime = Date.now();
-            let lastUploadedBytes = uploadedChunkIndices.size * chunkSize;
-
-            // 2. 分片上传
-            for (let i = 0; i < totalChunks; i++) {
-                if (taskObj.isCancelled) return;
-                while (taskObj.isPaused) {
-                    await new Promise(r => setTimeout(r, 300));
-                    if (taskObj.isCancelled) return;
-                }
-
-                if (uploadedChunkIndices.has(i)) {
-                    taskObj.uploadedBytes = Math.min(file.size, (i + 1) * chunkSize);
-                    taskObj.percent = (taskObj.uploadedBytes / file.size) * 100;
-                    updateTransferDrawerUI();
-                    continue;
-                }
-
-                const start = i * chunkSize;
-                const end = Math.min(file.size, start + chunkSize);
-                const chunkBlob = file.slice(start, end);
-
-                const formData = new FormData();
-                formData.append('chunk', chunkBlob);
-                formData.append('fileHash', fileHash);
-                formData.append('chunkIndex', i);
-                formData.append('totalChunks', totalChunks);
-
-                const uploadUrl = `${currentServerUrl}/api/upload/chunk`;
-                const chunkRes = await fetch(uploadUrl, {
-                    method: 'POST',
-                    headers: { 'x-pin': pin },
-                    body: formData
-                });
-
-                if (!chunkRes.ok) throw new Error(`分片 ${i} 上传失败`);
-
-                taskObj.uploadedBytes = Math.min(file.size, end);
-                taskObj.percent = (taskObj.uploadedBytes / file.size) * 100;
-
-                const now = Date.now();
-                const timeDiff = (now - lastTime) / 1000;
-                if (timeDiff >= 0.5) {
-                    const bytesDiff = taskObj.uploadedBytes - lastUploadedBytes;
-                    taskObj.speedBps = bytesDiff / timeDiff;
-                    const remainingBytes = file.size - taskObj.uploadedBytes;
-                    const etaSeconds = taskObj.speedBps > 0 ? Math.ceil(remainingBytes / taskObj.speedBps) : 0;
-                    taskObj.etaStr = etaSeconds < 60 ? `${etaSeconds}秒` : `${Math.ceil(etaSeconds / 60)}分钟`;
-                    lastTime = now;
-                    lastUploadedBytes = taskObj.uploadedBytes;
-                }
-
-                updateTransferDrawerUI();
-            }
-
-            // 3. 请求合并分片
-            taskObj.status = 'checking';
-            updateTransferDrawerUI();
-
-            const mergeUrl = `${currentServerUrl}/api/upload/merge`;
-            const mergeRes = await fetch(mergeUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'x-pin': pin },
-                body: JSON.stringify({
-                    fileHash: fileHash,
-                    filename: file.name,
-                    path: uploadDir,
-                    totalChunks: totalChunks
-                })
-            });
-
-            const mergeData = await mergeRes.json();
-            if (mergeData.success) {
-                taskObj.status = 'completed';
-                taskObj.percent = 100;
-                taskObj.uploadedBytes = file.size;
-                updateTransferDrawerUI();
-                showToast(`✅ [${file.name}] 上传与合并完成！`);
-                addLog(`大文件 ${file.name} 传输合并成功 (${formatBytes(file.size)})`, 'info');
-                pcRefreshCurrentPath();
-            } else {
-                throw new Error(mergeData.error || '分片合并失败');
-            }
-
-        } catch (err) {
-            taskObj.status = 'error';
-            taskObj.error = err.message;
-            updateTransferDrawerUI();
-            showToast(`❌ [${file.name}] 上传失败: ${err.message}`);
-        }
-    }
-
-    function pauseTask(taskId) {
-        const task = transferQueue.find(t => t.id === taskId);
-        if (task) { task.isPaused = true; task.status = 'paused'; updateTransferDrawerUI(); }
-    }
-
-    function resumeTask(taskId) {
-        const task = transferQueue.find(t => t.id === taskId);
-        if (task) { task.isPaused = false; task.status = 'uploading'; updateTransferDrawerUI(); }
-    }
-
-    function cancelTask(taskId) {
-        const task = transferQueue.find(t => t.id === taskId);
-        if (task) {
-            task.isCancelled = true;
-            transferQueue = transferQueue.filter(t => t.id !== taskId);
-            updateTransferDrawerUI();
-            showToast('已取消上传任务');
-        }
-    }
-
-
-
-    function pcGoUp() {
-        if (pcIsRoot) return;
-        let parts = pcCurrentPath.split(/[\\/]/).filter(p => p);
-        if (parts.length <= 1) pcLoadDrives();
-        else { parts.pop(); pcLoadPath(parts.join('\\') + '\\'); }
-    }
-    function pcRefreshCurrentPath() { pcIsRoot ? pcLoadDrives() : pcLoadPath(pcCurrentPath); }
-
-    document.getElementById('pc-file-search').addEventListener('input', e => {
-        const kw = e.target.value.toLowerCase();
-        pcRenderFiles(pcCurrentFiles.filter(f => f.name.toLowerCase().includes(kw)));
-    });
-
-    function pcPlayMedia(type, path, name) {
-        const pin = getPin();
-        const url = `${currentServerUrl}/api/stream?path=${encodeURIComponent(path)}&pin=${pin}`;
-        const mediaPlaylist = (pcCurrentFiles || [])
-            .filter(f => !f.isDirectory && /\.(mp4|mkv|webm|mov|avi|mp3|wav|flac|aac|m4a)$/i.test(f.name))
-            .map(f => ({
-                name: f.name,
-                path: f.path,
-                type: /\.(mp3|wav|flac|aac|m4a)$/i.test(f.name) ? 'audio' : 'video',
-                url: `${currentServerUrl}/api/stream?path=${encodeURIComponent(f.path)}&pin=${pin}`
-            }));
-        AppleMediaPlayer.play({ name, path, type, url }, mediaPlaylist);
-    }
-
-    // 2. 影音大盘
-    function pcLoadMediaHub() {
-        if (!isRunning) {
-            document.getElementById('pc-media-list').innerHTML = '<div style="text-align:center; color:var(--apple-text-muted); padding:40px;">请先启动服务，然后选择包含音视频的文件夹</div>';
-            return;
-        }
-        const mediaFiles = (pcCurrentFiles || []).filter(f => !f.isDirectory && /\.(mp4|mkv|webm|mov|avi|mp3|wav|flac|aac|m4a)$/i.test(f.name));
-        if (!mediaFiles.length) {
-            document.getElementById('pc-media-list').innerHTML = '<div style="text-align:center; color:var(--apple-text-muted); padding:40px;">当前文件夹暂无多媒体文件，请在“文件磁盘”中切至存有影音的文件夹</div>';
-            return;
-        }
-        document.getElementById('pc-media-list').innerHTML = mediaFiles.map(f => {
-            const type = /\.(mp3|wav|flac|aac|m4a)$/i.test(f.name) ? 'audio' : 'video';
-            const safePath = f.path.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-            const safeName = f.name.replace(/'/g, "\\'");
-
-            let posBadge = '';
-            try {
-                const savedPos = localStorage.getItem('apple_player_pos_' + f.path);
-                if (savedPos && parseFloat(savedPos) > 5) {
-                    const sec = Math.floor(parseFloat(savedPos));
-                    const m = Math.floor(sec / 60);
-                    const s = sec % 60;
-                    const timeStr = `${m}:${s < 10 ? '0' : ''}${s}`;
-                    posBadge = `<span style="font-size:10px; padding:2px 6px; border-radius:10px; background:rgba(52,199,89,0.15); color:var(--apple-system-green); font-weight:600;">⏱️ 已看到 ${timeStr}</span>`;
-                }
-            } catch(e) {}
-
-            const bgGlow = type === 'audio' ? 'background:rgba(175,82,222,0.12); color:var(--apple-system-purple);' : 'background:rgba(0,122,255,0.12); color:var(--apple-system-blue);';
-
-            return `
-                <div class="apple-file-card" onclick="pcPlayMedia('${type}', '${safePath}', '${safeName}')" style="background:rgba(255,255,255,0.03); border:1px solid var(--apple-border); border-radius:12px; padding:12px 16px; display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; cursor:pointer;">
-                    <div style="display:flex; align-items:center; gap:14px; flex:1; min-width:0;">
-                        <div style="width:40px; height:40px; border-radius:10px; ${bgGlow} display:flex; align-items:center; justify-content:center; font-size:22px; flex-shrink:0;">${type === 'audio' ? '🎵' : '🎬'}</div>
-                        <div style="flex:1; min-width:0;">
-                            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                                <span style="font-weight:600; font-size:14px; color:white; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(f.name)}</span>
-                                ${posBadge}
-                            </div>
-                            <div style="font-size:11px; color:var(--apple-text-muted); margin-top:2px;">${type === 'audio' ? '音频文件' : '视频文件'} • ${formatBytes(f.size)}</div>
-                        </div>
-                    </div>
-                    <button class="apple-btn apple-btn-primary" style="padding:6px 14px; font-size:12px; flex-shrink:0;">▶ 播放</button>
-                </div>
-            `;
-        }).join('');
-    }
-
-    // 3. 跨端消息
-    let pcChatStream = null;
-    function pcInitChatStream() {
-        // 若已有连接且连接正常则不重建
-        if (pcChatStream && pcChatStream.readyState !== EventSource.CLOSED) return;
-        if (!isRunning) return;
-        if (pcChatStream) { try { pcChatStream.close(); } catch(e) {} pcChatStream = null; }
-        const pin = getPin();
-        pcChatStream = new EventSource(`${currentServerUrl}/api/chat/stream?pin=${pin}`);
-        pcChatStream.onmessage = e => {
-            try {
-                const data = JSON.parse(e.data);
-                const el = document.getElementById('pc-chat-messages');
-                if (data.type === 'init') {
-                    el.innerHTML = data.messages.map(m => `
-                        <div class="msg-bubble ${m.sender === 'pc' ? 'msg-right' : 'msg-left'}">
-                            <div style="font-size:10px; color:rgba(255,255,255,0.4); margin-bottom:3px;">${escapeHtml(m.sender)}</div>
-                            <div>${m.type === 'image' ? `<img src="${m.text}" style="max-width:180px; border-radius:8px;">` : escapeHtml(m.text)}</div>
-                        </div>
-                    `).join('');
-                } else if (data.type === 'new') {
-                    const msg = data.message;
-                    let content = '';
-                    if (msg.type === 'image') content = `<img src="${msg.text}" style="max-width:180px; border-radius:8px;">`;
-                    else if (msg.type === 'audio') content = `<audio src="${msg.text}" controls style="max-width:220px;"></audio>`;
-                    else content = escapeHtml(msg.text);
-                    el.insertAdjacentHTML('beforeend', `
-                        <div class="msg-bubble ${msg.sender === 'pc' ? 'msg-right' : 'msg-left'}">
-                            <div style="font-size:10px; color:rgba(255,255,255,0.4); margin-bottom:3px;">${escapeHtml(msg.sender)}</div>
-                            <div>${content}</div>
-                        </div>
-                    `);
-                } else if (data.type === 'clear') {
-                    el.innerHTML = '<div style="text-align:center; color:var(--apple-text-muted); font-size:12px; margin-top:20px;">聊天记录已清空</div>';
-                }
-                el.scrollTop = el.scrollHeight;
-            } catch(err){}
-        };
-        pcChatStream.onerror = () => {
-            // 断线后自动重连（3s后）
-            pcChatStream = null;
-            setTimeout(() => { if (isRunning) pcInitChatStream(); }, 3000);
-        };
-    }
-
-    async function sendPCChatMessage() {
-        if (!isRunning) return showToast('❌ 请先启动服务');
-        const input = document.getElementById('pc-chat-input');
-        if (!input) return;
-        const text = input.value.trim(); if (!text) return; input.value = '';
-        const pin = getPin();
-        try {
-            const res = await fetch(`${currentServerUrl}/api/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-pin': pin }, body: JSON.stringify({ text, sender: 'pc' }) });
-            if (!res.ok) {
-                const errData = await res.json().catch(()=>({}));
-                showToast('❌ 发送失败: ' + (errData.error || res.statusText));
-            }
-        } catch (e) {
-            showToast('❌ 发送失败: ' + e.message);
-        }
-        pcInitChatStream();
-    }
-
-    // 4. 涂鸦
-    const pcCvs = document.getElementById('pc-whiteboard'), pcCtx = pcCvs.getContext('2d');
-    let pcIsDrawing = false, pcLastX=0, pcLastY=0;
-    function pcResizeCanvas() { pcCvs.width = pcCvs.parentElement.clientWidth; pcCtx.fillStyle='#fff'; pcCtx.fillRect(0,0,pcCvs.width,pcCvs.height); }
-    function pcGetPos(e) { const r = pcCvs.getBoundingClientRect(); return { x: e.clientX-r.left, y: e.clientY-r.top }; }
-    function pcGetTouchPos(e) { const r = pcCvs.getBoundingClientRect(); const touch = e.touches[0]; return { x: touch.clientX-r.left, y: touch.clientY-r.top }; }
-    pcCvs.addEventListener('mousedown', e=>{pcIsDrawing=true; const p=pcGetPos(e); pcLastX=p.x; pcLastY=p.y;});
-    pcCvs.addEventListener('mousemove', e=>{if(!pcIsDrawing)return; const p=pcGetPos(e); pcCtx.beginPath(); pcCtx.moveTo(pcLastX,pcLastY); pcCtx.lineTo(p.x,p.y); pcCtx.strokeStyle='#000'; pcCtx.lineWidth=2; pcCtx.stroke(); pcLastX=p.x; pcLastY=p.y;});
-    pcCvs.addEventListener('mouseup', ()=>pcIsDrawing=false);
-    pcCvs.addEventListener('touchstart', e=>{ e.preventDefault(); pcIsDrawing=true; const p=pcGetTouchPos(e); pcLastX=p.x; pcLastY=p.y; }, {passive:false});
-    pcCvs.addEventListener('touchmove', e=>{ e.preventDefault(); if(!pcIsDrawing)return; const p=pcGetTouchPos(e); pcCtx.beginPath(); pcCtx.moveTo(pcLastX,pcLastY); pcCtx.lineTo(p.x,p.y); pcCtx.strokeStyle='#000'; pcCtx.lineWidth=2; pcCtx.stroke(); pcLastX=p.x; pcLastY=p.y; }, {passive:false});
-    pcCvs.addEventListener('touchend', e=>{ e.preventDefault(); pcIsDrawing=false; }, {passive:false});
-    function clearPCWhiteboard() { pcCtx.fillStyle='#fff'; pcCtx.fillRect(0,0,pcCvs.width,pcCvs.height); }
-    async function savePCWhiteboard() {
-        if(!isRunning) return showToast('❌ 请先在控制中心启动服务');
-        const pin = getPin();
-        const savePath = (!pcIsRoot && pcCurrentPath && pcCurrentPath !== '根目录') ? pcCurrentPath : '';
-        const res = await fetch(`${currentServerUrl}/api/upload/base64`, { method:'POST', headers:{'Content-Type':'application/json', 'x-pin':pin}, body:JSON.stringify({image:pcCvs.toDataURL(), filename:`pc_draw_${Date.now()}.png`, path: savePath }) });
-        const data = await res.json().catch(()=>({}));
-        if(data.success) {
-            showToast('🎨 涂鸦图像已保存！');
-            clearPCWhiteboard();
-        } else {
-            showToast('❌ 保存失败: ' + (data.error || '未选择有效存储目录'));
-        }
-    }
-
-    // 5. 控制中心与安全防护
-    function applySecurityPreset(type) {
-        if (type === 'open') {
-            const pinEl = document.getElementById('cfg-pin');
-            if (pinEl) pinEl.value = '';
-            const wlEl = document.getElementById('whitelist-toggle');
-            if (wlEl) wlEl.checked = false;
-            saveConfig();
-            showToast('🟢 已切换为「开放共享模式」（免密模式）');
-        } else if (type === 'pin' || type === 'whitelist') {
-            let pinInput = document.getElementById('cfg-pin');
-            let pin = pinInput ? pinInput.value.trim() : '';
-            if (!pin) {
-                const userPin = prompt('请输入您要设置的访问 PIN 密码 (如 1234 或 8888):');
-                if (!userPin || !userPin.trim()) {
-                    showToast('⚠️ 已取消开启密码模式，未设置 PIN 密码');
-                    return;
-                }
-                pin = userPin.trim();
-                if (pinInput) pinInput.value = pin;
-            }
-            const isWhitelist = (type === 'whitelist');
-            const wlEl = document.getElementById('whitelist-toggle');
-            if (wlEl) wlEl.checked = isWhitelist;
-            saveConfig();
-            if (isWhitelist) {
-                showToast(`🔴 已开启「极高安全模式」（PIN 密码: ${pin} + IP 白名单）`);
-            } else {
-                showToast(`🟡 已开启「密码保护模式」，当前 PIN 密码: ${pin}`);
-            }
-        }
-    }
-
-    function onModeChange() {
-        const modeShared = document.getElementById('mode-shared');
-        const customGroup = document.getElementById('custom-dir-group');
-        if (modeShared && customGroup) {
-            customGroup.style.display = modeShared.checked ? 'block' : 'none';
-        }
-    }
-
-    async function selectCustomFolder() {
-        const folder = await window.api.invoke('select-folder');
-        if (folder) {
-            const customDirInput = document.getElementById('custom-dir-input');
-            if (customDirInput) customDirInput.value = folder;
-            addLog(`已选择自定义文件夹: ${folder}`, 'info');
-        }
-    }
-
-    async function loadNetworkInfo() {
-        try {
-            const ips = await window.api.invoke('get-network-info');
-            const select = document.getElementById('network-select');
-            if (!select || !Array.isArray(ips)) return;
-            ips.forEach(item => {
-                const opt = document.createElement('option');
-                opt.value = item.ip;
-                opt.textContent = `${item.name} (${item.ip})`;
-                opt.style.background = '#111';
-                select.appendChild(opt);
-            });
-        } catch(e) {}
-    }
-
-    function loadConfig() {
-        try {
-            const saved = JSON.parse(localStorage.getItem('lan_disk_config') || '{}');
-            const portEl = document.getElementById('cfg-port');
-            if (portEl && saved.port) portEl.value = saved.port;
-
-            const pinEl = document.getElementById('cfg-pin');
-            if (pinEl && saved.pin) pinEl.value = saved.pin;
-
-            if (saved.mode) {
-                const modeEl = document.getElementById(`mode-${saved.mode}`);
-                if (modeEl) {
-                    modeEl.checked = true;
-                    onModeChange();
-                }
-            }
-
-            const customDirEl = document.getElementById('custom-dir-input');
-            if (customDirEl && saved.customDir) customDirEl.value = saved.customDir;
-
-            const whitelistToggleEl = document.getElementById('whitelist-toggle');
-            if (whitelistToggleEl && saved.whitelistMode !== undefined) whitelistToggleEl.checked = saved.whitelistMode;
-
-            const whitelistIpsEl = document.getElementById('whitelist-ips-input');
-            if (whitelistIpsEl && saved.whitelistIps) whitelistIpsEl.value = saved.whitelistIps.join(',');
-
-            const autoServeEl = document.getElementById('auto-serve-toggle');
-            if (autoServeEl) autoServeEl.checked = localStorage.getItem('lan_disk_auto_serve') === 'true';
-
-            window.api.invoke('get-autostart').then(enabled => {
-                const autostartEl = document.getElementById('autostart-toggle');
-                if (autostartEl) autostartEl.checked = enabled;
-            }).catch(()=>{});
-        } catch(e) {
-            console.error('loadConfig Error:', e);
-        }
-    }
-
-    function saveConfig() {
-        const portEl = document.getElementById('cfg-port');
-        let port = portEl ? parseInt(portEl.value) : 3000;
-        if (isNaN(port) || port < 1 || port > 65535) port = 3000;
-
-        const modeEl = document.querySelector('input[name="cfg-mode"]:checked');
-        const customDirEl = document.getElementById('custom-dir-input');
-        const pinEl = document.getElementById('cfg-pin');
-        const whitelistToggleEl = document.getElementById('whitelist-toggle');
-        const whitelistIpsEl = document.getElementById('whitelist-ips-input');
-        const netSelectEl = document.getElementById('network-select');
-        const autoServeEl = document.getElementById('auto-serve-toggle');
-
-        const config = {
-            mode: modeEl ? modeEl.value : 'full',
-            customDir: customDirEl ? customDirEl.value.trim() : '',
-            port,
-            pin: pinEl ? pinEl.value.trim() : '',
-            whitelistMode: whitelistToggleEl ? whitelistToggleEl.checked : false,
-            whitelistIps: whitelistIpsEl ? whitelistIpsEl.value.split(',').map(s=>s.trim()).filter(Boolean) : [],
-            bindIp: netSelectEl ? netSelectEl.value : ''
-        };
-
-        localStorage.setItem('lan_disk_config', JSON.stringify(config));
-        if (autoServeEl) localStorage.setItem('lan_disk_auto_serve', autoServeEl.checked);
-
-        showToast('✅ 配置已保存');
-        addLog('全套网络与安全配置修改成功', 'info');
-    }
-
-    async function toggleServer() {
-        const btn = document.getElementById('btn-start-server');
-        if (!btn) return;
-
-        if (!isRunning) {
-            btn.disabled = true;
-            btn.textContent = '启动中...';
-            try {
-                if (!window.api || typeof window.api.invoke !== 'function') {
-                    alert('提示：在独立网页浏览器预览模式下无法直接开启本地服务。请打开桌面控制中心程序。');
-                    showToast('⚠️ 请在桌面客户端内启动服务');
-                    return;
-                }
-
-                let config = {};
-                try {
-                    config = JSON.parse(localStorage.getItem('lan_disk_config') || '{}');
-                } catch(e) {}
-
-                const portEl = document.getElementById('cfg-port');
-                config.port = portEl ? (parseInt(portEl.value, 10) || 3000) : (config.port || 3000);
-                
-                const pinEl = document.getElementById('cfg-pin');
-                if (pinEl) config.pin = pinEl.value.trim();
-                
-                const modeEl = document.querySelector('input[name="cfg-mode"]:checked');
-                if (modeEl) config.mode = modeEl.value;
-
-                const customDirEl = document.getElementById('custom-dir-input');
-                if (customDirEl) config.customDir = customDirEl.value.trim();
-
-                const whitelistToggleEl = document.getElementById('whitelist-toggle');
-                if (whitelistToggleEl) config.whitelistMode = whitelistToggleEl.checked;
-
-                const whitelistIpsEl = document.getElementById('whitelist-ips-input');
-                if (whitelistIpsEl) config.whitelistIps = whitelistIpsEl.value.split(',').map(s=>s.trim()).filter(Boolean);
-
-                const netSelectEl = document.getElementById('net-interface-select');
-                if (netSelectEl && netSelectEl.value) config.bindIp = netSelectEl.value;
-
-                const res = await window.api.invoke('start-server', config);
-                if (res && res.success) {
-                    isRunning = true;
-                    window.isRunning = true;
-                    currentServerUrl = res.url;
-                    window.currentQrUrl = res.qrUrl;
-                    btn.textContent = '停止服务';
-                    btn.className = 'apple-btn apple-btn-danger';
-                    
-                    const titleEl = document.getElementById('pc-server-title');
-                    if (titleEl) titleEl.textContent = '服务运行中';
-                    
-                    const urlEl = document.getElementById('server-url');
-                    if (urlEl) urlEl.textContent = res.url;
-                    
-                    const qrImg = document.getElementById('qr-img');
-                    if (qrImg) {
-                        qrImg.src = res.qrDataUrl;
-                        qrImg.style.display = 'block';
+            if (closeBtn && !closeBtn._directAttached) {
+                closeBtn._directAttached = true;
+                closeBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    if (typeof window.LanDiskIPC !== 'undefined' && window.LanDiskIPC.close) {
+                        window.LanDiskIPC.close();
+                    } else if (window.api && window.api.closeWindow) {
+                        window.api.closeWindow();
+                    } else if (window.api && window.api.invoke) {
+                        window.api.invoke('close-window');
                     }
-                    const qrBtnGroup = document.getElementById('qr-btn-group');
-                    if (qrBtnGroup) qrBtnGroup.style.display = 'flex';
-
-                    const badgeEl = document.getElementById('pc-status-badge');
-                    if (badgeEl) {
-                        badgeEl.className = 'apple-badge apple-badge-success';
-                        badgeEl.innerHTML = '<span class="apple-badge-dot"></span> 运行中';
-                    }
-                    
-                    addLog(`服务器在端口 ${config.port} 成功开启: ${res.url}`, 'info');
-                    pcLoadDrives();
-                    loadDevicesPC();
-                    
-                    if (sysInfoTimer) clearInterval(sysInfoTimer);
-                    sysInfoTimer = setInterval(updateSysInfo, 5000);
-                    
-                    if (devicesAutoTimer) clearInterval(devicesAutoTimer);
-                    devicesAutoTimer = setInterval(() => {
-                        const ctrlTab = document.getElementById('pc-tab-control');
-                        const devTab = document.getElementById('pc-tab-devices');
-                        if ((ctrlTab && ctrlTab.classList.contains('active')) || (devTab && devTab.classList.contains('active'))) {
-                            loadDevicesPC();
-                        }
-                    }, 3000);
-                } else {
-                    const errText = (res && res.error) ? res.error : '未知错误';
-                    alert(`❌ 启动失败: ${errText}`);
-                    showToast('❌ 启动失败: ' + errText);
-                    addLog('服务器启动失败: ' + errText, 'error');
-                    btn.textContent = '启动服务';
-                    btn.className = 'apple-btn apple-btn-primary';
-                }
-            } catch (err) {
-                alert(`❌ 启动异常: ${err.message}`);
-                showToast('❌ 启动异常: ' + err.message);
-                addLog('启动抛出异常: ' + err.message, 'error');
-                btn.textContent = '启动服务';
-                btn.className = 'apple-btn apple-btn-primary';
-            } finally {
-                btn.disabled = false;
+                }, true);
             }
+        }
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', attachDirectWindowControls);
         } else {
-            btn.disabled = true;
-            btn.textContent = '停止中...';
-            try {
-                await window.api.invoke('stop-server');
-                if (pcChatStream) {
-                    try { pcChatStream.close(); } catch(e) {}
-                    pcChatStream = null;
-                }
-                if (sysInfoTimer) { clearInterval(sysInfoTimer); sysInfoTimer = null; }
-                if (devicesAutoTimer) { clearInterval(devicesAutoTimer); devicesAutoTimer = null; }
-                isRunning = false;
-                btn.textContent = '启动服务';
-                btn.className = 'apple-btn apple-btn-primary';
-                
-                const titleEl = document.getElementById('pc-server-title');
-                if (titleEl) titleEl.textContent = '服务已停止';
-                
-                const urlEl = document.getElementById('server-url');
-                if (urlEl) urlEl.textContent = '点击右侧按钮开启互传';
-                
-                const qrImg = document.getElementById('qr-img');
-                if (qrImg) qrImg.style.display = 'none';
-                
-                const qrBtnGroup = document.getElementById('qr-btn-group');
-                if (qrBtnGroup) qrBtnGroup.style.display = 'none';
-                
-                const badgeEl = document.getElementById('pc-status-badge');
-                if (badgeEl) {
-                    badgeEl.className = 'apple-badge apple-badge-info';
-                    badgeEl.innerHTML = '<span class="apple-badge-dot"></span> 未启动';
-                }
-                addLog('服务器已安全停止', 'warn');
-            } catch (err) {
-                showToast('❌ 停止失败: ' + err.message);
-            } finally {
-                btn.disabled = false;
-            }
+            attachDirectWindowControls();
         }
-    }
-
-    function showQrModal() {
-        const qrImg = document.getElementById('qr-img');
-        if (!qrImg || !qrImg.src) return showToast('❌ 服务未启动');
-        const modalImg = document.getElementById('modal-qr-img');
-        if (modalImg) modalImg.src = qrImg.src;
-        const modal = document.getElementById('pc-qr-modal');
-        if (modal) modal.style.display = 'flex';
-    }
-
-    function copyUrl() {
-        navigator.clipboard.writeText(currentServerUrl);
-        showToast('✅ 访问地址已复制到剪贴板');
-    }
-
-    async function openWebUrl() {
-        if (!isRunning && !window.isRunning) {
-            showToast('⏳ 正在为您启动局域网互联服务...');
-            await toggleServer();
-        }
-        const targetUrl = window.currentQrUrl || currentServerUrl || 'http://127.0.0.1:3000';
-        if (window.api && typeof window.api.openUrl === 'function') {
-            window.api.openUrl(targetUrl);
-        } else if (window.api && typeof window.api.invoke === 'function') {
-            window.api.invoke('open-url', targetUrl);
-        } else {
-            window.open(targetUrl, '_blank');
-        }
-        showToast('🚀 已在系统默认浏览器中打开页面！');
-    }
-
-    async function testPing() {
-        addLog('正在测试外网连通性...', 'info');
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 4000);
-        try {
-            const start = Date.now();
-            await fetch('https://www.baidu.com/favicon.ico', { mode: 'no-cors', signal: controller.signal });
-            clearTimeout(timeoutId);
-            const time = Date.now() - start;
-            addLog(`外网连接正常 (响应时间: ${time}ms)`, 'info');
-            showToast(`⚡ 外网正常，响应时间: ${time}ms`);
-        } catch(e) {
-            clearTimeout(timeoutId);
-            addLog('外网连接异常或超时', 'error');
-            showToast('❌ 外网测试失败或连接超时');
-        }
-    }
-
-    async function cleanLinks() {
-        if (!isRunning) return showToast('❌ 请先启动服务');
-        try {
-            const pin = getPin();
-            const res = await fetch(`${currentServerUrl}/api/tools/clean-links`, { method: 'POST', headers: { 'x-pin': pin } });
-            const data = await res.json();
-            addLog(`已清理 ${data.cleaned || 0} 个过期的分享链接`, 'info');
-            showToast(`🧹 清理了 ${data.cleaned || 0} 个过期链接`);
-        } catch(e) { showToast('❌ 清理失败'); }
-    }
-
-    async function kickDevices() {
-        if (!isRunning) return showToast('❌ 请先启动服务');
-        if(!confirm('确定要强制断开所有设备吗？')) return;
-        try {
-            const pin = getPin();
-            const res = await fetch(`${currentServerUrl}/api/tools/kick-devices`, { method: 'POST', headers: { 'x-pin': pin } });
-            const data = await res.json();
-            addLog(`已强制断开所有已连接设备`, 'warn');
-            loadDevicesPC();
-            showToast(`🚫 已成功断开所有设备`);
-        } catch(e) { showToast('❌ 操作失败'); }
-    }
-
-    async function scheduleShutdown() {
-        const minutes = parseInt(document.getElementById('shutdown-minutes').value);
-        if (!minutes || minutes <= 0) return showToast('❌ 请输入有效的分钟数');
-        const res = await window.api.invoke('schedule-shutdown', minutes);
-        if (res && res.success) { addLog(res.message, 'warn'); showToast(`⏱️ ${res.message}`); }
-    }
-
-    async function cancelShutdown() {
-        const res = await window.api.invoke('schedule-shutdown', 0);
-        if (res && res.success) { addLog(res.message, 'info'); showToast(`⏱️ ${res.message}`); }
-    }
-
-    async function updateSysInfo() {
-        if (window.isGuiWindowMinimized) return;
-        try {
-            const info = await window.api.invoke('get-sys-info');
-            if (info) {
-                if (document.getElementById('pc-cpu-val')) {
-                    document.getElementById('pc-cpu-val').textContent = `${info.cpuUsage || 0}%`;
-                }
-                if (document.getElementById('pc-cpu-model')) {
-                    document.getElementById('pc-cpu-model').textContent = info.cpu || 'Central Processor';
-                }
-                if (document.getElementById('pc-mem-detail')) {
-                    document.getElementById('pc-mem-detail').textContent = `${(info.memTotal - info.memFree).toFixed(1)} GB / ${info.memTotal} GB`;
-                }
-                if (document.getElementById('pc-mem-val')) {
-                    document.getElementById('pc-mem-val').textContent = `${Math.round(((info.memTotal - info.memFree) / info.memTotal) * 100)}%`;
-                }
-                if (document.getElementById('pc-disk-space')) {
-                    if (info.diskSpace && info.diskSpace.includes('可用 / 共')) {
-                        const parts = info.diskSpace.split('可用 / 共');
-                        const freeVal = parts[0].trim();
-                        const totalVal = parts[1].trim();
-                        document.getElementById('pc-disk-space').textContent = freeVal;
-                        if (document.getElementById('pc-disk-detail')) {
-                            document.getElementById('pc-disk-detail').textContent = `共 ${totalVal} (C 盘可用 ${freeVal})`;
-                        }
-                    } else {
-                        document.getElementById('pc-disk-space').textContent = info.diskSpace || '正常';
-                    }
-                }
-            }
-        } catch(e) {}
-    }
-
-    function parseDeviceUA(ua) {
-        if (!ua) return { name: '未知设备', icon: '❓', badge: 'Unknown' };
-        const str = ua.toLowerCase();
-        if (str.includes('iphone')) return { name: 'iPhone 手机', icon: '📱', badge: 'iOS' };
-        if (str.includes('ipad')) return { name: 'iPad 平板', icon: '📱', badge: 'iPadOS' };
-        if (str.includes('android')) {
-            let brand = 'Android 设备';
-            if (str.includes('huawei') || str.includes('harmony')) brand = '华为手机/平板';
-            else if (str.includes('xiaomi') || str.includes('mi ')) brand = '小米手机/平板';
-            else if (str.includes('oppo')) brand = 'OPPO 手机';
-            else if (str.includes('vivo')) brand = 'vivo 手机';
-            else if (str.includes('samsung')) brand = '三星手机';
-            return { name: brand, icon: '🤖', badge: 'Android' };
-        }
-        if (str.includes('macintosh') || str.includes('mac os')) return { name: 'Mac 电脑', icon: '🖥️', badge: 'macOS' };
-        if (str.includes('windows')) return { name: 'Windows PC', icon: '💻', badge: 'Windows' };
-        if (str.includes('linux')) return { name: 'Linux 终端', icon: '🐧', badge: 'Linux' };
-        return { name: 'Web 浏览器', icon: '🌐', badge: 'Browser' };
-    }
-
-    function formatDuration(ms) {
-        if (ms < 0 || isNaN(ms)) return '刚刚';
-        const sec = Math.floor(ms / 1000);
-        if (sec < 60) return `${sec}秒前`;
-        const min = Math.floor(sec / 60);
-        if (min < 60) return `${min}分钟前`;
-        const hr = Math.floor(min / 60);
-        return `${hr}小时前`;
-    }
-
-    function renderBlockedIpsList(blockedIps) {
-        const blockedContainer = document.getElementById('pc-blocked-container');
-        if (!blockedContainer) return;
-        if (!blockedIps || !blockedIps.length) {
-            blockedContainer.innerHTML = '<div style="text-align:center; color:var(--apple-text-muted); padding:15px; font-size:12px;">暂无被封禁的 IP 地址</div>';
-        } else {
-            const btnStyle = 'padding:3px 10px; font-size:11px; border-radius:6px; border:1px solid rgba(52,199,89,0.3); background:rgba(52,199,89,0.1); color:var(--apple-system-green); cursor:pointer; white-space:nowrap;';
-            blockedContainer.innerHTML = blockedIps.map(ip => `
-                <div style="background: rgba(255,59,48,0.06); border: 1px solid rgba(255,59,48,0.2); border-radius: 10px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <span style="font-weight: 600; font-size: 13px; color: #ff453a;">⛔ ${escapeHtml(ip)}</span>
-                        <span style="font-size: 11px; color: var(--apple-text-subtle); margin-left: 10px;">已被封禁禁止访问</span>
-                    </div>
-                    <button style="${btnStyle}" onclick="unblockDeviceIp('${escapeHtml(ip)}')">🔓 解除封禁</button>
-                </div>
-            `).join('');
-        }
-    }
-
-    async function loadDevicesPC() {
-        try {
-            const pinEl = document.getElementById('cfg-pin');
-            const pin = pinEl ? pinEl.value.trim() : '';
-            const res = await fetch(`${getServerUrl()}/api/devices`, { headers: { 'x-pin': pin } });
-            const data = await res.json();
-            const container = document.getElementById('pc-devices-container');
-
-            const stats = data.stats || {};
-            const rxSpeed = formatBytes(stats.rxSpeed || 0) + '/s';
-            const txSpeed = formatBytes(stats.txSpeed || 0) + '/s';
-
-            // 同步更新控制中心的网速显示卡片
-            if (document.getElementById('ctrl-rx-speed')) document.getElementById('ctrl-rx-speed').textContent = rxSpeed;
-            if (document.getElementById('ctrl-tx-speed')) document.getElementById('ctrl-tx-speed').textContent = txSpeed;
-
-            const statsBar = `
-                <div style="display:flex; gap:12px; margin-bottom:12px;">
-                    <div style="flex:1; background:rgba(52,199,89,0.08); border:1px solid rgba(52,199,89,0.2); border-radius:10px; padding:10px 14px;">
-                        <div style="font-size:11px; color:var(--apple-text-muted);">下行速率 ↓</div>
-                        <div style="font-size:18px; font-weight:700; color:var(--apple-system-green);">${rxSpeed}</div>
-                    </div>
-                    <div style="flex:1; background:rgba(0,122,255,0.08); border:1px solid rgba(0,122,255,0.2); border-radius:10px; padding:10px 14px;">
-                        <div style="font-size:11px; color:var(--apple-text-muted);">上行速率 ↑</div>
-                        <div style="font-size:18px; font-weight:700; color:var(--apple-system-blue);">${txSpeed}</div>
-                    </div>
-                </div>
-            `;
-
-            // 1. 渲染在线设备列表
-            if (container) {
-                if (!data.devices || !data.devices.length) {
-                    container.innerHTML = statsBar + '<div style="text-align:center; color:var(--apple-text-muted); padding:20px; font-size:13px;">暂无其他设备在线</div>';
-                } else {
-                    const now = Date.now();
-                    const btnStyle = 'padding:3px 8px; font-size:11px; border-radius:6px; border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.06); color:var(--apple-text-muted); cursor:pointer; white-space:nowrap; transition:all 0.2s;';
-
-                    container.innerHTML = statsBar + data.devices.map(d => {
-                        const devInfo = parseDeviceUA(d.userAgent);
-                        const isLocal = d.ip === '127.0.0.1';
-                        const activeTimeStr = formatDuration(now - (d.lastSeen || now));
-                        const safeAlias = escapeHtml(d.alias || '');
-                        const safeIp = escapeHtml(d.ip);
-                        const titleText = d.alias ? `${safeAlias} (${safeIp})` : safeIp;
-
-                        return `
-                            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--apple-border); border-radius: 12px; padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px;">
-                                <div style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0;">
-                                    <div style="font-size: 24px; flex-shrink: 0;">${devInfo.icon}</div>
-                                    <div style="flex: 1; min-width: 0;">
-                                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                                            <span style="font-weight: 700; font-size: 14px; color: white;">${titleText}</span>
-                                            <span class="apple-badge apple-badge-info" style="font-size: 10px; padding: 2px 6px;">${devInfo.badge}</span>
-                                        </div>
-                                        <div style="font-size: 11px; color: var(--apple-text-subtle); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                                            ${devInfo.name} • 活跃于 ${activeTimeStr}
-                                        </div>
-                                    </div>
-                                </div>
-                                <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
-                                    ${!isLocal ? `
-                                        <button style="${btnStyle}" onclick="setDeviceRemark('${safeIp}', '${safeAlias}')" title="设置备注名">✏️ 备注</button>
-                                        <button style="${btnStyle} color:var(--apple-system-orange); border-color:rgba(255,149,0,0.3);" onclick="kickSingleDevice('${safeIp}')" title="强制断开此设备">🚫 踢出</button>
-                                        <button style="${btnStyle} color:var(--apple-system-red); border-color:rgba(255,59,48,0.3);" onclick="blockDeviceIp('${safeIp}')" title="禁止此 IP 访问 (拉黑)">⛔ 封禁</button>
-                                    ` : '<span class="apple-badge apple-badge-success"><span class="apple-badge-dot"></span> 本机控制台</span>'}
-                                </div>
-                            </div>
-                        `;
-                    }).join('');
-                }
-            }
-
-            // 2. 渲染封禁黑名单
-            renderBlockedIpsList(data.blockedIps);
-        } catch(e) { console.error('loadDevicesPC Error:', e); }
-    }
-
-    // 剔除单个设备
-    async function kickSingleDevice(ip) {
-        if (!confirm(`确定断开设备 IP: ${ip} 的连接吗？`)) return;
-        const pinEl = document.getElementById('cfg-pin');
-        const pin = pinEl ? pinEl.value.trim() : '';
-        try {
-            await fetch(`${currentServerUrl}/api/tools/kick-device`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'x-pin': pin },
-                body: JSON.stringify({ ip })
-            });
-            loadDevicesPC();
-        } catch(e) {}
-    }
-
-    async function blockDeviceIp(ip) {
-        if (!confirm(`确定封禁并拉黑设备 IP: ${ip} 吗？`)) return;
-        const pinEl = document.getElementById('cfg-pin');
-        const pin = pinEl ? pinEl.value.trim() : '';
-        try {
-            await fetch(`${currentServerUrl}/api/tools/block-ip`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'x-pin': pin },
-                body: JSON.stringify({ ip })
-            });
-            loadDevicesPC();
-        } catch(e) {}
-    }
-
-    async function setDeviceRemark(ip, oldAlias) {
-        const alias = prompt(`请输入 IP [${ip}] 的自定义备注名称:`, oldAlias || '');
-        if (alias === null) return;
-        const pinEl = document.getElementById('cfg-pin');
-        const pin = pinEl ? pinEl.value.trim() : '';
-        try {
-            await fetch(`${currentServerUrl}/api/tools/set-device-alias`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'x-pin': pin },
-                body: JSON.stringify({ ip, alias: alias.trim() })
-            });
-            loadDevicesPC();
-        } catch(e) {}
-    }
-
-    function renderProcessListPC(list, query = '', sortKey = 'mem') {
-        const procListEl = document.getElementById('pc-proc-list');
-        if (!procListEl) return;
-
-        let filtered = (list || []).filter(p => {
-            if (!p || !p.name || !p.name.trim()) return false;
-            const matchesQuery = !query || p.name.toLowerCase().includes(query) || String(p.pid).includes(query);
-            return matchesQuery;
-        });
-
-        const appGroups = {};
-        for (const p of filtered) {
-            const key = p.name.toLowerCase();
-            if (!appGroups[key]) {
-                appGroups[key] = { name: p.name, totalMem: 0, pids: [], items: [] };
-            }
-            appGroups[key].totalMem += p.mem;
-            appGroups[key].pids.push(p.pid);
-            appGroups[key].items.push(p);
-        }
-
-        let groups = Object.values(appGroups);
-        groups.sort((a, b) => {
-            if (sortKey === 'mem') return b.totalMem - a.totalMem;
-            if (sortKey === 'name') return a.name.localeCompare(b.name);
-            return b.items.length - a.items.length;
-        });
-
-        if (!query && groups.length > 35) {
-            groups = groups.slice(0, 35);
-        }
-
-        if (!groups.length) {
-            procListEl.innerHTML = '<div style="padding:30px; text-align:center; color:var(--apple-text-muted); font-size:13px;">暂无匹配的运行进程</div>';
-            return;
-        }
-
-        const escapeHtml = str => typeof str === 'string' ? str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') : str;
-
-        procListEl.innerHTML = groups.map((g, idx) => {
-            const memMb = (g.totalMem / 1024 / 1024).toFixed(1);
-            const safeName = escapeHtml(g.name) || '系统进程';
-            const bgStyle = (idx % 2 === 0) ? 'background: rgba(255, 255, 255, 0.04);' : 'background: rgba(255, 255, 255, 0.02);';
-
-            // 单个进程行 (无边框极简苹果卡片设计)
-            if (g.items.length === 1) {
-                const p = g.items[0];
-                return `
-                    <div style="${bgStyle} border: none; border-radius: 10px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; min-height: 46px; margin-bottom: 6px; box-sizing: border-box;">
-                        <div style="display:flex; align-items:center; gap:10px; flex:1; min-width:140px; overflow:hidden;">
-                            <div style="width:30px; height:30px; border-radius:8px; background:rgba(0,122,255,0.12); color:var(--apple-system-blue); display:flex; align-items:center; justify-content:center; font-size:14px; flex-shrink:0;">💻</div>
-                            <div style="flex:1; min-width:0; overflow:hidden;">
-                                <div style="font-weight:700; font-size:13px; color:white; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                                    ${safeName}
-                                    <span style="font-size:10px; font-weight:normal; color:var(--apple-text-subtle); margin-left:6px; background:rgba(255,255,255,0.06); padding:2px 6px; border-radius:6px;">PID: ${p.pid}</span>
-                                </div>
-                                <div style="font-size:11px; color:var(--apple-text-muted); margin-top:2px;">占用内存: <b style="color:var(--apple-system-purple);">${memMb} MB</b></div>
-                            </div>
-                        </div>
-                        <button class="apple-btn apple-btn-danger" style="padding:4px 12px; font-size:11px; margin-left:10px; flex-shrink:0; border-radius:8px;" onclick="killProcessPC(${p.pid})">结束进程</button>
-                    </div>
-                `;
-            }
-
-            // 多子进程组合行 (无边框极简设计)
-            const pidsJson = JSON.stringify(g.pids);
-            return `
-                <div style="${bgStyle} border: none; border-radius: 10px; overflow: hidden; margin-bottom: 6px; box-sizing: border-box;">
-                    <div style="padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; min-height: 46px;">
-                        <div style="display:flex; align-items:center; gap:10px; flex:1; min-width:140px; overflow:hidden;">
-                            <div style="width:30px; height:30px; border-radius:8px; background:rgba(175,82,222,0.12); color:var(--apple-system-purple); display:flex; align-items:center; justify-content:center; font-size:14px; flex-shrink:0;">⚡</div>
-                            <div style="flex:1; min-width:0; overflow:hidden;">
-                                <div style="display:flex; align-items:center; gap:8px;">
-                                    <span style="font-weight:700; font-size:13px; color:white; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${safeName}</span>
-                                    <span class="apple-badge apple-badge-info" style="font-size:10px; padding:2px 6px; border-radius:8px; flex-shrink:0;">${g.items.length} 个子进程</span>
-                                </div>
-                                <div style="font-size:11px; color:var(--apple-text-muted); margin-top:2px;">总内存: <b style="color:var(--apple-system-purple);">${memMb} MB</b></div>
-                            </div>
-                        </div>
-                        <div style="display:flex; align-items:center; gap:8px; flex-shrink:0; margin-left:10px;">
-                            <button class="apple-btn apple-btn-glass" style="padding:3px 8px; font-size:11px; border-radius:6px;" onclick="const el = document.getElementById('proc-group-${idx}'); el.style.display = el.style.display==='none'?'block':'none'">明细</button>
-                            <button class="apple-btn apple-btn-danger" style="padding:3px 10px; font-size:11px; border-radius:6px;" onclick="killAppGroupPC(${pidsJson}, '${safeName}')">结束全部 (${g.items.length})</button>
-                        </div>
-                    </div>
-                    <!-- 展开的明细胶囊区 -->
-                    <div id="proc-group-${idx}" style="display:none; padding:10px 14px; background:rgba(0,0,0,0.3);">
-                        <div style="display:flex; flex-wrap:wrap; gap:6px;">
-                            ${g.items.map(p => `
-                                <div style="background:rgba(255,255,255,0.08); border-radius:16px; padding:3px 10px; display:inline-flex; align-items:center; gap:6px; font-size:11px;">
-                                    <span style="color:var(--apple-text-muted);">PID <b style="color:white;">${p.pid}</b></span>
-                                    <span style="color:var(--apple-system-purple); font-weight:600;">${(p.mem/1024/1024).toFixed(1)} MB</span>
-                                    <button style="border:none; background:rgba(255,59,48,0.2); color:#ff453a; border-radius:50%; width:16px; height:16px; display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:9px; font-weight:bold;" onclick="killProcessPC(${p.pid})" title="结束此 PID">✕</button>
-                                </div>
-                            `).join('')}
-                        </div>
-                    </div>
-                </div>
-            `;
-        }).join('');
-    }
-
-    async function killAppGroupPC(pids, appName) {
-        if (!confirm(`确定结束应用「${appName}」的所有 ${pids.length} 个子进程吗？`)) return;
-        const pinEl = document.getElementById('cfg-pin');
-        const pin = pinEl ? pinEl.value.trim() : '';
-        for (const pid of pids) {
-            try {
-                await fetch(`${currentServerUrl}/api/kill-process`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-pin': pin }, body: JSON.stringify({ pid }) });
-            } catch(e){}
-        }
-        loadProcessesPC();
-    }
-
-    function toggleAutoRefreshPC() {
-        const isAuto = document.getElementById('pc-process-auto').checked;
-        if (isAuto) {
-            loadProcessesPC();
-            pcProcessAutoTimer = setInterval(loadProcessesPC, 3000);
-        } else {
-            clearInterval(pcProcessAutoTimer);
-            pcProcessAutoTimer = null;
-        }
-    }
-
-    async function killProcessPC(pid) {
-        if (!confirm(`结束进程 PID: ${pid}?`)) return;
-        const pinEl = document.getElementById('cfg-pin');
-        const pin = pinEl ? pinEl.value.trim() : '';
-        await fetch(`${currentServerUrl}/api/kill-process`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-pin': pin }, body: JSON.stringify({ pid }) });
-        loadProcessesPC();
-    }
-
-    async function executePCTerminal() {
-        if (!isRunning) return showToast('❌ 请先启动服务');
-        const input = document.getElementById('pc-term-input');
-        const output = document.getElementById('pc-term-output');
-        const cmd = input.value.trim(); if (!cmd) return; input.value = '';
-
-        // 安全地显示命令（用 textContent 防止 XSS）
-        const cmdSpan = document.createElement('span');
-        cmdSpan.style.color = 'white';
-        cmdSpan.textContent = `\n$ ${cmd}\n`;
-        output.appendChild(cmdSpan);
-
-        try {
-            const pin = getPin();
-            // 使用当前文件管理器所在目录作为终端的 cwd
-            const cwd = (!pcIsRoot && pcCurrentPath) ? pcCurrentPath : 'C:\\';
-            const res = await fetch(`${currentServerUrl}/api/terminal`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'x-pin': pin },
-                body: JSON.stringify({ command: cmd, cwd })
-            });
-            const data = await res.json();
-            const resultSpan = document.createElement('span');
-            if (data.error) {
-                resultSpan.style.color = 'var(--apple-system-red)';
-                resultSpan.textContent = data.error;
-            } else {
-                resultSpan.style.color = '#34c759';
-                resultSpan.textContent = data.output;
-            }
-            output.appendChild(resultSpan);
-        } catch (e) {
-            const errSpan = document.createElement('span');
-            errSpan.style.color = 'var(--apple-system-red)';
-            errSpan.textContent = `错误: ${e.message}`;
-            output.appendChild(errSpan);
-        }
-        output.scrollTop = output.scrollHeight;
-    }
-
-    // --------------------------------------------------------
-    // 文本/Markdown 文件在线查看与全功能编辑器
-    // --------------------------------------------------------
-    let currentEditingPath = '';
-    let currentEditingMode = 'edit';
-
-    function renderMarkdownToHtml(mdText) {
-        if (!mdText) return '<div style="color:var(--apple-text-muted); font-style:italic;">(空文档)</div>';
-        let html = mdText
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-            .replace(/^#### (.*$)/gim, '<h4 style="color:#007aff; margin:10px 0 6px;">$1</h4>')
-            .replace(/^### (.*$)/gim, '<h3 style="color:#34c759; margin:12px 0 6px;">$1</h3>')
-            .replace(/^## (.*$)/gim, '<h2 style="color:white; margin:16px 0 8px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:4px;">$1</h2>')
-            .replace(/^# (.*$)/gim, '<h1 style="color:white; margin:18px 0 10px; border-bottom:2px solid var(--apple-system-blue); padding-bottom:6px;">$1</h1>')
-            .replace(/```([\s\S]*?)```/gim, '<pre style="background:rgba(0,0,0,0.4); border:1px solid var(--apple-border); border-radius:8px; padding:12px; font-family:Consolas,monospace; font-size:12px; overflow-x:auto; color:#64d2ff; margin:10px 0;"><code>$1</code></pre>')
-            .replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:4px; font-family:Consolas,monospace; color:#ff9f0a; font-size:12px;">$1</code>')
-            .replace(/\*\*([^*]+)\*\*/g, '<strong style="color:white;">$1</strong>')
-            .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-            .replace(/^\> (.*$)/gim, '<blockquote style="border-left:3px solid var(--apple-system-blue); margin:8px 0; padding-left:10px; color:var(--apple-text-muted);">$1</blockquote>')
-            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color:var(--apple-system-blue); text-decoration:underline;">$1</a>')
-            .replace(/^\- (.*$)/gim, '<li style="margin-left:20px; color:white;">$1</li>')
-            .replace(/^---$/gim, '<hr style="border:none; border-top:1px solid var(--apple-border); margin:14px 0;">')
-            .replace(/\n/g, '<br>');
-        return html;
-    }
-
-    async function pcOpenTextEditor(filePath, fileName) {
-        currentEditingPath = filePath;
-        const modal = document.getElementById('apple-text-editor-modal');
-        const nameEl = document.getElementById('editor-file-name');
-        const textarea = document.getElementById('editor-textarea');
-        const previewDiv = document.getElementById('editor-preview');
-        const pathEl = document.getElementById('editor-file-path');
-
-        nameEl.textContent = fileName || '文本编辑器';
-        pathEl.textContent = filePath;
-        textarea.value = '加载中...';
-        modal.style.display = 'flex';
-        pcToggleEditorMode('edit');
-
-        try {
-            const pinEl = document.getElementById('cfg-pin');
-            const pin = pinEl ? pinEl.value.trim() : '';
-            const res = await fetch(`${getServerUrl()}/api/read-text?path=${encodeURIComponent(filePath)}`, { headers: { 'x-pin': pin } });
-            const data = await res.json();
-            if (data.success) {
-                textarea.value = data.content;
-                previewDiv.innerHTML = renderMarkdownToHtml(data.content);
-                showToast(`📄 已打开文件 (${formatBytes(data.size)})`);
-            } else {
-                textarea.value = '';
-                showToast('❌ 读取文本失败: ' + (data.error || '未知错误'));
-            }
-        } catch(e) {
-            showToast('❌ 请求读取文件失败: ' + e.message);
-        }
-    }
-
-    function pcToggleEditorMode(mode) {
-        currentEditingMode = mode;
-        const textarea = document.getElementById('editor-textarea');
-        const previewDiv = document.getElementById('editor-preview');
-        const editBtn = document.getElementById('btn-mode-edit');
-        const prevBtn = document.getElementById('btn-mode-preview');
-        const splitBtn = document.getElementById('btn-mode-split');
-
-        [editBtn, prevBtn, splitBtn].forEach(b => { if(b) b.classList.remove('apple-btn-primary'); });
-
-        if (mode === 'edit') {
-            textarea.style.display = 'block';
-            previewDiv.style.display = 'none';
-            if (editBtn) editBtn.classList.add('apple-btn-primary');
-        } else if (mode === 'preview') {
-            previewDiv.innerHTML = renderMarkdownToHtml(textarea.value);
-            textarea.style.display = 'none';
-            previewDiv.style.display = 'block';
-            if (prevBtn) prevBtn.classList.add('apple-btn-primary');
-        } else if (mode === 'split') {
-            previewDiv.innerHTML = renderMarkdownToHtml(textarea.value);
-            textarea.style.display = 'block';
-            previewDiv.style.display = 'block';
-            if (splitBtn) splitBtn.classList.add('apple-btn-primary');
-        }
-    }
-
-    async function pcSaveTextFile() {
-        if (!currentEditingPath) return;
-        const textarea = document.getElementById('editor-textarea');
-        const content = textarea.value;
-        try {
-            const pinEl = document.getElementById('cfg-pin');
-            const pin = pinEl ? pinEl.value.trim() : '';
-            const res = await fetch(`${getServerUrl()}/api/save-text`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'x-pin': pin },
-                body: JSON.stringify({ path: currentEditingPath, content })
-            });
-            const data = await res.json();
-            if (data.success) {
-                showToast('💾 文件保存成功！');
-                addLog(`修改并保存了文本文件: ${currentEditingPath}`, 'info');
-                pcRefreshCurrentPath();
-            } else {
-                showToast('❌ 保存失败: ' + (data.error || '未知错误'));
-            }
-        } catch(e) { showToast('❌ 保存出错: ' + e.message); }
-    }
-
-    function pcCloseTextEditor() {
-        document.getElementById('apple-text-editor-modal').style.display = 'none';
-        currentEditingPath = '';
-    }
-
-    // 初始化运行
-    loadConfig();
-    loadNetworkInfo();
-    updateSysInfo(); // 立即获取一次系统信息
-    loadDevicesPC(); // 立即加载并渲染被封禁 IP 黑名单与设备列表
-    loadBookmarksPC(); // 立即加载路径书签栏
-
-    // 软件启动时：仅在用户开启「应用打开时自动开启服务」时才自动启动
-    const autoServe = localStorage.getItem('lan_disk_auto_serve') === 'true';
-    if (autoServe) {
-        setTimeout(toggleServer, 300);
-    }
+    })();
 </script>
-
-<!-- macOS 风格右下角悬浮传输任务面板 -->
-<div id="mac-transfer-drawer" style="position: fixed; bottom: 20px; right: 20px; z-index: 99999; width: 340px; background: rgba(30, 30, 42, 0.88); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border: 1px solid var(--apple-border); border-radius: 16px; box-shadow: 0 16px 48px rgba(0,0,0,0.6); display: none; flex-direction: column; overflow: hidden; transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);">
-    <div style="padding: 12px 16px; background: rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); cursor: pointer;" onclick="toggleTransferDrawer()">
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 15px;">🚀</span>
-            <span style="font-weight: 700; font-size: 13px; color: white;" id="drawer-title">传输队列 (0)</span>
-        </div>
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 11px; color: var(--apple-system-blue); font-weight: 600;" id="drawer-global-speed">0 MB/s</span>
-            <button style="border: none; background: transparent; color: var(--apple-text-muted); cursor: pointer; font-size: 12px;" id="drawer-toggle-btn">▼</button>
-        </div>
-    </div>
-    <div id="drawer-task-list" style="padding: 12px; max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;">
-    </div>
-</div>
-
-<!-- macOS 风格高保真 Text & Markdown 实时编辑器 Modal -->
-<div id="apple-text-editor-modal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99998; background: rgba(0,0,0,0.65); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); display: none; align-items: center; justify-content: center; padding: 24px;">
-    <div style="width: 100%; max-width: 900px; height: 82vh; background: rgba(26, 26, 36, 0.95); border: 1px solid var(--apple-border); border-radius: 20px; box-shadow: 0 24px 64px rgba(0,0,0,0.8); display: flex; flex-direction: column; overflow: hidden; animation: popIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);">
-        <!-- Modal 头部栏 -->
-        <div style="padding: 14px 20px; background: rgba(255,255,255,0.04); border-bottom: 1px solid var(--apple-border); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0;">
-            <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1;">
-                <span style="font-size: 20px;">📝</span>
-                <div style="min-width: 0; flex: 1;">
-                    <div style="font-weight: 700; font-size: 15px; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="editor-file-name">文本编辑器</div>
-                    <div style="font-size: 11px; color: var(--apple-text-subtle); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="editor-file-path">/path/to/file</div>
-                </div>
-            </div>
-
-            <!-- 模式切换与操作按钮 -->
-            <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                <div style="display: flex; gap: 2px; background: rgba(0,0,0,0.3); padding: 3px; border-radius: 8px; border: 1px solid var(--apple-border);">
-                    <button class="apple-btn apple-btn-glass apple-btn-primary" id="btn-mode-edit" style="padding: 3px 10px; font-size: 11px;" onclick="pcToggleEditorMode('edit')">📝 编辑</button>
-                    <button class="apple-btn apple-btn-glass" id="btn-mode-preview" style="padding: 3px 10px; font-size: 11px;" onclick="pcToggleEditorMode('preview')">👁️ Markdown 预览</button>
-                    <button class="apple-btn apple-btn-glass" id="btn-mode-split" style="padding: 3px 10px; font-size: 11px;" onclick="pcToggleEditorMode('split')">📖 双栏分屏</button>
-                </div>
-                <button class="apple-btn apple-btn-primary" style="padding: 5px 14px; font-size: 12px;" onclick="pcSaveTextFile()">💾 保存</button>
-                <button class="apple-btn apple-btn-glass" style="padding: 5px 10px; font-size: 12px; color: var(--apple-system-red);" onclick="pcCloseTextEditor()">✕</button>
-            </div>
-        </div>
-
-        <!-- Modal 内容区 (编辑与预览) -->
-        <div style="flex: 1; display: flex; overflow: hidden; position: relative;">
-            <textarea id="editor-textarea" style="flex: 1; height: 100%; background: transparent; color: #f0f0f5; border: none; outline: none; padding: 18px; font-family: Consolas, 'Fira Code', Monaco, monospace; font-size: 13px; line-height: 1.6; resize: none; overflow-y: auto;" placeholder="在此输入或编辑文本/Markdown内容..."></textarea>
-            <div id="editor-preview" style="flex: 1; height: 100%; background: rgba(0,0,0,0.25); border-left: 1px solid var(--apple-border); padding: 20px; overflow-y: auto; display: none; color: #e0e0e5; font-size: 14px; line-height: 1.7;"></div>
-        </div>
-    </div>
-</div>
 </body>
 </html>

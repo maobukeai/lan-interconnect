@@ -6,6 +6,8 @@
 (function (global) {
     'use strict';
 
+    const I = (name, size) => (global.Icons ? global.Icons.render(name, size) : '');
+
     class FileBatchManager {
         constructor(config = {}) {
             this.selectedFiles = new Set();
@@ -62,26 +64,33 @@
 
             bar.style.display = 'flex';
             bar.innerHTML = `
-                <span style="font-size:13px; font-weight:600; color:white;">已选择 ${this.selectedFiles.size} 项</span>
-                <button class="apple-btn apple-btn-primary" id="btn-batch-zip" style="padding:4px 12px; font-size:12px;">📦 打包下载 (ZIP)</button>
-                <button class="apple-btn apple-btn-glass" id="btn-batch-cancel" style="padding:4px 10px; font-size:12px;">✕ 清空</button>
+                <span style="font-size:13px; font-weight:600; color:var(--apple-text-main)">已选择 ${this.selectedFiles.size} 项</span>
+                <button class="apple-btn apple-btn-primary apple-btn-sm" id="btn-batch-zip">${I('package', 14)} 打包下载 (ZIP)</button>
+                <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-batch-cancel">${I('close', 12)} 清空</button>
             `;
 
             document.getElementById('btn-batch-zip').onclick = () => this.downloadZip();
             document.getElementById('btn-batch-cancel').onclick = () => this.clear();
         }
 
+        _authHeaders(extra) {
+            if (typeof global.LanDiskAuth !== 'undefined' && global.LanDiskAuth.authHeaders) {
+                return global.LanDiskAuth.authHeaders(extra);
+            }
+            const headers = extra ? Object.assign({}, extra) : {};
+            headers['x-pin'] = this.getPin();
+            return headers;
+        }
+
         async downloadZip(customFilesArr = null, customFolderName = 'batch_download') {
             const filesArr = customFilesArr || Array.from(this.selectedFiles);
             if (!filesArr || filesArr.length === 0) return;
-
-            const pin = this.getPin();
 
             try {
                 const apiUrl = this.getApiUrl('/api/download/batch');
                 const res = await fetch(apiUrl, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'x-pin': pin },
+                    headers: this._authHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({ files: filesArr, folderName: customFolderName })
                 });
 
@@ -96,7 +105,8 @@
                 document.body.removeChild(a);
                 window.URL.revokeObjectURL(url);
             } catch (err) {
-                alert('打包下载错误: ' + err.message);
+                if (typeof global.LanDiskUI !== 'undefined' && global.LanDiskUI.toast) global.LanDiskUI.toast('打包下载错误: ' + err.message, 'error');
+                else alert('打包下载错误: ' + err.message);
             }
         }
     }

@@ -39,12 +39,35 @@
             return endpoint;
         }
 
+        _authHeaders(extra) {
+            if (typeof global.LanDiskAuth !== 'undefined' && global.LanDiskAuth.authHeaders) {
+                return global.LanDiskAuth.authHeaders(extra);
+            }
+            const headers = extra ? Object.assign({}, extra) : {};
+            headers['x-pin'] = this.getPin();
+            return headers;
+        }
+
+        // 可见时每 3.5 秒自动刷新（服务端有缓存，开销极小）；展开明细或页面隐藏时跳过
+        startAutoRefresh() {
+            if (this.autoRefreshTimer) return;
+            this.autoRefreshTimer = setInterval(async () => {
+                if (document.hidden || !this.container || !this.container.isConnected) return;
+                if (this.container.offsetParent === null) return; // 所在视图未激活
+                if (this.container.querySelector('div[id^="group-detail-"][style*="display: block"]')) return; // 用户正在看明细
+                try {
+                    const st = this.container.scrollTop;
+                    await this.fetchProcesses();
+                    this.container.scrollTop = st; // 保持滚动位置
+                } catch (e) {}
+            }, 3500);
+        }
+
         async fetchProcesses() {
             this._ensureElements();
             try {
-                const pin = this.getPin();
                 const apiUrl = this.getApiUrl('/api/processes');
-                const res = await fetch(apiUrl, { headers: { 'x-pin': pin } });
+                const res = await fetch(apiUrl, { headers: this._authHeaders() });
 
                 if (res.status === 403) {
                     const data = await res.json().catch(() => ({}));
@@ -115,56 +138,64 @@
             }
 
             const escapeHtml = str => typeof str === 'string' ? str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') : str;
+            const I = (n, s) => (global.Icons ? global.Icons.render(n, s) : '');
 
             this.container.innerHTML = groups.map((g, idx) => {
                 const memMb = (g.totalMem / 1024 / 1024).toFixed(1);
                 const safeName = escapeHtml(g.name) || '系统进程';
-                const bgStyle = (idx % 2 === 0) ? 'background: rgba(255, 255, 255, 0.04);' : 'background: rgba(255, 255, 255, 0.02);';
 
                 if (g.items.length === 1) {
                     const p = g.items[0];
                     return `
-                        <div style="${bgStyle} border: none; border-radius: 10px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; min-height: 46px; margin-bottom: 6px; box-sizing: border-box;">
-                            <div style="display:flex; align-items:center; gap:12px; flex:1; min-width:140px; overflow:hidden;">
-                                <div style="width:30px; height:30px; border-radius:8px; background:rgba(0,122,255,0.12); color:var(--apple-system-blue); display:flex; align-items:center; justify-content:center; font-size:14px; flex-shrink:0;">💻</div>
-                                <div style="flex:1; min-width:0; overflow:hidden;">
-                                    <div style="font-weight:700; font-size:13px; color:white; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                                        ${safeName}
-                                        <span style="font-size:10px; font-weight:normal; color:var(--apple-text-subtle); margin-left:6px; background:rgba(255,255,255,0.06); padding:2px 6px; border-radius:6px;">PID: ${p.pid}</span>
+                        <div class="proc-item-card">
+                            <div class="proc-item-main">
+                                <div class="proc-item-left">
+                                    <div class="proc-item-icon">${I('cpu', 16)}</div>
+                                    <div class="proc-item-meta">
+                                        <div class="proc-item-title-row">
+                                            <span class="proc-item-name" title="${safeName}">${safeName}</span>
+                                            <span class="proc-item-pid-tag">PID: ${p.pid}</span>
+                                        </div>
+                                        <div class="proc-item-sub-row">
+                                            <span>内存占用: <b class="proc-item-mem">${memMb} MB</b></span>
+                                        </div>
                                     </div>
-                                    <div style="font-size:11px; color:var(--apple-text-muted); margin-top:2px;">内存占用: <b style="color:var(--apple-system-purple);">${memMb} MB</b></div>
+                                </div>
+                                <div class="proc-item-actions">
+                                    <button class="proc-btn-danger btn-kill-proc" data-pid="${p.pid}">结束</button>
                                 </div>
                             </div>
-                            <button class="apple-btn apple-btn-danger btn-kill-proc" data-pid="${p.pid}" style="padding:4px 12px; font-size:11px; margin-left:10px; flex-shrink:0; border-radius:8px;">结束进程</button>
                         </div>
                     `;
                 }
 
                 return `
-                    <div style="${bgStyle} border: none; border-radius: 10px; overflow: hidden; margin-bottom: 6px; box-sizing: border-box;">
-                        <div style="padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; min-height: 46px;">
-                            <div style="display:flex; align-items:center; gap:12px; flex:1; min-width:140px; overflow:hidden;">
-                                <div style="width:30px; height:30px; border-radius:8px; background:rgba(175,82,222,0.12); color:var(--apple-system-purple); display:flex; align-items:center; justify-content:center; font-size:14px; flex-shrink:0;">⚡</div>
-                                <div style="flex:1; min-width:0; overflow:hidden;">
-                                    <div style="display:flex; align-items:center; gap:8px;">
-                                        <span style="font-weight:700; font-size:13px; color:white; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${safeName}</span>
-                                        <span class="apple-badge apple-badge-info" style="font-size:10px; padding:2px 6px; border-radius:8px; flex-shrink:0;">${g.items.length} 个子进程</span>
+                    <div class="proc-item-card">
+                        <div class="proc-item-main">
+                            <div class="proc-item-left">
+                                <div class="proc-item-icon multi">${I('zap', 16)}</div>
+                                <div class="proc-item-meta">
+                                    <div class="proc-item-title-row">
+                                        <span class="proc-item-name" title="${safeName}">${safeName}</span>
+                                        <span class="proc-item-badge">${g.items.length} 个进程</span>
                                     </div>
-                                    <div style="font-size:11px; color:var(--apple-text-muted); margin-top:2px;">总内存: <b style="color:var(--apple-system-purple);">${memMb} MB</b></div>
+                                    <div class="proc-item-sub-row">
+                                        <span>总内存: <b class="proc-item-mem">${memMb} MB</b></span>
+                                    </div>
                                 </div>
                             </div>
-                            <div style="display:flex; align-items:center; gap:8px; flex-shrink:0; margin-left:10px;">
-                                <button class="apple-btn apple-btn-glass btn-toggle-detail" data-target="group-detail-${idx}" style="padding:3px 8px; font-size:11px; border-radius:6px;">明细</button>
-                                <button class="apple-btn apple-btn-danger btn-kill-group" data-pids="${g.pids.join(',')}" data-name="${safeName}" style="padding:3px 10px; font-size:11px; border-radius:6px;">结束全部 (${g.items.length})</button>
+                            <div class="proc-item-actions">
+                                <button class="proc-btn-detail btn-toggle-detail" data-target="group-detail-${idx}">明细</button>
+                                <button class="proc-btn-danger btn-kill-group" data-pids="${g.pids.join(',')}" data-name="${safeName}">结束 (${g.items.length})</button>
                             </div>
                         </div>
-                        <div id="group-detail-${idx}" style="display:none; padding:10px 14px; background:rgba(0,0,0,0.3);">
-                            <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                        <div id="group-detail-${idx}" class="proc-group-detail" style="display:none;">
+                            <div class="proc-detail-pill-grid">
                                 ${g.items.map(p => `
-                                    <div style="background:rgba(255,255,255,0.08); border-radius:16px; padding:3px 10px; display:inline-flex; align-items:center; gap:6px; font-size:11px;">
-                                        <span style="color:var(--apple-text-muted);">PID <b style="color:white;">${p.pid}</b></span>
-                                        <span style="color:var(--apple-system-purple); font-weight:600;">${(p.mem/1024/1024).toFixed(1)} MB</span>
-                                        <button class="btn-kill-proc" data-pid="${p.pid}" style="border:none; background:rgba(255,59,48,0.2); color:#ff453a; border-radius:50%; width:16px; height:16px; display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:9px; font-weight:bold;" title="结束此 PID">✕</button>
+                                    <div class="proc-detail-pill">
+                                        <span class="proc-detail-pid">PID <b>${p.pid}</b></span>
+                                        <span class="proc-detail-mem">${(p.mem/1024/1024).toFixed(1)} MB</span>
+                                        <button class="btn-kill-proc proc-detail-del-btn" data-pid="${p.pid}" title="结束此 PID">${I('close', 8)}</button>
                                     </div>
                                 `).join('')}
                             </div>
@@ -203,11 +234,10 @@
             if (!confirm(`确定要结束 PID 为 ${pid} 的进程吗？`)) return;
 
             try {
-                const pin = this.getPin();
                 const apiUrl = this.getApiUrl('/api/kill-process');
                 const res = await fetch(apiUrl, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'x-pin': pin },
+                    headers: this._authHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({ pid })
                 });
                 const data = await res.json().catch(() => ({}));
@@ -224,13 +254,12 @@
         async killGroup(pids, appName) {
             if (!confirm(`确定结束应用「${appName}」的所有 ${pids.length} 个子进程吗？`)) return;
 
-            const pin = this.getPin();
             const apiUrl = this.getApiUrl('/api/kill-process');
             for (const pid of pids) {
                 try {
                     await fetch(apiUrl, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'x-pin': pin },
+                        headers: this._authHeaders({ 'Content-Type': 'application/json' }),
                         body: JSON.stringify({ pid })
                     });
                 } catch(e){}
@@ -254,6 +283,7 @@
     ProcessMonitor.load = function(containerId) {
         const inst = getOrCreateInstance(containerId);
         inst.fetchProcesses();
+        inst.startAutoRefresh();
     };
 
     ProcessMonitor.filter = function(keyword) {
