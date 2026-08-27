@@ -1441,7 +1441,12 @@ body.theme-light .dock-glider {
     height: 100%;
     object-fit: cover;
     z-index: 1;
-    transition: transform 0.3s ease;
+    opacity: 0;
+    transition: opacity 0.25s ease, transform 0.3s ease;
+}
+
+.poster-card img.loaded {
+    opacity: 1;
 }
 
 .poster-card:hover img {
@@ -1546,6 +1551,195 @@ body.theme-light .dock-glider {
     background: linear-gradient(90deg, #0a84ff, #5ac8fa);
     box-shadow: 0 0 8px #5ac8fa;
     border-radius: 0 2px 2px 0;
+}
+
+/* ---------------- 9.2 影音文件夹列表 (Media Folders Grid & Items) ---------------- */
+.media-section-header {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--apple-text-secondary);
+    letter-spacing: 0.3px;
+    margin: 16px 0 10px 2px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.media-folder-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+@media (max-width: 600px) {
+    .media-folder-grid {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+}
+
+.media-folder-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 13px 18px;
+    background: var(--apple-bg-card, var(--mat-ultrathin));
+    border: 1px solid var(--apple-border);
+    border-radius: 14px;
+    cursor: pointer;
+    user-select: none;
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), 
+                box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), 
+                border-color 0.2s ease, 
+                background 0.2s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+}
+
+:root[data-theme="light"] .media-folder-item {
+    background: #ffffff;
+    border: 1px solid rgba(0, 0, 0, 0.09);
+}
+
+.media-folder-item:hover {
+    transform: translateY(-2.5px);
+    border-color: var(--apple-system-blue);
+    background: var(--apple-bg-card-hover, var(--mat-thin));
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.09), 0 0 12px var(--apple-glow-blue, rgba(10, 132, 255, 0.18));
+}
+
+.media-folder-item:active {
+    transform: scale(0.98);
+}
+
+.media-folder-icon-box {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: rgba(10, 132, 255, 0.12);
+    color: var(--apple-system-blue);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: transform 0.2s ease;
+}
+
+:root[data-theme="dark"] .media-folder-icon-box {
+    background: rgba(10, 132, 255, 0.2);
+    color: #5ac8fa;
+}
+
+.media-folder-item:hover .media-folder-icon-box {
+    transform: scale(1.08);
+}
+
+.media-folder-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.media-folder-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--apple-text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.35;
+}
+
+.media-folder-sub {
+    font-size: 11.5px;
+    color: var(--apple-text-muted);
+}
+
+.media-folder-arrow {
+    color: var(--apple-text-muted);
+    font-size: 16px;
+    flex-shrink: 0;
+    opacity: 0.45;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.media-folder-item:hover .media-folder-arrow {
+    opacity: 1;
+    color: var(--apple-system-blue);
+    transform: translateX(3px);
+}
+
+/* ---------------- 9.3 影音面包屑导航栏 (Media Breadcrumbs) ---------------- */
+.media-breadcrumb-container {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 12px;
+    border-radius: 12px;
+    background: var(--mat-thin, rgba(120, 130, 160, 0.12));
+    border: 1px solid var(--apple-border);
+    overflow-x: auto;
+    white-space: nowrap;
+    box-sizing: border-box;
+    max-width: 100%;
+}
+
+:root[data-theme="light"] .media-breadcrumb-container {
+    background: rgba(0, 0, 0, 0.04);
+    border: 1px solid rgba(0, 0, 0, 0.07);
+}
+
+.media-back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 9px;
+    height: 26px;
+    border-radius: 8px;
+    border: 1px solid var(--apple-border);
+    background: var(--apple-bg-card, #ffffff);
+    color: var(--apple-text-main);
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.14s ease;
+}
+
+.media-back-btn:hover {
+    background: var(--apple-system-blue);
+    color: #ffffff;
+    border-color: var(--apple-system-blue);
+}
+
+.media-crumb-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--apple-text-secondary);
+    cursor: pointer;
+    transition: color 0.14s ease;
+    flex-shrink: 0;
+}
+
+.media-crumb-item:hover {
+    color: var(--apple-system-blue);
+}
+
+.media-crumb-item.active {
+    color: var(--apple-text-main);
+    cursor: default;
+}
+
+.media-crumb-sep {
+    color: var(--apple-text-muted);
+    font-size: 11px;
+    user-select: none;
+    flex-shrink: 0;
 }
 
 .empty-state {
@@ -1660,7 +1854,9 @@ body.theme-light .dock-glider {
 .chat-msg-body {
     display: flex;
     flex-direction: column;
-    max-width: 76%;
+    max-width: 78%;
+    min-width: 0;
+    flex-shrink: 1;
 }
 
 .chat-msg-self .chat-msg-body {
@@ -1693,17 +1889,18 @@ body.theme-light .dock-glider {
     font-feature-settings: "tnum";
 }
 
-/* 气泡核心 */
+/* 气泡核心 (确保中英文横向自然排列，彻底杜绝单字换行) */
 .chat-bubble,
 .msg-bubble {
-    display: block;
-    width: fit-content;
+    display: inline-block;
+    width: auto;
     max-width: 100%;
+    min-width: 24px;
     padding: 8px 14px;
     font-size: 14px;
     line-height: 1.45;
-    word-break: normal;
-    overflow-wrap: break-word;
+    word-break: break-word;
+    overflow-wrap: anywhere;
     white-space: pre-wrap;
     text-align: left;
     position: relative;
@@ -3306,12 +3503,14 @@ input[type="range"].apple-range::-webkit-slider-thumb:active {
     }
 
     .chat-bubble {
-        max-width: 85% !important;
+        width: auto !important;
+        max-width: 100% !important;
+        min-width: 24px !important;
         font-size: 13.5px !important;
-        padding: 7px 12px !important;
-        word-break: normal !important;
-        overflow-wrap: break-word !important;
-        width: fit-content !important;
+        padding: 7px 13px !important;
+        word-break: break-word !important;
+        overflow-wrap: anywhere !important;
+        white-space: pre-wrap !important;
     }
 
     /* 9. 工具箱子导航横向平滑滑动 */

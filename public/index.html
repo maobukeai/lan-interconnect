@@ -10,24 +10,24 @@
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="alternate icon" type="image/png" href="favicon.png">
     <link rel="apple-touch-icon" href="apple-touch-icon.png">
-    <link rel="stylesheet" href="shared/apple-theme.css?v=20260828_v39">
-    <link rel="stylesheet" href="shared/apple-player.css?v=20260828_v39">
+    <link rel="stylesheet" href="shared/apple-theme.css?v=20260828_v44">
+    <link rel="stylesheet" href="shared/apple-player.css?v=20260828_v44">
     <!-- 基础引擎与组件库（一个功能一个文件，桌面端 gui.html 复用同一套） -->
     <script src="shared/icons.js"></script>
     <script src="shared/auth.js"></script>
-    <script src="shared/ui.js?v=20260828_v39"></script>
-    <script src="shared/apple-player.js?v=20260828_v39"></script>
+    <script src="shared/ui.js?v=20260828_v44"></script>
+    <script src="shared/apple-player.js?v=20260828_v44"></script>
     <script src="shared/components/file-bookmarks.js"></script>
     <script src="shared/components/file-batch.js"></script>
     <script src="shared/components/file-uploader.js"></script>
     <script src="shared/components/file-explorer.js"></script>
     <script src="shared/components/media-hub.js"></script>
-    <script src="shared/components/media-theater.js"></script>
+    <script src="shared/components/media-theater.js?v=20260828_v44"></script>
     <script src="shared/components/imessage-chat.js"></script>
     <script src="shared/components/whiteboard.js"></script>
     <script src="shared/components/process-monitor.js"></script>
     <script src="shared/components/web-terminal.js"></script>
-    <script src="shared/components/remote-control.js?v=20260828_v39"></script>
+    <script src="shared/components/remote-control.js?v=20260828_v44"></script>
     <style>
         header.web-header {
             position: sticky;
@@ -337,12 +337,17 @@
 
     <!-- 3. 影音 -->
     <div id="view-media" class="view-section">
-        <div class="toolbar-row" style="flex-wrap:wrap; gap:8px; align-items:center">
-            <button class="apple-btn apple-btn-glass" id="btn-media-folder">+ 添加媒体目录</button>
-            <button class="apple-btn apple-btn-primary" id="btn-media-scan">扫描全部媒体</button>
-            <span class="subtle ellipsis" id="media-folder-label" style="font-size:12px; flex:1; min-width:100px">0 个媒体源</span>
+        <div class="toolbar-row" style="flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px">
+            <button class="apple-btn apple-btn-glass" id="btn-media-folder"><span data-icon="folder" data-icon-size="14"></span>+ 添加媒体目录</button>
+            <div class="segmented" id="media-view-mode-toggle" style="margin-bottom:0; padding:2px;">
+                <button class="segmented-item active" data-mode="tree"><span data-icon="folder" data-icon-size="13"></span>按文件夹</button>
+                <button class="segmented-item" data-mode="flat"><span data-icon="playCircle" data-icon-size="13"></span>平铺全部</button>
+            </div>
+            <button class="apple-btn apple-btn-glass" id="btn-media-scan" title="刷新媒体库"><span data-icon="refresh" data-icon-size="14"></span>刷新</button>
+            <span class="subtle ellipsis" id="media-folder-label" style="font-size:12px; flex:1; min-width:100px; text-align:right">0 个媒体源</span>
         </div>
         <div class="media-folders-chip-row" id="media-folders-chip-row"></div>
+        <div id="media-breadcrumb-container" style="display:none; margin: 10px 0 6px 0;"></div>
         <div class="poster-grid" id="poster-grid">
             <div class="empty-state" style="grid-column:1/-1">
                 <span data-icon="playCircle" data-icon-size="34"></span>
@@ -483,8 +488,9 @@
 
                     <!-- 底部全套控制栏面板 -->
                     <div class="player-ctrl-bottom">
-                        <!-- 极光双色流光进度条 -->
+                        <!-- 极光双色流光进度条 (Apple Fluid Scrubber) -->
                         <div class="ap-progress-wrap" id="ap-progress-wrap">
+                            <div class="ap-progress-tooltip" id="ap-progress-tooltip">00:00</div>
                             <div class="ap-progress-track">
                                 <div class="ap-progress-buffer" id="ap-progress-buffer"></div>
                                 <div class="ap-progress-fill" id="ap-progress-fill"></div>
@@ -502,27 +508,33 @@
                                     <svg id="ap-icon-play" width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                                     <svg id="ap-icon-pause" width="16" height="16" fill="currentColor" viewBox="0 0 24 24" style="display:none;"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
                                 </button>
-                                <button class="player-btn-icon" id="ap-btn-next" title="下一集">
+                                <button class="player-btn-icon ap-btn-desktop-only" id="ap-btn-next" title="下一集">
                                     <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
                                 </button>
                                 <span class="player-time-display" id="ap-time-text">00:00 / 00:00</span>
                             </div>
                             <div class="player-ctrl-right">
-                                <button class="player-btn-pill" id="ap-btn-speed">1.0x</button>
-                                <button class="player-btn-pill ap-btn-desktop-only" id="ap-btn-fit-toggle" title="画面比例">
-                                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
-                                    <span>自适应</span>
+                                <button class="player-btn-pill" id="ap-btn-speed" title="播放倍速">1.0x</button>
+                                <button class="player-btn-pill" id="ap-btn-fit-toggle" title="画面比例">
+                                    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+                                    <span class="ap-btn-label">自适应</span>
                                 </button>
-                                <button class="player-btn-pill ap-btn-desktop-only" id="ap-btn-filter-toggle" title="色彩风格">
-                                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4 4 4 0 014-4c2 0 2-4 6-4 4 0 7 3 7 7a7 7 0 01-7 7H7z"/></svg>
-                                    <span>原画</span>
+                                <button class="player-btn-pill" id="ap-btn-filter-toggle" title="色彩风格">
+                                    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4 4 4 0 014-4c2 0 2-4 6-4 4 0 7 3 7 7a7 7 0 01-7 7H7z"/></svg>
+                                    <span class="ap-btn-label">原画</span>
                                 </button>
                                 <button class="player-btn-pill player-btn-fullscreen" id="ap-btn-fullscreen" title="全屏 / 还原">
-                                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
-                                    <span id="ap-fs-btn-label">全屏</span>
+                                    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+                                    <span class="ap-btn-label" id="ap-fs-btn-label">全屏</span>
                                 </button>
                             </div>
                         </div>
+                    </div>
+
+                    <!-- 悬浮弹窗选项菜单 (Apple VisionOS Popover Menu) -->
+                    <div class="ap-menu-popover" id="ap-menu-popover">
+                        <div class="ap-popover-title" id="ap-popover-title">选择选项</div>
+                        <div class="ap-popover-list" id="ap-popover-list"></div>
                     </div>
                 </div>
 
@@ -897,6 +909,6 @@
     </div>
 </div>
 
-<script src="app.js?v=20260828_v39"></script>
+<script src="app.js?v=20260828_v44"></script>
 </body>
 </html>

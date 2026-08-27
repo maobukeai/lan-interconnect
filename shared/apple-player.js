@@ -46,6 +46,8 @@ class AppleCinemaPlayerEngine {
         this.prePressRate = 1.0;
         this.lastTapTime = 0;
         this.controlsVisible = true;
+        this.isProgressDragging = false;
+        this.activePopoverBtn = null;
 
         // 音频可视化
         this.audioCtx = null;
@@ -95,6 +97,7 @@ class AppleCinemaPlayerEngine {
             hudVolumeFill: document.getElementById('ap-hud-volume-fill'),
             hudVolumeVal: document.getElementById('ap-hud-volume-val'),
             progressWrap: document.getElementById('ap-progress-wrap'),
+            progressTooltip: document.getElementById('ap-progress-tooltip'),
             progressBuffer: document.getElementById('ap-progress-buffer'),
             progressFill: document.getElementById('ap-progress-fill'),
             progressThumb: document.getElementById('ap-progress-thumb'),
@@ -109,6 +112,10 @@ class AppleCinemaPlayerEngine {
             btnFilterToggle: document.getElementById('ap-btn-filter-toggle'),
             btnFullscreen: document.getElementById('ap-btn-fullscreen'),
             fsBtnLabel: document.getElementById('ap-fs-btn-label'),
+            // 悬浮弹窗选项菜单
+            menuPopover: document.getElementById('ap-menu-popover'),
+            popoverTitle: document.getElementById('ap-popover-title'),
+            popoverList: document.getElementById('ap-popover-list'),
             // 全屏半透抽屉
             drawerEpisodes: document.getElementById('ap-fs-drawer-episodes'),
             drawerEpisodesRanges: document.getElementById('ap-fs-ep-ranges'),
@@ -182,36 +189,50 @@ class AppleCinemaPlayerEngine {
         drawerEpisodesClose?.addEventListener('click', (e) => { e.stopPropagation(); this.closeDrawers(); });
         drawerSettingsClose?.addEventListener('click', (e) => { e.stopPropagation(); this.closeDrawers(); });
 
-        // 快捷倍速循环
+        // 快捷倍速选择菜单 (Apple Popover Menu)
         btnSpeed?.addEventListener('click', (e) => {
             e.stopPropagation();
-            const speeds = [1.0, 1.25, 1.5, 2.0, 3.0, 0.75];
             const current = this.dom.media ? (this.dom.media.playbackRate || 1.0) : 1.0;
-            let nextIdx = (speeds.indexOf(current) + 1) % speeds.length;
-            if (nextIdx === -1) nextIdx = 0;
-            this.setPlaybackRate(speeds[nextIdx]);
+            const options = [
+                { label: '0.5x 慢速', value: '0.5' },
+                { label: '0.75x 慢速', value: '0.75' },
+                { label: '1.0x 标准 (推荐)', value: '1' },
+                { label: '1.25x 轻快', value: '1.25' },
+                { label: '1.5x 快速', value: '1.5' },
+                { label: '2.0x 极速', value: '2' },
+                { label: '3.0x 超快', value: '3' }
+            ];
+            const curValStr = current % 1 === 0 ? String(Math.round(current)) : String(current);
+            this.toggleMenuPopover(btnSpeed, '选择播放倍速', options, curValStr, (val) => {
+                this.setPlaybackRate(parseFloat(val));
+            });
         });
 
-        // 快捷画面比例循环
+        // 快捷画面比例选择菜单 (Apple Popover Menu)
         btnFitToggle?.addEventListener('click', (e) => {
             e.stopPropagation();
-            const fits = ['contain', 'cover', 'fill'];
-            const names = { contain: '自适应', cover: '铺满全屏', fill: '拉伸全屏' };
-            let nextIdx = (fits.indexOf(this.objectFitMode) + 1) % fits.length;
-            if (nextIdx === -1) nextIdx = 0;
-            this.setObjectFit(fits[nextIdx]);
-            btnFitToggle.textContent = names[fits[nextIdx]];
+            const options = [
+                { label: '自适应 (原片比例)', value: 'contain' },
+                { label: '铺满全屏 (裁剪黑边)', value: 'cover' },
+                { label: '拉伸全屏 (填充视口)', value: 'fill' }
+            ];
+            this.toggleMenuPopover(btnFitToggle, '选择画面比例', options, this.objectFitMode, (val) => {
+                this.setObjectFit(val);
+            });
         });
 
-        // 快捷色彩滤镜循环
+        // 快捷色彩风格选择菜单 (Apple Popover Menu)
         btnFilterToggle?.addEventListener('click', (e) => {
             e.stopPropagation();
-            const filters = ['none', 'warm', 'cinema', 'vivid'];
-            const names = { none: '原画', warm: '夜间暖光', cinema: '影院高对比', vivid: '鲜艳生动' };
-            let nextIdx = (filters.indexOf(this.currentFilter) + 1) % filters.length;
-            if (nextIdx === -1) nextIdx = 0;
-            this.setVideoFilter(filters[nextIdx]);
-            btnFilterToggle.textContent = names[filters[nextIdx]];
+            const options = [
+                { label: '原画 (默认真实色彩)', value: 'none' },
+                { label: '夜间暖光 (温和护眼)', value: 'warm' },
+                { label: '影院高对比 (电影质感)', value: 'cinema' },
+                { label: '鲜艳生动 (饱和通透)', value: 'vivid' }
+            ];
+            this.toggleMenuPopover(btnFilterToggle, '选择色彩风格', options, this.currentFilter, (val) => {
+                this.setVideoFilter(val);
+            });
         });
 
         // 断点续播
@@ -607,6 +628,67 @@ class AppleCinemaPlayerEngine {
     closeDrawers() {
         if (this.dom.drawerEpisodes) this.dom.drawerEpisodes.classList.remove('open');
         if (this.dom.drawerSettings) this.dom.drawerSettings.classList.remove('open');
+        this.closeMenuPopover();
+    }
+
+    openMenuPopover(targetBtn, title, options, currentVal, onSelect) {
+        if (!this.dom.menuPopover || !this.dom.popoverList) return;
+        const popover = this.dom.menuPopover;
+        const titleEl = this.dom.popoverTitle;
+        const listEl = this.dom.popoverList;
+
+        if (titleEl) titleEl.textContent = title;
+
+        const checkSvg = `<svg class="ap-popover-item-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>`;
+
+        listEl.innerHTML = options.map(opt => {
+            const isActive = String(opt.value) === String(currentVal);
+            return `
+                <button class="ap-popover-item ${isActive ? 'active' : ''}" data-val="${opt.value}">
+                    <span>${opt.label}</span>
+                    ${checkSvg}
+                </button>
+            `;
+        }).join('');
+
+        listEl.querySelectorAll('.ap-popover-item').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const val = btn.getAttribute('data-val');
+                this.closeMenuPopover();
+                if (onSelect) onSelect(val);
+                if (window.LanDiskUI && window.LanDiskUI.Haptic) {
+                    window.LanDiskUI.Haptic.selection();
+                }
+            });
+        });
+
+        // 智能定位：根据 targetBtn 计算相对位置（置于按钮上方）
+        if (targetBtn && this.dom.stageBox) {
+            const stageRect = this.dom.stageBox.getBoundingClientRect();
+            const btnRect = targetBtn.getBoundingClientRect();
+            const rightOffset = stageRect.right - btnRect.right;
+            popover.style.right = Math.max(12, rightOffset - 6) + 'px';
+            popover.style.bottom = (stageRect.bottom - btnRect.top + 8) + 'px';
+        }
+
+        popover.classList.add('open');
+        this.activePopoverBtn = targetBtn;
+    }
+
+    closeMenuPopover() {
+        if (this.dom.menuPopover) {
+            this.dom.menuPopover.classList.remove('open');
+        }
+        this.activePopoverBtn = null;
+    }
+
+    toggleMenuPopover(targetBtn, title, options, currentVal, onSelect) {
+        if (this.dom.menuPopover && this.dom.menuPopover.classList.contains('open') && this.activePopoverBtn === targetBtn) {
+            this.closeMenuPopover();
+        } else {
+            this.openMenuPopover(targetBtn, title, options, currentVal, onSelect);
+        }
     }
 
     takeSnapshot() {
@@ -701,6 +783,7 @@ class AppleCinemaPlayerEngine {
     }
 
     onFullscreenChange() {
+        this.closeMenuPopover();
         const isFull = !!(document.fullscreenElement || document.webkitFullscreenElement);
         if (this.dom.stageBox) {
             this.dom.stageBox.classList.toggle('is-fullscreen', isFull);
@@ -749,7 +832,7 @@ class AppleCinemaPlayerEngine {
         updateGrid(this.dom.fsFilterGrid);
 
         const names = { none: '原画', warm: '夜间暖光', cinema: '影院高对比', vivid: '鲜艳生动' };
-        if (this.dom.btnFilterToggle) this.dom.btnFilterToggle.innerHTML = '<svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4 4 4 0 014-4c2 0 2-4 6-4 4 0 7 3 7 7a7 7 0 01-7 7H7z"/></svg><span>' + (names[preset] || '原画') + '</span>';
+        if (this.dom.btnFilterToggle) this.dom.btnFilterToggle.innerHTML = '<svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4 4 4 0 014-4c2 0 2-4 6-4 4 0 7 3 7 7a7 7 0 01-7 7H7z"/></svg><span class="ap-btn-label">' + (names[preset] || '原画') + '</span>';
         this.showGestureToast('画面色彩: ' + (names[preset] || '原画'));
     }
 
@@ -768,7 +851,7 @@ class AppleCinemaPlayerEngine {
         updateGrid(this.dom.fsFitGrid);
 
         const names = { contain: '自适应', cover: '铺满全屏', fill: '拉伸全屏' };
-        if (this.dom.btnFitToggle) this.dom.btnFitToggle.innerHTML = '<svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg><span>' + (names[fit] || '自适应') + '</span>';
+        if (this.dom.btnFitToggle) this.dom.btnFitToggle.innerHTML = '<svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg><span class="ap-btn-label">' + (names[fit] || '自适应') + '</span>';
         this.showGestureToast('画面比例: ' + (names[fit] || fit));
     }
 
@@ -826,22 +909,25 @@ class AppleCinemaPlayerEngine {
         const media = this.dom.media;
         if (!media || !media.duration) return;
 
-        const current = media.currentTime;
-        const duration = media.duration;
-        const percent = Math.min(100, Math.max(0, (current / duration) * 100));
+        // 如果用户当前正在手指拖拽或按住进度条，禁止被底层播放器 timeupdate 覆盖
+        if (!this.isProgressDragging) {
+            const current = media.currentTime;
+            const duration = media.duration;
+            const percent = Math.min(100, Math.max(0, (current / duration) * 100));
 
-        if (this.dom.progressFill) this.dom.progressFill.style.width = percent + '%';
-        if (this.dom.progressThumb) this.dom.progressThumb.style.left = percent + '%';
-        if (this.dom.timeText) this.dom.timeText.textContent = this.formatTime(current) + ' / ' + this.formatTime(duration);
+            if (this.dom.progressFill) this.dom.progressFill.style.width = percent + '%';
+            if (this.dom.progressThumb) this.dom.progressThumb.style.left = percent + '%';
+            if (this.dom.timeText) this.dom.timeText.textContent = this.formatTime(current) + ' / ' + this.formatTime(duration);
+        }
 
         // 实时字幕对齐与渲染
-        this.renderSubtitleCue(current);
+        this.renderSubtitleCue(media.currentTime);
 
-        if (current > 3 && duration > 10) {
+        if (media.currentTime > 3 && media.duration > 10 && !this.isProgressDragging) {
             const now = Date.now();
             if (!this._lastHistorySave || now - this._lastHistorySave > 2500) {
                 this._lastHistorySave = now;
-                this.savePlayHistory(current, duration);
+                this.savePlayHistory(media.currentTime, media.duration);
             }
         }
     }
@@ -886,28 +972,124 @@ class AppleCinemaPlayerEngine {
 
     bindProgressEvents(wrap) {
         if (!wrap) return;
-        const handleSeek = (e) => {
-            if (!this.dom.media || !this.dom.media.duration) return;
+        const fill = this.dom.progressFill;
+        const thumb = this.dom.progressThumb;
+        const tooltip = this.dom.progressTooltip;
+        let isDragging = false;
+        let lastHapticBucket = -1;
+
+        const getPosFromEvent = (e) => {
             const rect = wrap.getBoundingClientRect();
-            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-            const pos = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-            this.dom.media.currentTime = pos * this.dom.media.duration;
+            let clientX = 0;
+            if (e.touches && e.touches.length > 0) {
+                clientX = e.touches[0].clientX;
+            } else if (e.changedTouches && e.changedTouches.length > 0) {
+                clientX = e.changedTouches[0].clientX;
+            } else {
+                clientX = e.clientX;
+            }
+            return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
         };
 
-        let dragging = false;
-        wrap.addEventListener('mousedown', (e) => { dragging = true; handleSeek(e); });
-        window.addEventListener('mousemove', (e) => { if (dragging) handleSeek(e); });
-        window.addEventListener('mouseup', () => { dragging = false; });
+        const updateVisuals = (pos) => {
+            const percent = pos * 100;
+            if (fill) fill.style.width = percent + '%';
+            if (thumb) thumb.style.left = percent + '%';
 
-        wrap.addEventListener('touchstart', (e) => { dragging = true; handleSeek(e); }, { passive: true });
-        window.addEventListener('touchmove', (e) => { if (dragging) handleSeek(e); }, { passive: true });
-        window.addEventListener('touchend', () => { dragging = false; });
+            if (this.dom.media && this.dom.media.duration) {
+                const targetSec = pos * this.dom.media.duration;
+                const formattedCur = this.formatTime(targetSec);
+                const formattedDur = this.formatTime(this.dom.media.duration);
+
+                if (this.dom.timeText) {
+                    this.dom.timeText.textContent = `${formattedCur} / ${formattedDur}`;
+                }
+                if (tooltip) {
+                    tooltip.textContent = `${formattedCur} / ${formattedDur}`;
+                    tooltip.style.left = Math.max(8, Math.min(92, percent)) + '%';
+                }
+
+                // 拖拽跨越 30 秒区间时提供轻触感反馈
+                const curBucket = Math.floor(targetSec / 30);
+                if (lastHapticBucket !== curBucket) {
+                    lastHapticBucket = curBucket;
+                    if (window.LanDiskUI && window.LanDiskUI.Haptic) {
+                        window.LanDiskUI.Haptic.selection();
+                    }
+                }
+            }
+        };
+
+        const startDrag = (e) => {
+            if (!this.dom.media || !this.dom.media.duration) return;
+            isDragging = true;
+            this.isProgressDragging = true;
+            wrap.classList.add('is-dragging');
+            if (e.stopPropagation) e.stopPropagation();
+
+            const pos = getPosFromEvent(e);
+            updateVisuals(pos);
+            if (window.LanDiskUI && window.LanDiskUI.Haptic) {
+                window.LanDiskUI.Haptic.selection();
+            }
+        };
+
+        const moveDrag = (e) => {
+            if (!isDragging) return;
+            if (e.cancelable && e.preventDefault) e.preventDefault();
+            if (e.stopPropagation) e.stopPropagation();
+
+            const pos = getPosFromEvent(e);
+            updateVisuals(pos);
+        };
+
+        const endDrag = (e) => {
+            if (!isDragging) return;
+            isDragging = false;
+            wrap.classList.remove('is-dragging');
+            if (e.stopPropagation) e.stopPropagation();
+
+            const pos = getPosFromEvent(e);
+            if (this.dom.media && this.dom.media.duration) {
+                const targetSec = pos * this.dom.media.duration;
+                this.dom.media.currentTime = targetSec;
+                if (window.LanDiskUI && window.LanDiskUI.Haptic) {
+                    window.LanDiskUI.Haptic.light();
+                }
+            }
+
+            // 延迟 150ms 退出拖拽状态，恢复 timeupdate 自动同步
+            setTimeout(() => {
+                this.isProgressDragging = false;
+            }, 150);
+        };
+
+        // 鼠标事件
+        wrap.addEventListener('mousedown', startDrag);
+        window.addEventListener('mousemove', moveDrag);
+        window.addEventListener('mouseup', endDrag);
+
+        // 触摸事件 (采用 non-passive 以精准阻止外层手势与页面滚动冲突)
+        wrap.addEventListener('touchstart', startDrag, { passive: false });
+        window.addEventListener('touchmove', moveDrag, { passive: false });
+        window.addEventListener('touchend', endDrag);
+        window.addEventListener('touchcancel', endDrag);
     }
 
     bindStageGestures(box) {
         if (!box) return;
 
         box.addEventListener('click', (e) => {
+            if (e.target.closest('.player-ctrl-bottom') || e.target.closest('.player-ctrl-top') || e.target.closest('.ap-fs-drawer') || e.target.closest('.ap-resume-toast') || e.target.closest('.ap-lock-btn') || e.target.closest('.ap-menu-popover')) {
+                return;
+            }
+
+            // 若有选项弹窗菜单或抽屉打开，点击任意区域关闭
+            if (this.dom.menuPopover && this.dom.menuPopover.classList.contains('open')) {
+                this.closeMenuPopover();
+                return;
+            }
+
             if (this.isLocked) {
                 this.showGestureToast('已锁定屏幕，轻触解锁');
                 return;
@@ -939,6 +1121,9 @@ class AppleCinemaPlayerEngine {
         });
 
         box.addEventListener('touchstart', (e) => {
+            if (e.target.closest('.player-ctrl-bottom') || e.target.closest('.player-ctrl-top') || e.target.closest('.ap-fs-drawer') || e.target.closest('.ap-resume-toast') || e.target.closest('.ap-lock-btn') || e.target.closest('.ap-menu-popover')) {
+                return;
+            }
             if (e.touches.length !== 1 || this.isLocked) return;
             const touch = e.touches[0];
             this.touchStartX = touch.clientX;

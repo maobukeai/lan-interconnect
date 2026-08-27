@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 猫步互联 · 影音媒体服务路由 (Media Router)
  * 1. 播放进度与断点续播 API (/media/progress)
  * 2. 同名字幕自动探查与匹配 API (/media/subtitles)
@@ -167,5 +167,131 @@ router.get('/subtitle', (req, res) => {
         res.status(500).send(err.message);
     }
 });
+
+// 5. 高性能服务端缩略图生成与持久化缓存 API
+// GET /api/thumbnail?path=...
+// GET /api/media/thumbnail?path=...
+const crypto = require('crypto');
+const { spawn } = require('child_process');
+
+const THUMB_CACHE_DIR = path.resolve(DATA_DIR, 'thumbnails');
+if (!fs.existsSync(THUMB_CACHE_DIR)) {
+    try { fs.mkdirSync(THUMB_CACHE_DIR, { recursive: true }); } catch (e) {}
+}
+
+const VIDEO_EXT_RE = /\.(mp4|mkv|webm|mov|avi|flv|wmv|ts|m4v|3gp|rmvb)$/i;
+const IMAGE_EXT_RE = /\.(jpg|jpeg|png|webp|bmp|gif|svg)$/i;
+
+const sendThumb = (filePath, res) => {
+    try {
+        res.setHeader('Content-Type', 'image/jpeg');
+        res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+        const stream = fs.createReadStream(filePath);
+        stream.on('error', (err) => {
+            if (!res.headersSent) res.status(500).send('Error reading thumbnail');
+        });
+        stream.pipe(res);
+    } catch (e) {
+        if (!res.headersSent) res.status(500).send(e.message);
+    }
+};
+
+const handleThumbnail = (req, res) => {
+    const targetPath = req.query.path;
+    if (!targetPath || !fs.existsSync(targetPath)) {
+        return res.status(404).send('File not found');
+    }
+    if (!isSafePath(targetPath)) {
+        return res.status(403).send('Forbidden');
+    }
+
+    try {
+        const stat = fs.statSync(targetPath);
+        if (stat.isDirectory()) {
+            return res.status(400).send('Target is a directory');
+        }
+
+        // 如果是图片格式，直接响应（带强缓存头）
+        if (IMAGE_EXT_RE.test(targetPath)) {
+            res.setHeader('Cache-Control', 'public, max-age=604800');
+            const stream = fs.createReadStream(targetPath);
+            return stream.pipe(res);
+        }
+
+        // 如果不是视频格式，不支持截图
+        if (!VIDEO_EXT_RE.test(targetPath)) {
+            return res.status(415).send('Unsupported media type for thumbnail');
+        }
+
+        // 计算唯一缓存文件名（基于路径与最后修改时间）
+        const hash = crypto.createHash('md5').update(`${targetPath}_${stat.mtimeMs}`).digest('hex');
+        const thumbFile = path.resolve(THUMB_CACHE_DIR, `${hash}.jpg`);
+
+        // 1. 若磁盘已有生成好的缓存，秒级直接返回
+        if (fs.existsSync(thumbFile) && fs.statSync(thumbFile).size > 0) {
+            return sendThumb(thumbFile, res);
+        }
+
+        // 2. 服务端调用 ffmpeg 截取视频关键帧（高质量并限制分辨率 360px 宽度以提速）
+        const ffmpegArgs = [
+            '-ss', '00:00:03',
+            '-i', targetPath,
+            '-vframes', '1',
+            '-filter:v', 'scale=360:-1',
+            '-q:v', '3',
+            thumbFile,
+            '-y'
+        ];
+
+        const proc = spawn('ffmpeg', ffmpegArgs, { windowsHide: true });
+        let timedOut = false;
+        const timer = setTimeout(() => {
+            timedOut = true;
+            try { proc.kill(); } catch (e) {}
+        }, 8000);
+
+        proc.on('close', (code) => {
+            clearTimeout(timer);
+            if (timedOut) {
+                return res.status(504).send('Thumbnail generation timed out');
+            }
+            if (code === 0 && fs.existsSync(thumbFile) && fs.statSync(thumbFile).size > 0) {
+                return sendThumb(thumbFile, res);
+            }
+
+            // 如果从第 3 秒截图失败（比如视频不足 3 秒），尝试从第 0 秒重试
+            const retryArgs = [
+                '-ss', '00:00:00.1',
+                '-i', targetPath,
+                '-vframes', '1',
+                '-filter:v', 'scale=360:-1',
+                '-q:v', '3',
+                thumbFile,
+                '-y'
+            ];
+            const procRetry = spawn('ffmpeg', retryArgs, { windowsHide: true });
+            procRetry.on('close', (retryCode) => {
+                if (retryCode === 0 && fs.existsSync(thumbFile) && fs.statSync(thumbFile).size > 0) {
+                    return sendThumb(thumbFile, res);
+                }
+                res.status(500).send('Failed to generate thumbnail');
+            });
+            procRetry.on('error', () => {
+                res.status(500).send('ffmpeg not available');
+            });
+        });
+
+        proc.on('error', (err) => {
+            clearTimeout(timer);
+            res.status(500).send('ffmpeg execution error: ' + err.message);
+        });
+
+    } catch (err) {
+        res.status(500).send(err.message);
+    }
+};
+
+router.get('/thumbnail', handleThumbnail);
+router.get('/media/thumbnail', handleThumbnail);
 
 module.exports = router;

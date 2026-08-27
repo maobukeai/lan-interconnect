@@ -707,6 +707,12 @@
                 if (inst) await inst.refresh();
                 LanDiskUI.toast('文件列表已刷新', 'success');
             });
+            new LanDiskUI.PullToRefresh('#view-media', async () => {
+                if (typeof MediaTheaterComponent !== 'undefined' && MediaTheaterComponent.refresh) {
+                    await MediaTheaterComponent.refresh();
+                }
+                LanDiskUI.toast('影音资料库已刷新', 'success');
+            });
             new LanDiskUI.PullToRefresh('#view-tools', async () => {
                 if (viewInit.tools) {
                     ProcessMonitorComponent.load('process-list');

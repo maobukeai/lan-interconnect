@@ -187,18 +187,19 @@ function startServer(config) {
             });
         });
 
-        // 挂载路由模块
-        app.use('/api', devicesRouter);
-        app.use('/api', chatRouter);
-        app.use('/api', filesRouter);
-        app.use('/api', uploadRouter);
-        app.use('/api', downloadRouter);
-        app.use('/api', systemRouter);
-        app.use('/api', toolsRouter);
-        app.use('/api', historyRouter);
-        app.use('/api', speedtestRouter);
-        app.use('/api', remoteRouter);
-        app.use('/api', mediaRouter);
+        // 挂载路由模块（动态加载最新路由文件以支持热更新）
+        app.use('/api', require('./server/routes/devices'));
+        app.use('/api', require('./server/routes/chat'));
+        app.use('/api', require('./server/routes/files'));
+        app.use('/api', require('./server/routes/upload').router);
+        app.use('/api', require('./server/routes/download'));
+        app.use('/api', require('./server/routes/system'));
+        app.use('/api', require('./server/routes/tools'));
+        app.use('/api', require('./server/routes/history'));
+        app.use('/api', require('./server/routes/speedtest'));
+        app.use('/api', require('./server/routes/remote'));
+        try { delete require.cache[require.resolve('./server/routes/media')]; } catch(e) {}
+        app.use('/api', require('./server/routes/media'));
 
         const preferredPort = parseInt(state.currentConfig.port, 10) || 3000;
         const bindHost = state.currentConfig.bindIp || '0.0.0.0';

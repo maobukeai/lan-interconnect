@@ -382,27 +382,30 @@
     transform: translateX(-50%) translateY(0);
 }
 
-/* 断点续播浮动胶囊 */
+/* 断点续播浮动胶囊 (Apple Resume Capsule) */
 .ap-resume-toast {
     position: absolute;
-    bottom: 54px;
+    bottom: 56px;
     left: 50%;
     transform: translateX(-50%) translateY(10px);
-    background: rgba(15, 18, 24, 0.78);
+    background: rgba(15, 18, 24, 0.88);
     backdrop-filter: blur(28px) saturate(200%);
     -webkit-backdrop-filter: blur(28px) saturate(200%);
     border: 1px solid rgba(255, 255, 255, 0.28);
-    padding: 5px 10px 5px 14px;
+    padding: 5px 12px 5px 14px;
     border-radius: 9999px;
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 8px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-    z-index: 20;
+    z-index: 25;
     opacity: 0;
     visibility: hidden;
     transition: opacity 0.25s, transform 0.25s, visibility 0.25s;
     pointer-events: auto;
+    white-space: nowrap;
+    max-width: calc(100% - 24px);
+    box-sizing: border-box;
 }
 
 .ap-resume-toast.show {
@@ -416,10 +419,12 @@
     font-weight: 600;
     color: #ffffff;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .ap-resume-toast button#ap-btn-resume-action {
-    padding: 3px 10px;
+    padding: 4px 11px;
     border-radius: 9999px;
     background: linear-gradient(90deg, #0071e3, #38bdf8);
     border: none;
@@ -427,6 +432,11 @@
     font-size: 11px;
     font-weight: 700;
     cursor: pointer;
+    white-space: nowrap !important;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .ap-resume-toast button#ap-btn-resume-dismiss {
@@ -440,6 +450,7 @@
     place-items: center;
     font-size: 10px;
     cursor: pointer;
+    flex-shrink: 0;
 }
 
 /* ---------------- 4.1 外挂字幕系统 (Apple Cinematic Subtitles) ---------------- */
@@ -567,74 +578,120 @@
     width: 100%;
 }
 
-/* 极光流光进度条 */
+/* ---------------- 5. 极光流光进度条 (Apple Fluid Scrubber) ---------------- */
 .ap-progress-wrap {
     position: relative;
     width: 100%;
-    height: 22px;
+    height: 38px; /* 触控友好高度，确保手机端轻松命中 */
     display: flex;
     align-items: center;
     cursor: pointer;
-    touch-action: none;
+    touch-action: none !important;
     user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    padding: 0;
+    margin: -6px 0;
 }
 
+/* 进度条轨道 (默认 5px，交互/拖动中平滑扩张至 8px) */
 .ap-progress-track {
     position: relative;
     width: 100%;
-    height: 4px;
+    height: 5px;
     background: rgba(255, 255, 255, 0.22);
     border-radius: 9999px;
     overflow: visible;
-    transition: height 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: height 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.2s ease;
 }
 
 .ap-progress-wrap:hover .ap-progress-track,
+.ap-progress-wrap.is-dragging .ap-progress-track,
 .ap-progress-wrap.active .ap-progress-track {
-    height: 6px;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.32);
 }
 
+/* 缓冲层 */
 .ap-progress-buffer {
     position: absolute;
     top: 0;
     left: 0;
     height: 100%;
-    background: rgba(255, 255, 255, 0.32);
+    background: rgba(255, 255, 255, 0.35);
     border-radius: 9999px;
     width: 0%;
     pointer-events: none;
-    transition: width 0.2s ease;
+    transition: width 0.25s ease-out;
 }
 
+/* 已播放填充层 (Apple Vision 极光蓝渐变 + 发光) */
 .ap-progress-fill {
     position: absolute;
     top: 0;
     left: 0;
     height: 100%;
-    background: linear-gradient(90deg, #007aff 0%, #5ac8fa 100%);
-    box-shadow: 0 0 12px rgba(90, 200, 250, 0.65);
+    background: linear-gradient(90deg, #0a84ff 0%, #38bdf8 50%, #5ac8fa 100%);
+    box-shadow: 0 0 14px rgba(56, 189, 248, 0.7);
     border-radius: 9999px;
     width: 0%;
     pointer-events: none;
 }
 
+/* 极简发光滑块 (Apple iOS 原生质感，常态常显，拖动时弹性放大并伴随光晕) */
 .ap-progress-thumb {
     position: absolute;
     top: 50%;
     left: 0%;
-    transform: translate(-50%, -50%) scale(0);
-    width: 13px;
-    height: 13px;
+    transform: translate(-50%, -50%) scale(1);
+    width: 14px;
+    height: 14px;
     background: #ffffff;
     border-radius: 50%;
-    box-shadow: 0 0 12px rgba(90, 200, 250, 0.85), 0 2px 6px rgba(0, 0, 0, 0.5);
-    transition: transform 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.55), 0 0 10px rgba(56, 189, 248, 0.8);
+    transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.18s ease;
     pointer-events: none;
+    z-index: 5;
 }
 
 .ap-progress-wrap:hover .ap-progress-thumb,
+.ap-progress-wrap.is-dragging .ap-progress-thumb,
 .ap-progress-wrap.active .ap-progress-thumb {
-    transform: translate(-50%, -50%) scale(1);
+    transform: translate(-50%, -50%) scale(1.5);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.65), 0 0 16px rgba(56, 189, 248, 1);
+}
+
+/* 拖拽时间悬浮气泡 (Apple Floating Time Capsule) */
+.ap-progress-tooltip {
+    position: absolute;
+    bottom: 28px;
+    left: 0%;
+    transform: translateX(-50%) translateY(4px);
+    background: rgba(15, 18, 24, 0.88);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: #ffffff;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    padding: 3px 10px;
+    border-radius: 9999px;
+    white-space: nowrap;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), 0 0 12px rgba(10, 132, 255, 0.35);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.15s ease, transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.15s;
+    z-index: 10;
+}
+
+.ap-progress-wrap:hover .ap-progress-tooltip,
+.ap-progress-wrap.is-dragging .ap-progress-tooltip {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
 }
 
 
@@ -661,21 +718,104 @@
     flex-shrink: 0;
 }
 
-/* 嵌入式/非全屏模式下：默认隐藏多余次要按钮（上一集、比例、滤镜），保证在任何手机竖屏下 100% 不溢出 */
+/* 响应式控制栏排布 */
 .ap-btn-desktop-only {
-    display: none !important;
+    display: inline-flex;
 }
 
-/* 仅在真全屏或大屏（宽屏 >= 768px）下优雅展开全套按钮 */
-.player-stage-box:fullscreen .ap-btn-desktop-only,
-.player-stage-box:-webkit-full-screen .ap-btn-desktop-only,
-.player-stage-box.is-fullscreen .ap-btn-desktop-only {
-    display: inline-flex !important;
+@media (max-width: 480px) {
+    .ap-btn-desktop-only {
+        display: none !important;
+    }
 }
 
-@media (min-width: 768px) {
-    .player-stage-box:not(.is-fullscreen) .ap-btn-desktop-only {
-        display: inline-flex !important;
+/* 手机端与小屏专属紧凑适配 (宽度 <= 640px) */
+@media (max-width: 640px) {
+    .player-controls-overlay {
+        padding: 8px 10px !important;
+    }
+    .player-ctrl-row {
+        gap: 4px !important;
+    }
+    .player-ctrl-left {
+        gap: 4px !important;
+    }
+    .player-ctrl-right {
+        gap: 4px !important;
+    }
+    .player-time-display {
+        font-size: 10px !important;
+        padding: 2px 5px !important;
+        border-radius: 6px !important;
+        letter-spacing: -0.2px !important;
+    }
+    .player-btn-icon {
+        width: 28px !important;
+        height: 28px !important;
+    }
+    .player-main-play-btn {
+        width: 32px !important;
+        height: 32px !important;
+    }
+    .player-btn-pill {
+        height: 26px !important;
+        padding: 0 7px !important;
+        font-size: 10.5px !important;
+        gap: 3px !important;
+    }
+    .player-btn-pill svg {
+        width: 11px !important;
+        height: 11px !important;
+    }
+    .ap-menu-popover {
+        bottom: 54px !important;
+        right: 8px !important;
+        min-width: 135px !important;
+        max-width: calc(100vw - 16px) !important;
+        padding: 4px !important;
+        border-radius: 14px !important;
+    }
+    .ap-popover-item {
+        padding: 7px 10px !important;
+        font-size: 12px !important;
+    }
+    .ap-resume-toast {
+        bottom: 54px !important;
+        padding: 4px 8px 4px 10px !important;
+        gap: 6px !important;
+    }
+    .ap-resume-toast span {
+        font-size: 10.5px !important;
+    }
+    .ap-resume-toast button#ap-btn-resume-action {
+        padding: 3px 8px !important;
+        font-size: 10px !important;
+    }
+}
+
+/* 手机竖屏 (<= 520px): 针对嵌入式/非全屏小视窗精细图标化，彻底消除溢出截断 */
+@media (max-width: 520px) {
+    .player-stage-box:not(.is-fullscreen) .player-btn-pill .ap-btn-label {
+        display: none !important;
+    }
+    .player-stage-box:not(.is-fullscreen) .player-btn-pill {
+        height: 26px !important;
+        min-width: 26px !important;
+        padding: 0 6px !important;
+        border-radius: 9999px !important;
+        gap: 0 !important;
+    }
+    .player-stage-box:not(.is-fullscreen) #ap-btn-speed {
+        padding: 0 6px !important;
+        font-size: 10.5px !important;
+    }
+    .player-stage-box:not(.is-fullscreen) .player-btn-pill svg {
+        width: 13px !important;
+        height: 13px !important;
+        margin: 0 auto !important;
+    }
+    .player-stage-box:not(.is-fullscreen) .player-ctrl-right {
+        gap: 4px !important;
     }
 }
 
@@ -779,6 +919,98 @@
 .player-btn-fullscreen:hover {
     background: rgba(0, 122, 255, 0.5);
     border-color: rgba(0, 122, 255, 0.75);
+}
+
+/* ---------------- 5.2 Apple VisionOS 悬浮弹窗选项菜单 (Floating Popover Menu) ---------------- */
+.ap-menu-popover {
+    position: absolute;
+    bottom: 64px;
+    right: 16px;
+    background: rgba(18, 22, 32, 0.88);
+    backdrop-filter: blur(32px) saturate(200%);
+    -webkit-backdrop-filter: blur(32px) saturate(200%);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 18px;
+    padding: 6px;
+    min-width: 160px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.65), 0 0 20px rgba(10, 132, 255, 0.25);
+    z-index: 30;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(8px) scale(0.95);
+    transition: opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1), transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), visibility 0.18s;
+    pointer-events: none;
+}
+
+.ap-menu-popover.open {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+}
+
+.ap-popover-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--apple-text-muted, #94a3b8);
+    padding: 6px 10px 4px 10px;
+    letter-spacing: 0.2px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    margin-bottom: 4px;
+}
+
+.ap-popover-list {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    max-height: 240px;
+    overflow-y: auto;
+    scrollbar-width: none;
+}
+
+.ap-popover-list::-webkit-scrollbar { display: none; }
+
+.ap-popover-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 12px;
+    border-radius: 10px;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.14s ease;
+    width: 100%;
+}
+
+.ap-popover-item:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #ffffff;
+}
+
+.ap-popover-item:active {
+    transform: scale(0.97);
+}
+
+.ap-popover-item.active {
+    background: rgba(10, 132, 255, 0.25);
+    color: #38bdf8;
+    font-weight: 700;
+}
+
+.ap-popover-item-check {
+    width: 14px;
+    height: 14px;
+    color: #38bdf8;
+    display: none;
+}
+
+.ap-popover-item.active .ap-popover-item-check {
+    display: block;
 }
 
 /* ---------------- 6. 全屏内嵌半透毛玻璃抽屉 ---------------- */
@@ -1146,4 +1378,155 @@ body.theme-light .player-range-pill.active {
     padding: 0 4px 10px 4px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     margin-bottom: 8px;
+}
+
+/* ==========================================================================
+   9. 移动端/手机竖屏专属体验深度调优 (Mobile Player Master Experience)
+   ========================================================================== */
+@media (max-width: 680px) {
+    /* 1. 外层导航栏紧凑纯净 */
+    .player-nav-header {
+        margin-bottom: 8px !important;
+        gap: 8px !important;
+    }
+
+    #btn-player-back {
+        padding: 5px 10px !important;
+        font-size: 12.5px !important;
+        height: 32px !important;
+        flex-shrink: 0 !important;
+    }
+
+    .player-nav-title {
+        font-size: 13px !important;
+        font-weight: 600 !important;
+        text-align: left !important;
+        margin-left: 4px !important;
+    }
+
+    #btn-player-pip {
+        display: none !important;
+    }
+
+    /* 2. 视频视窗微圆角与阴影 */
+    .player-stage-container {
+        margin-bottom: 10px !important;
+    }
+
+    .player-stage-box:not(.is-fullscreen) {
+        border-radius: 14px !important;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35) !important;
+    }
+
+    /* 3. 锁屏按钮：非全屏小窗状态下彻底隐藏，全屏观影时才展示 */
+    .player-stage-box:not(.is-fullscreen) .ap-lock-btn {
+        display: none !important;
+    }
+
+    /* 4. 视频内部顶部浮层精炼防溢出 */
+    .player-controls-overlay {
+        padding: 10px 12px !important;
+    }
+
+    .player-ctrl-top {
+        gap: 6px !important;
+    }
+
+    .player-stage-box:not(.is-fullscreen) #ap-btn-top-back {
+        display: none !important; /* 小窗下外层已有大返回按钮，避免重复 */
+    }
+
+    .player-ctrl-title {
+        font-size: 12.5px !important;
+        max-width: 58vw !important;
+    }
+
+    /* 小窗状态下隐藏内部 4K HDR 徽章，防止与长标题重叠打架 */
+    .player-stage-box:not(.is-fullscreen) .ap-status-badge {
+        display: none !important;
+    }
+
+    .player-top-icon-btn {
+        width: 30px !important;
+        height: 30px !important;
+    }
+
+    /* 5. 视频底部控制栏极致舒展排布 */
+    .player-ctrl-bottom {
+        gap: 5px !important;
+    }
+
+    .ap-progress-wrap {
+        height: 28px !important;
+        margin: -4px 0 !important;
+    }
+
+    .player-ctrl-row {
+        gap: 6px !important;
+    }
+
+    .player-ctrl-left {
+        gap: 6px !important;
+    }
+
+    .player-ctrl-right {
+        gap: 6px !important;
+    }
+
+    .player-btn-icon {
+        width: 30px !important;
+        height: 30px !important;
+    }
+
+    .player-main-play-btn {
+        width: 34px !important;
+        height: 34px !important;
+    }
+
+    .player-time-display {
+        font-size: 10px !important;
+        padding: 3px 6px !important;
+        border-radius: 6px !important;
+        letter-spacing: 0px !important;
+    }
+
+    .player-btn-pill {
+        height: 27px !important;
+        padding: 0 8px !important;
+        font-size: 11px !important;
+    }
+
+    .player-btn-fullscreen {
+        padding: 0 9px !important;
+    }
+
+    /* 6. 下方详情卡片与选集卡片体验 */
+    .player-info-section {
+        gap: 10px !important;
+    }
+
+    .player-main-title {
+        font-size: 14px !important;
+        line-height: 1.4 !important;
+    }
+
+    .player-episode-card {
+        width: 102px !important;
+        padding: 8px 10px !important;
+        border-radius: 10px !important;
+    }
+
+    .player-ep-idx {
+        font-size: 10px !important;
+        margin-bottom: 2px !important;
+    }
+
+    .player-ep-name {
+        font-size: 11.5px !important;
+    }
+
+    .player-range-pill {
+        padding: 3px 10px !important;
+        font-size: 11px !important;
+    }
 }
