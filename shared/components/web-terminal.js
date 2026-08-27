@@ -16,9 +16,12 @@
             this.getPin = config.getPin || (() => typeof localStorage !== 'undefined' ? (localStorage.getItem('lan_disk_pin') || '') : '');
             this.getCwd = config.getCwd || (() => 'C:\\');
             this.getApiUrl = config.getApiUrl || ((p) => {
-                if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
-                    const baseUrl = window.currentServerUrl || 'http://localhost:3000';
-                    return baseUrl.replace(/\/$/, '') + p;
+                if (typeof global.LanDiskAuth !== 'undefined' && global.LanDiskAuth.api) {
+                    return global.LanDiskAuth.api(p);
+                }
+                if (typeof window !== 'undefined') {
+                    const baseUrl = window.currentServerUrl || (typeof localStorage !== 'undefined' && localStorage.getItem('landisk_custom_server')) || '';
+                    if (baseUrl) return baseUrl.replace(/\/$/, '') + (p.startsWith('/') ? p : '/' + p);
                 }
                 return p;
             });

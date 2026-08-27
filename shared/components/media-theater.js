@@ -19,9 +19,12 @@
             this.chipRow = typeof config.chipRow === 'string' ? document.querySelector(config.chipRow) : (document.getElementById('media-folders-chip-row') || config.chipRow);
             this.breadcrumbContainer = typeof config.breadcrumbContainer === 'string' ? document.querySelector(config.breadcrumbContainer) : (document.getElementById('media-breadcrumb-container') || config.breadcrumbContainer);
             this.getApiUrl = config.getApiUrl || ((p) => {
-                if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
-                    const baseUrl = window.currentServerUrl || 'http://localhost:3000';
-                    return baseUrl.replace(/\/$/, '') + p;
+                if (typeof global.LanDiskAuth !== 'undefined' && global.LanDiskAuth.api) {
+                    return global.LanDiskAuth.api(p);
+                }
+                if (typeof window !== 'undefined') {
+                    const baseUrl = window.currentServerUrl || (typeof localStorage !== 'undefined' && localStorage.getItem('landisk_custom_server')) || '';
+                    if (baseUrl) return baseUrl.replace(/\/$/, '') + (p.startsWith('/') ? p : '/' + p);
                 }
                 return p;
             });

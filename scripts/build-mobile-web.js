@@ -1,4 +1,4 @@
-﻿const fs = require('fs');
+const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -38,5 +38,13 @@ assets.forEach(a => {
         fs.copyFileSync(p, path.join(DIST, a));
     }
 });
+
+// 4. 修复 Android Gradle Java 17 兼容性
+const capGradle = path.join(ROOT, 'android', 'app', 'capacitor.build.gradle');
+if (fs.existsSync(capGradle)) {
+    let content = fs.readFileSync(capGradle, 'utf8');
+    content = content.replace(/VERSION_21/g, 'VERSION_17');
+    fs.writeFileSync(capGradle, content, 'utf8');
+}
 
 console.log('[Mobile Build] Mobile web bundle successfully created in mobile-dist!');

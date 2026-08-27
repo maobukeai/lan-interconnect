@@ -3770,3 +3770,30 @@ input[type="range"].apple-range::-webkit-slider-thumb:active {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
 }
+
+@keyframes pulseDot {
+    0%, 100% { transform: scale(0.85); opacity: 0.4; }
+    50% { transform: scale(1.25); opacity: 1; }
+}
+
+/* 移动端 App 专属安全区与手感优化 */
+@media (max-width: 768px) {
+    header.web-header {
+        padding-top: max(12px, env(safe-area-inset-top));
+        padding-left: max(14px, env(safe-area-inset-left));
+        padding-right: max(14px, env(safe-area-inset-right));
+    }
+    .apple-dock {
+        padding-bottom: max(8px, env(safe-area-inset-bottom));
+        bottom: 12px;
+    }
+    .web-container {
+        padding-left: max(12px, env(safe-area-inset-left));
+        padding-right: max(12px, env(safe-area-inset-right));
+        padding-bottom: calc(110px + env(safe-area-inset-bottom));
+    }
+    .apple-modal-card {
+        margin: 12px;
+        max-width: calc(100vw - 24px);
+    }
+}

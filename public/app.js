@@ -9,6 +9,7 @@
     const $ = (sel) => document.querySelector(sel);
     const I = (name, size) => window.Icons ? Icons.render(name, size) : '';
     const auth = () => window.LanDiskAuth || null;
+    const api = (p) => (auth() && auth().api) ? auth().api(p) : (window.api ? window.api(p) : p);
     const fmtBytes = (b) => {
         if (!+b) return '0 B';
         const k = 1024, sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -66,7 +67,7 @@
     async function verifyPin() {
         const pin = $('#pin-input').value.trim();
         try {
-            const res = await fetch('/api/verify', { method: 'POST', headers: { 'x-pin': pin, 'x-qr-token': (auth() && auth().getToken()) || '' } });
+            const res = await fetch(api('/api/verify'), { method: 'POST', headers: { 'x-pin': pin, 'x-qr-token': (auth() && auth().getToken()) || '' } });
             if (res.status === 429) { LanDiskUI.toast('尝试过于频繁，请稍后再试', 'error'); return; }
             if (res.ok) {
                 try { localStorage.setItem('lan_disk_pin', pin); } catch (e) {}
@@ -76,7 +77,7 @@
                 setTimeout(() => { $('#login-error').style.display = 'none'; }, 2500);
             }
         } catch (e) {
-            LanDiskUI.toast('连接服务器失败', 'error');
+            LanDiskUI.toast('连接服务器失败，请检查网络或点击雷达重新扫描', 'error');
         }
     }
 
@@ -248,7 +249,7 @@
         $('#btn-dash-quick-mute')?.addEventListener('click', async () => {
             try {
                 const headers = (auth() && auth().authHeaders) ? auth().authHeaders({ 'Content-Type': 'application/json' }) : { 'Content-Type': 'application/json' };
-                const res = await fetch('/api/remote/volume', {
+                const res = await fetch(api('/api/remote/volume'), {
                     method: 'POST',
                     headers,
                     body: JSON.stringify({ mute: 'toggle' })
@@ -268,7 +269,7 @@
             if (ok) {
                 try {
                     const headers = (auth() && auth().authHeaders) ? auth().authHeaders({ 'Content-Type': 'application/json' }) : { 'Content-Type': 'application/json' };
-                    const res = await fetch('/api/remote/power', {
+                    const res = await fetch(api('/api/remote/power'), {
                         method: 'POST',
                         headers,
                         body: JSON.stringify({ action: 'lock' })
@@ -291,8 +292,8 @@
         renderDashRemoteWidget();
         try {
             const [sysRes, devRes] = await Promise.all([
-                fetch('/api/sys-info', { headers: auth().authHeaders() }),
-                fetch('/api/devices', { headers: auth().authHeaders() })
+                fetch(api('/api/sys-info'), { headers: auth().authHeaders() }),
+                fetch(api('/api/devices'), { headers: auth().authHeaders() })
             ]);
 
             if (sysRes.ok) {
@@ -573,7 +574,7 @@
                 try {
                     btnClean.disabled = true;
                     btnClean.textContent = '正在清理…';
-                    const res = await fetch('/api/tools/clean-storage', {
+                    const res = await fetch(api('/api/tools/clean-storage'), {
                         method: 'POST',
                         headers: auth().authHeaders()
                     });
@@ -649,7 +650,7 @@
             const pingCount = 3;
             for (let i = 0; i < pingCount; i++) {
                 const t0 = performance.now();
-                await fetch('/api/speedtest/ping?t=' + t0, { headers: auth().authHeaders(), cache: 'no-store' });
+                await fetch(api('/api/speedtest/ping?t=' + t0), { headers: auth().authHeaders(), cache: 'no-store' });
                 const rtt = performance.now() - t0;
                 pingTotal += rtt;
                 numDisplay.textContent = Math.round(rtt);
@@ -665,7 +666,7 @@
             unitDisplay.textContent = 'MB/s';
             setGaugeProgress(45);
             const dlT0 = performance.now();
-            const dlRes = await fetch('/api/speedtest/download?size=6', { headers: auth().authHeaders(), cache: 'no-store' });
+            const dlRes = await fetch(api('/api/speedtest/download?size=6'), { headers: auth().authHeaders(), cache: 'no-store' });
             const dlBuf = await dlRes.arrayBuffer();
             const dlDurationSec = Math.max(0.01, (performance.now() - dlT0) / 1000);
             const finalDlMBs = (dlBuf.byteLength / 1024 / 1024) / dlDurationSec;
@@ -806,7 +807,7 @@
         }, { passive: true });
     }
 
-    /* ---------- 局域网雷达与连接器 (Mobile & Web Radar) ---------- */
+    /* ---------- 局域网高速雷达与连接器 (Mobile & Web Radar Engine) ---------- */
     function initRadar() {
         const modal = $('#radar-modal');
         const btnOpen = $('#btn-radar-modal');
@@ -817,19 +818,32 @@
         const listEl = $('#radar-device-list');
         const labelEl = $('#current-connected-label');
         const btnLabel = $('#radar-btn-label');
+        const statusEl = $('#radar-scan-status');
+        const subnetSelect = $('#radar-subnet-select');
 
-        const savedServer = localStorage.getItem('landisk_custom_server');
+        const isAppContainer = typeof window !== 'undefined' && (
+            window.Capacitor ||
+            window.location.protocol === 'file:' ||
+            (window.location.hostname === 'localhost' && window.location.port !== '3000' && window.location.port !== '3001' && window.location.port !== '3002' && window.location.port !== '3003' && window.location.port !== '3999')
+        );
+
+        let savedServer = (auth() && auth().getServerUrl) ? auth().getServerUrl() : (localStorage.getItem('landisk_custom_server') || '');
         if (savedServer) {
             window.currentServerUrl = savedServer;
-            if (labelEl) labelEl.textContent = `已连接: ${savedServer.replace(/^https?:\/\//, '')}`;
-            if (btnLabel) btnLabel.textContent = savedServer.replace(/^https?:\/\//, '');
+            const displayHost = savedServer.replace(/^https?:\/\//, '');
+            if (labelEl) labelEl.textContent = `当前已绑定: ${displayHost}`;
+            if (btnLabel) btnLabel.textContent = displayHost.length > 18 ? displayHost.substring(0, 16) + '…' : displayHost;
+        } else if (isAppContainer) {
+            if (labelEl) labelEl.textContent = '未连接电脑 (请扫描雷达或输入 IP)';
+            if (btnLabel) btnLabel.textContent = '雷达连电脑';
         }
 
-        if (!modal || !btnOpen) return;
+        if (!modal) return;
 
-        btnOpen.addEventListener('click', () => {
+        btnOpen && btnOpen.addEventListener('click', () => {
             modal.style.display = 'flex';
             if (ipInput && savedServer) ipInput.value = savedServer.replace(/^https?:\/\//, '');
+            hydrateIcons();
         });
 
         btnClose && btnClose.addEventListener('click', () => {
@@ -845,73 +859,159 @@
             if (!/^https?:\/\//i.test(fullUrl)) fullUrl = 'http://' + fullUrl;
             fullUrl = fullUrl.replace(/\/$/, '');
 
-            localStorage.setItem('landisk_custom_server', fullUrl);
-            window.currentServerUrl = fullUrl;
-            LanDiskUI.toast(`已切换连接到: ${fullUrl}`, 'success');
-            setTimeout(() => window.location.reload(), 500);
+            if (auth() && auth().setServerUrl) {
+                auth().setServerUrl(fullUrl);
+            } else {
+                localStorage.setItem('landisk_custom_server', fullUrl);
+                window.currentServerUrl = fullUrl;
+            }
+            LanDiskUI.toast(`已成功连接到电脑: ${fullUrl}`, 'success');
+            modal.style.display = 'none';
+            setTimeout(() => window.location.reload(), 300);
         };
 
         btnManual && btnManual.addEventListener('click', () => {
             const val = ipInput ? ipInput.value.trim() : '';
-            if (!val) return LanDiskUI.toast('请输入电脑 IP', 'error');
+            if (!val) return LanDiskUI.toast('请输入电脑 IP 地址', 'error');
             connectToServer(val);
         });
 
-        btnScan && btnScan.addEventListener('click', async () => {
-            if (LanDiskUI.Haptic) LanDiskUI.Haptic.light();
-            listEl.innerHTML = '<div class="subtle" style="text-align:center; padding:16px 0; font-size:12px;">正在探测局域网中的猫步互联电脑……</div>';
+        async function triggerRadarScan(silent = false) {
+            if (!silent && LanDiskUI.Haptic) LanDiskUI.Haptic.light();
+            if (statusEl) statusEl.textContent = '⚡ 正在全网并发探测局域网电脑……';
+            listEl.innerHTML = `
+                <div class="subtle" style="text-align:center; padding:18px 0; font-size:12px; display:flex; align-items:center; justify-content:center; gap:8px;">
+                    <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--apple-system-blue); animation:pulseDot 1.2s infinite ease-in-out;"></span>
+                    雷达正在高速扫描局域网网段与端口……
+                </div>
+            `;
 
-            const found = [];
+            const foundMap = new Map();
             const ports = [3000, 3001, 3002, 3003, 3999];
-            const hosts = ['localhost', '127.0.0.1'];
-            
-            if (window.location.hostname && !hosts.includes(window.location.hostname)) {
-                hosts.unshift(window.location.hostname);
+
+            const hostPool = new Set(['127.0.0.1', 'localhost']);
+            if (savedServer) {
+                try { hostPool.add(new URL(savedServer).hostname); } catch (e) {}
+            }
+            if (window.location.hostname && window.location.hostname !== 'localhost') {
+                hostPool.add(window.location.hostname);
             }
 
-            const promises = [];
-            hosts.forEach(host => {
-                ports.forEach(port => {
-                    const testUrl = `http://${host}:${port}`;
-                    const p = fetch(`${testUrl}/api/devices`, { method: 'GET', signal: AbortSignal.timeout(1500) })
-                        .then(r => r.ok ? r.json() : null)
-                        .then(data => {
-                            if (data) {
-                                found.push({ url: testUrl, name: `💻 猫步互联电脑 (${host}:${port})` });
-                            }
-                        })
-                        .catch(() => {});
-                    promises.push(p);
+            const selectedSubnet = subnetSelect ? subnetSelect.value : 'auto';
+            const subnetsToScan = [];
+            if (selectedSubnet === 'auto') {
+                subnetsToScan.push('192.168.0', '192.168.1', '192.168.31', '192.168.50', '192.168.2', '10.0.0', '172.20.10');
+            } else {
+                subnetsToScan.push(selectedSubnet);
+            }
+
+            // 高概率主机优先段
+            const priorityHostIds = [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 50, 88, 120, 150, 188, 200, 1];
+            for (const sub of subnetsToScan) {
+                for (const hid of priorityHostIds) {
+                    hostPool.add(`${sub}.${hid}`);
+                }
+            }
+
+            const hostList = Array.from(hostPool);
+            const batchSize = 35;
+
+            function renderFoundCards() {
+                if (foundMap.size === 0) return;
+                listEl.innerHTML = Array.from(foundMap.values()).map(item => `
+                    <div class="row" style="justify-content:space-between; align-items:center; padding:11px 14px; background:var(--apple-bg-card); border:1px solid var(--apple-border); border-radius:14px; cursor:pointer; box-shadow:var(--shadow-1); transition:transform 0.2s;" data-connect-url="${item.url}">
+                        <div class="row" style="gap:10px; align-items:center;">
+                            <div style="width:34px; height:34px; border-radius:10px; background:rgba(52,199,89,0.15); color:var(--apple-system-green); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                                <span data-icon="monitor" data-icon-size="18"></span>
+                            </div>
+                            <div>
+                                <div style="font-size:13.5px; font-weight:600; letter-spacing:-0.01em;">${escapeHtml(item.name)}</div>
+                                <div style="font-size:11.5px; color:var(--apple-system-blue); font-family:monospace;">${escapeHtml(item.url)}</div>
+                            </div>
+                        </div>
+                        <button class="apple-btn apple-btn-primary" style="padding:6px 14px; font-size:12px; border-radius:10px; font-weight:600;">一键连接</button>
+                    </div>
+                `).join('');
+
+                hydrateIcons();
+
+                listEl.querySelectorAll('[data-connect-url]').forEach(card => {
+                    card.addEventListener('click', () => {
+                        connectToServer(card.getAttribute('data-connect-url'));
+                    });
                 });
-            });
+            }
 
-            await Promise.all(promises);
+            async function probeUrl(targetUrl) {
+                try {
+                    const r = await fetch(`${targetUrl}/api/sys-info`, {
+                        method: 'GET',
+                        headers: { 'Accept': 'application/json' },
+                        signal: AbortSignal.timeout(800)
+                    });
+                    if (r.ok) {
+                        const data = await r.json().catch(() => ({}));
+                        const osName = data.os ? `${data.os}` : '猫步互联电脑';
+                        const cpuName = data.cpu ? data.cpu.split('@')[0].trim() : '';
+                        const displayName = `💻 ${osName} ${cpuName ? '(' + cpuName + ')' : ''}`;
+                        if (!foundMap.has(targetUrl)) {
+                            foundMap.set(targetUrl, { url: targetUrl, name: displayName });
+                            renderFoundCards();
+                            if (statusEl) statusEl.textContent = `🎯 已发现 ${foundMap.size} 台在线电脑！`;
+                        }
+                        return;
+                    }
+                } catch (e) {}
 
-            if (!found.length) {
+                try {
+                    const r2 = await fetch(`${targetUrl}/api/devices`, {
+                        method: 'GET',
+                        signal: AbortSignal.timeout(600)
+                    });
+                    if (r2.ok) {
+                        if (!foundMap.has(targetUrl)) {
+                            foundMap.set(targetUrl, { url: targetUrl, name: `💻 猫步互联电脑 (${targetUrl.replace(/^https?:\/\//, '')})` });
+                            renderFoundCards();
+                            if (statusEl) statusEl.textContent = `🎯 已发现 ${foundMap.size} 台在线电脑！`;
+                        }
+                    }
+                } catch (e2) {}
+            }
+
+            const tasks = [];
+            for (const h of hostList) {
+                for (const p of ports) {
+                    tasks.push(`http://${h}:${p}`);
+                }
+            }
+
+            for (let i = 0; i < tasks.length; i += batchSize) {
+                const chunk = tasks.slice(i, i + batchSize);
+                await Promise.all(chunk.map(url => probeUrl(url)));
+                if (foundMap.size > 0 && i > 100) break; // 已发现至少一个则加速完成
+            }
+
+            if (foundMap.size === 0) {
+                if (statusEl) statusEl.textContent = '未扫描到其他在线电脑';
                 listEl.innerHTML = `
-                    <div class="subtle" style="text-align:center; padding:12px 0; font-size:12px;">
-                        未探测到其他电脑，可在上方直接输入电脑显示的 IP 进行直连
+                    <div class="subtle" style="text-align:center; padding:16px 8px; font-size:12px; line-height:1.6;">
+                        未探测到在线电脑。请确保电脑端已打开「猫步互联 Pro」，<br>在上方直接输入电脑显示的 IP 进行直连。
                     </div>
                 `;
-                return;
+            } else {
+                if (statusEl) statusEl.textContent = `🎉 扫描完成，共发现 ${foundMap.size} 台在线电脑`;
             }
+        }
 
-            listEl.innerHTML = found.map(item => `
-                <div class="row" style="justify-content:space-between; padding:10px 14px; background:var(--apple-bg-card); border:1px solid var(--apple-border); border-radius:12px; cursor:pointer;" data-connect-url="${item.url}">
-                    <div>
-                        <div style="font-size:13.5px; font-weight:600;">${item.name}</div>
-                        <div style="font-size:11.5px; color:var(--apple-system-blue);">${item.url}</div>
-                    </div>
-                    <button class="apple-btn apple-btn-primary" style="padding:4px 10px; font-size:11.5px; border-radius:8px;">连接</button>
-                </div>
-            `).join('');
+        btnScan && btnScan.addEventListener('click', () => triggerRadarScan(false));
+        if (subnetSelect) {
+            subnetSelect.addEventListener('change', () => triggerRadarScan(false));
+        }
 
-            listEl.querySelectorAll('[data-connect-url]').forEach(card => {
-                card.addEventListener('click', () => {
-                    connectToServer(card.getAttribute('data-connect-url'));
-                });
-            });
-        });
+        window.triggerAppRadar = () => {
+            modal.style.display = 'flex';
+            triggerRadarScan(true);
+        };
     }
 
     /* ---------- 启动 ---------- */
@@ -932,9 +1032,30 @@
             textTitle: '#text-title'
         });
 
-        // 静默校验登录态（扫码 token / 已存 PIN）
+        const isAppContainer = typeof window !== 'undefined' && (
+            window.Capacitor ||
+            window.location.protocol === 'file:' ||
+            (window.location.hostname === 'localhost' && window.location.port !== '3000' && window.location.port !== '3001' && window.location.port !== '3002' && window.location.port !== '3003' && window.location.port !== '3999')
+        );
+
+        const currentServer = (auth() && auth().getServerUrl) ? auth().getServerUrl() : (localStorage.getItem('landisk_custom_server') || '');
+
+        // 在独立移动端 App 且尚未绑定任何服务器 IP 时，直接弹出局域网雷达引导
+        if (isAppContainer && !currentServer) {
+            $('#login-overlay').style.display = 'none';
+            if (window.triggerAppRadar) {
+                window.triggerAppRadar();
+            }
+            return;
+        }
+
+        // 静默校验登录态（扫码 token / 已存 PIN / 免密）
         try {
-            const res = await fetch('/api/verify', { method: 'POST', headers: auth().authHeaders() });
+            const res = await fetch(api('/api/verify'), {
+                method: 'POST',
+                headers: auth().authHeaders(),
+                signal: AbortSignal.timeout(3000)
+            });
             if (res.ok) {
                 enterApp();
             } else {
@@ -942,16 +1063,21 @@
                 $('#pin-input').focus();
             }
         } catch (e) {
-            $('#login-overlay').style.display = 'flex';
+            if (isAppContainer) {
+                LanDiskUI.toast('无法连通电脑端，请检查 Wi-Fi 或点击雷达重新扫描', 'info', 4000);
+                if (window.triggerAppRadar) window.triggerAppRadar();
+            } else {
+                $('#login-overlay').style.display = 'flex';
+            }
         }
 
         // PWA 横幅
-        if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && !window.matchMedia('(display-mode: standalone)').matches) {
+        if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && !window.matchMedia('(display-mode: standalone)').matches && !isAppContainer) {
             LanDiskUI.toast('添加到主屏幕，获得原生 App 体验', 'info', 4000);
         }
 
         // Service Worker：离线与视频秒播缓存
-        if ('serviceWorker' in navigator) {
+        if ('serviceWorker' in navigator && !isAppContainer) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('/sw.js').catch(() => {});
             });

@@ -41,7 +41,57 @@
         return parts.length ? '?' + parts.join('&') : '';
     }
 
-    global.LanDiskAuth = { getPin, getToken, hasCredentials, authHeaders, authQuery };
+    function getServerUrl() {
+        if (typeof window !== 'undefined') {
+            if (window.currentServerUrl) return window.currentServerUrl.replace(/\/$/, '');
+            try {
+                const saved = localStorage.getItem('landisk_custom_server');
+                if (saved) {
+                    window.currentServerUrl = saved;
+                    return saved.replace(/\/$/, '');
+                }
+            } catch (e) {}
+            // 如果在浏览器通过常规 http 访问，默认使用当前 origin
+            if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+                if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+                    return window.location.origin;
+                }
+                if (window.location.port && window.location.port !== '80' && window.location.port !== '443') {
+                    return window.location.origin;
+                }
+            }
+        }
+        return '';
+    }
+
+    function setServerUrl(url) {
+        if (typeof window !== 'undefined') {
+            if (!url) {
+                window.currentServerUrl = '';
+                try { localStorage.removeItem('landisk_custom_server'); } catch (e) {}
+            } else {
+                let clean = url.trim();
+                if (!/^https?:\/\//i.test(clean)) clean = 'http://' + clean;
+                clean = clean.replace(/\/$/, '');
+                window.currentServerUrl = clean;
+                try { localStorage.setItem('landisk_custom_server', clean); } catch (e) {}
+            }
+        }
+    }
+
+    function api(endpoint) {
+        if (!endpoint) return '';
+        const base = getServerUrl();
+        if (base) {
+            return base + (endpoint.startsWith('/') ? endpoint : '/' + endpoint);
+        }
+        return endpoint;
+    }
+
+    global.LanDiskAuth = { getPin, getToken, hasCredentials, authHeaders, authQuery, getServerUrl, setServerUrl, api };
+    if (typeof window !== 'undefined') {
+        window.api = api;
+    }
 
     // 全局 HTML 转义，防止文件名/设备信息等注入 innerHTML
     global.escapeHtml = global.escapeHtml || function (str) {

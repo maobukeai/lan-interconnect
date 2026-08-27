@@ -32,9 +32,12 @@
         }
 
         getApiUrl(endpoint) {
-            if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
-                const baseUrl = window.currentServerUrl || 'http://localhost:3000';
-                return baseUrl.replace(/\/$/, '') + endpoint;
+            if (typeof global.LanDiskAuth !== 'undefined' && global.LanDiskAuth.api) {
+                return global.LanDiskAuth.api(endpoint);
+            }
+            if (typeof window !== 'undefined') {
+                const baseUrl = window.currentServerUrl || (typeof localStorage !== 'undefined' && localStorage.getItem('landisk_custom_server')) || '';
+                if (baseUrl) return baseUrl.replace(/\/$/, '') + (endpoint.startsWith('/') ? endpoint : '/' + endpoint);
             }
             return endpoint;
         }
