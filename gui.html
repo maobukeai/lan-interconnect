@@ -461,14 +461,29 @@
 
     <!-- 3. 影音 -->
     <section id="view-media" class="view-section">
-        <div class="toolbar-row" style="flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px">
-            <button class="apple-btn apple-btn-glass" id="btn-media-folder"><span data-icon="folder" data-icon-size="14"></span>+ 添加媒体目录</button>
-            <div class="segmented" id="media-view-mode-toggle" style="margin-bottom:0; padding:2px;">
-                <button class="segmented-item active" data-mode="tree"><span data-icon="folder" data-icon-size="13"></span>按文件夹</button>
-                <button class="segmented-item" data-mode="flat"><span data-icon="playCircle" data-icon-size="13"></span>平铺全部</button>
+        <div class="media-toolbar-row" id="media-toolbar-row">
+            <button class="apple-btn apple-btn-glass" id="btn-media-folder">
+                <span data-icon="folder" data-icon-size="14"></span>
+                <span class="btn-text-full">+ 添加媒体目录</span>
+                <span class="btn-text-mobile">+ 目录</span>
+            </button>
+            <div class="segmented segmented-compact" id="media-view-mode-toggle" style="margin-bottom:0; padding:2px;">
+                <button class="segmented-item active" data-mode="tree" title="按文件夹层级浏览">
+                    <span data-icon="folder" data-icon-size="13"></span>
+                    <span class="btn-text-full">按文件夹</span>
+                    <span class="btn-text-mobile">文件夹</span>
+                </button>
+                <button class="segmented-item" data-mode="flat" title="平铺全部媒体文件">
+                    <span data-icon="playCircle" data-icon-size="13"></span>
+                    <span class="btn-text-full">平铺全部</span>
+                    <span class="btn-text-mobile">平铺</span>
+                </button>
             </div>
-            <button class="apple-btn apple-btn-glass" id="btn-media-scan" title="刷新媒体库"><span data-icon="refresh" data-icon-size="14"></span>刷新</button>
-            <span class="subtle ellipsis" id="media-folder-label" style="font-size:12px; flex:1; min-width:100px; text-align:right">0 个媒体源</span>
+            <button class="apple-btn apple-btn-glass" id="btn-media-scan" title="刷新媒体库">
+                <span data-icon="refresh" data-icon-size="14"></span>
+                <span class="btn-text-full">刷新</span>
+            </button>
+            <span class="subtle ellipsis media-count-badge" id="media-folder-label">0 个媒体源</span>
         </div>
         <div class="media-folders-chip-row" id="media-folders-chip-row"></div>
         <div id="media-breadcrumb-container" style="display:none; margin: 10px 0 6px 0;"></div>

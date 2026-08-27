@@ -1308,6 +1308,29 @@ body.theme-light .dock-glider {
 }
 
 /* ---------- 9. 影音海报网格与多媒体源管理 (Media) ---------- */
+.media-toolbar-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    flex-wrap: nowrap;
+    width: 100%;
+    margin-bottom: 8px;
+    box-sizing: border-box;
+}
+
+.media-toolbar-row .btn-text-mobile {
+    display: none;
+}
+
+.media-toolbar-row .media-count-badge {
+    font-size: 12px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    margin-left: auto;
+    text-align: right;
+}
+
 .media-folders-chip-row {
     display: flex;
     flex-wrap: wrap;
@@ -1570,25 +1593,33 @@ body.theme-light .dock-glider {
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 12px;
     margin-bottom: 16px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 680px) {
     .media-folder-grid {
-        grid-template-columns: 1fr;
-        gap: 10px;
+        grid-template-columns: 1fr !important;
+        gap: 10px !important;
     }
 }
 
 .media-folder-item {
     display: flex;
     align-items: center;
-    gap: 14px;
-    padding: 13px 18px;
+    gap: 12px;
+    padding: 12px 14px;
     background: var(--apple-bg-card, var(--mat-ultrathin));
     border: 1px solid var(--apple-border);
     border-radius: 14px;
     cursor: pointer;
     user-select: none;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
     transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), 
                 box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), 
                 border-color 0.2s ease, 
@@ -1613,8 +1644,8 @@ body.theme-light .dock-glider {
 }
 
 .media-folder-icon-box {
-    width: 44px;
-    height: 44px;
+    width: 42px;
+    height: 42px;
     border-radius: 12px;
     background: rgba(10, 132, 255, 0.12);
     color: var(--apple-system-blue);
@@ -1640,20 +1671,25 @@ body.theme-light .dock-glider {
     display: flex;
     flex-direction: column;
     gap: 3px;
+    overflow: hidden;
 }
 
 .media-folder-name {
-    font-size: 14px;
+    font-size: 13.5px;
     font-weight: 600;
     color: var(--apple-text-main);
-    white-space: nowrap;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
     overflow: hidden;
     text-overflow: ellipsis;
-    line-height: 1.35;
+    word-break: break-word;
+    line-height: 1.4;
+    max-width: 100%;
 }
 
 .media-folder-sub {
-    font-size: 11.5px;
+    font-size: 11px;
     color: var(--apple-text-muted);
 }
 
@@ -1676,7 +1712,7 @@ body.theme-light .dock-glider {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 7px 12px;
+    padding: 6px 10px;
     border-radius: 12px;
     background: var(--mat-thin, rgba(120, 130, 160, 0.12));
     border: 1px solid var(--apple-border);
@@ -1684,6 +1720,15 @@ body.theme-light .dock-glider {
     white-space: nowrap;
     box-sizing: border-box;
     max-width: 100%;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    -webkit-overflow-scrolling: touch;
+}
+
+.media-breadcrumb-container::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
 }
 
 :root[data-theme="light"] .media-breadcrumb-container {
@@ -3471,7 +3516,59 @@ input[type="range"].apple-range::-webkit-slider-thumb:active {
         height: 28px !important;
     }
 
-    /* 7. 影音媒体网格 (双列自适应) */
+    /* 7. 影音媒体工具栏一行式排布与网格 */
+    .media-toolbar-row {
+        gap: 5px !important;
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+        scrollbar-width: none !important;
+    }
+
+    .media-toolbar-row::-webkit-scrollbar {
+        display: none !important;
+    }
+
+    .media-toolbar-row .btn-text-full {
+        display: none !important;
+    }
+
+    .media-toolbar-row .btn-text-mobile {
+        display: inline !important;
+    }
+
+    .media-toolbar-row .apple-btn {
+        height: 30px !important;
+        padding: 0 8px !important;
+        font-size: 11.5px !important;
+        gap: 4px !important;
+        flex-shrink: 0 !important;
+        white-space: nowrap !important;
+    }
+
+    .media-toolbar-row .segmented {
+        height: 30px !important;
+        padding: 2px !important;
+        gap: 2px !important;
+        flex-shrink: 0 !important;
+    }
+
+    .media-toolbar-row .segmented-item {
+        padding: 3px 6px !important;
+        font-size: 11px !important;
+        height: 24px !important;
+        gap: 3px !important;
+        white-space: nowrap !important;
+    }
+
+    .media-toolbar-row .media-count-badge {
+        font-size: 10.5px !important;
+        white-space: nowrap !important;
+        flex-shrink: 0 !important;
+        margin-left: auto !important;
+        min-width: auto !important;
+    }
+
     .media-grid {
         grid-template-columns: repeat(2, 1fr) !important;
         gap: 10px !important;
@@ -3483,6 +3580,32 @@ input[type="range"].apple-range::-webkit-slider-thumb:active {
 
     .media-card-title {
         font-size: 12px !important;
+    }
+
+    .media-folder-grid {
+        grid-template-columns: 1fr !important;
+        grid-column: 1 / -1 !important;
+        width: 100% !important;
+        gap: 8px !important;
+    }
+
+    .media-folder-item {
+        padding: 10px 12px !important;
+        border-radius: 12px !important;
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+
+    .media-folder-icon-box {
+        width: 38px !important;
+        height: 38px !important;
+        border-radius: 10px !important;
+    }
+
+    .media-folder-name {
+        font-size: 13px !important;
+        -webkit-line-clamp: 2 !important;
+        line-height: 1.35 !important;
     }
 
     /* 8. 聊天输入栏 (紧凑齐平) */

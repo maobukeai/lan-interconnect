@@ -106,7 +106,7 @@
         renderFolderChips() {
             const chipRowEl = this.chipRow || document.getElementById('media-folders-chip-row');
             if (this.folderLabel) {
-                this.folderLabel.textContent = this.folders.length ? `已绑定 ${this.folders.length} 个媒体源目录` : '未选择目录';
+                this.folderLabel.textContent = this.folders.length ? `${this.folders.length} 个媒体源` : '0 个媒体源';
             }
 
             if (!chipRowEl) return;
