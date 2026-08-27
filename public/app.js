@@ -806,10 +806,119 @@
         }, { passive: true });
     }
 
+    /* ---------- 局域网雷达与连接器 (Mobile & Web Radar) ---------- */
+    function initRadar() {
+        const modal = $('#radar-modal');
+        const btnOpen = $('#btn-radar-modal');
+        const btnClose = $('#btn-radar-close');
+        const btnScan = $('#btn-start-radar-scan');
+        const btnManual = $('#btn-manual-connect');
+        const ipInput = $('#manual-server-ip');
+        const listEl = $('#radar-device-list');
+        const labelEl = $('#current-connected-label');
+        const btnLabel = $('#radar-btn-label');
+
+        const savedServer = localStorage.getItem('landisk_custom_server');
+        if (savedServer) {
+            window.currentServerUrl = savedServer;
+            if (labelEl) labelEl.textContent = `已连接: ${savedServer.replace(/^https?:\/\//, '')}`;
+            if (btnLabel) btnLabel.textContent = savedServer.replace(/^https?:\/\//, '');
+        }
+
+        if (!modal || !btnOpen) return;
+
+        btnOpen.addEventListener('click', () => {
+            modal.style.display = 'flex';
+            if (ipInput && savedServer) ipInput.value = savedServer.replace(/^https?:\/\//, '');
+        });
+
+        btnClose && btnClose.addEventListener('click', () => {
+            modal.style.display = 'none';
+        });
+
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) modal.style.display = 'none';
+        });
+
+        const connectToServer = (url) => {
+            let fullUrl = url.trim();
+            if (!/^https?:\/\//i.test(fullUrl)) fullUrl = 'http://' + fullUrl;
+            fullUrl = fullUrl.replace(/\/$/, '');
+
+            localStorage.setItem('landisk_custom_server', fullUrl);
+            window.currentServerUrl = fullUrl;
+            LanDiskUI.toast(`已切换连接到: ${fullUrl}`, 'success');
+            setTimeout(() => window.location.reload(), 500);
+        };
+
+        btnManual && btnManual.addEventListener('click', () => {
+            const val = ipInput ? ipInput.value.trim() : '';
+            if (!val) return LanDiskUI.toast('请输入电脑 IP', 'error');
+            connectToServer(val);
+        });
+
+        btnScan && btnScan.addEventListener('click', async () => {
+            if (LanDiskUI.Haptic) LanDiskUI.Haptic.light();
+            listEl.innerHTML = '<div class="subtle" style="text-align:center; padding:16px 0; font-size:12px;">正在探测局域网中的猫步互联电脑……</div>';
+
+            const found = [];
+            const ports = [3000, 3001, 3002, 3003, 3999];
+            const hosts = ['localhost', '127.0.0.1'];
+            
+            if (window.location.hostname && !hosts.includes(window.location.hostname)) {
+                hosts.unshift(window.location.hostname);
+            }
+
+            const promises = [];
+            hosts.forEach(host => {
+                ports.forEach(port => {
+                    const testUrl = `http://${host}:${port}`;
+                    const p = fetch(`${testUrl}/api/devices`, { method: 'GET', signal: AbortSignal.timeout(1500) })
+                        .then(r => r.ok ? r.json() : null)
+                        .then(data => {
+                            if (data) {
+                                found.push({ url: testUrl, name: `💻 猫步互联电脑 (${host}:${port})` });
+                            }
+                        })
+                        .catch(() => {});
+                    promises.push(p);
+                });
+            });
+
+            await Promise.all(promises);
+
+            if (!found.length) {
+                listEl.innerHTML = `
+                    <div class="subtle" style="text-align:center; padding:12px 0; font-size:12px;">
+                        未探测到其他电脑，可在上方直接输入电脑显示的 IP 进行直连
+                    </div>
+                `;
+                return;
+            }
+
+            listEl.innerHTML = found.map(item => `
+                <div class="row" style="justify-content:space-between; padding:10px 14px; background:var(--apple-bg-card); border:1px solid var(--apple-border); border-radius:12px; cursor:pointer;" data-connect-url="${item.url}">
+                    <div>
+                        <div style="font-size:13.5px; font-weight:600;">${item.name}</div>
+                        <div style="font-size:11.5px; color:var(--apple-system-blue);">${item.url}</div>
+                    </div>
+                    <button class="apple-btn apple-btn-primary" style="padding:4px 10px; font-size:11.5px; border-radius:8px;">连接</button>
+                </div>
+            `).join('');
+
+            listEl.querySelectorAll('[data-connect-url]').forEach(card => {
+                card.addEventListener('click', () => {
+                    connectToServer(card.getAttribute('data-connect-url'));
+                });
+            });
+        });
+    }
+
     /* ---------- 启动 ---------- */
     async function init() {
         hydrateIcons();
         initTheme();
+        initRadar();
         bindFilesView();
         bindClipboard();
         bindMisc();

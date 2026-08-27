@@ -43,7 +43,9 @@
       "target": [
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "icon.ico",
@@ -51,6 +53,7 @@
     }
   },
   "dependencies": {
+    "@capacitor/core": "^8.5.0",
     "7zip-bin": "^5.2.0",
     "archiver": "^7.0.1",
     "archiver-utils": "^5.0.2",
@@ -62,6 +65,8 @@
     "qrcode-terminal": "^0.12.0"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/cli": "^8.5.0",
     "electron": "^41.0.3",
     "electron-builder": "^25.1.8",
     "electron-rebuild": "^3.2.9",

@@ -135,11 +135,50 @@
         <img src="favicon.png" alt="logo"> 猫步互联
         <span class="apple-badge apple-badge-success" id="net-badge" style="margin-left:6px"><span class="apple-badge-dot"></span>在线</span>
     </div>
-    <div class="row">
+    <div class="row" style="gap:6px">
+        <button class="apple-btn apple-btn-secondary" id="btn-radar-modal" style="height:32px; padding:0 10px; font-size:12px; border-radius:10px; display:inline-flex; align-items:center; gap:4px">
+            <span data-icon="activity" data-icon-size="13"></span> <span id="radar-btn-label">局域网雷达</span>
+        </button>
         <button class="apple-btn-icon" id="btn-theme" title="深浅主题"></button>
         <button class="apple-btn-icon" id="btn-refresh" title="刷新数据"></button>
     </div>
 </header>
+
+<!-- 局域网雷达与连接器模态弹窗 -->
+<div id="radar-modal" class="apple-modal-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); z-index:1000; align-items:center; justify-content:center; padding:16px;">
+    <div class="apple-modal-card" style="background:var(--mat-thick); border:1px solid var(--apple-border); border-radius:24px; max-width:420px; width:100%; padding:22px; box-shadow:var(--shadow-3); position:relative;">
+        <div class="row" style="justify-content:space-between; margin-bottom:14px;">
+            <div class="row" style="gap:8px;">
+                <div style="width:36px; height:36px; border-radius:10px; background:rgba(10,132,255,0.15); color:var(--apple-system-blue); display:flex; align-items:center; justify-content:center;">
+                    <span data-icon="activity" data-icon-size="20"></span>
+                </div>
+                <div>
+                    <div style="font-size:15px; font-weight:700;">局域网雷达与设备直连</div>
+                    <div style="font-size:11.5px; color:var(--apple-text-muted);" id="current-connected-label">当前服务主机: 本机</div>
+                </div>
+            </div>
+            <button class="apple-btn-icon" id="btn-radar-close" style="width:28px; height:28px; font-size:14px;">✕</button>
+        </div>
+
+        <div style="margin-bottom:14px;">
+            <div class="row" style="gap:8px; margin-bottom:8px;">
+                <input type="text" id="manual-server-ip" class="apple-input" placeholder="输入电脑 IP 或域名 (如 192.168.0.104:3000)" style="flex:1; font-size:13px; padding:8px 12px; border-radius:10px;">
+                <button class="apple-btn apple-btn-primary" id="btn-manual-connect" style="padding:8px 14px; font-size:12.5px; border-radius:10px; flex-shrink:0;">直连</button>
+            </div>
+        </div>
+
+        <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <span style="font-size:12px; font-weight:700; color:var(--apple-text-secondary);">局域网在线电脑探测</span>
+            <button class="apple-btn apple-btn-secondary" id="btn-start-radar-scan" style="height:26px; padding:0 8px; font-size:11.5px; border-radius:8px;">
+                <span data-icon="refreshCw" data-icon-size="11"></span> 扫描局域网
+            </button>
+        </div>
+
+        <div id="radar-device-list" style="max-height:180px; overflow-y:auto; display:flex; flex-direction:column; gap:8px; margin-bottom:10px;">
+            <div class="subtle" style="text-align:center; padding:16px 0; font-size:12px;">点击上方按钮或输入 IP 连接局域网电脑</div>
+        </div>
+    </div>
+</div>
 
 <!-- 主内容 -->
 <div class="web-container">

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">猫步互联 Pro</string>
+    <string name="title_activity_main">猫步互联 Pro</string>
+    <string name="package_name">com.landisk.mobile</string>
+    <string name="custom_url_scheme">com.landisk.mobile</string>
+</resources>

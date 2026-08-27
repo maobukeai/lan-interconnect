@@ -9,6 +9,7 @@ package-lock.json
 dist/
 release/
 build/
+mobile-dist/
 *.exe
 *.apk
 *.aar

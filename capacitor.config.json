@@ -1,0 +1,18 @@
+{
+  "appId": "com.landisk.mobile",
+  "appName": "猫步互联 Pro",
+  "webDir": "mobile-dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true,
+    "allowNavigation": [
+      "*"
+    ]
+  },
+  "android": {
+    "allowMixedContent": true,
+    "captureInput": true,
+    "backgroundColor": "#000000"
+  }
+}
