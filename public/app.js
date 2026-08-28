@@ -970,27 +970,40 @@
                 </div>
             `;
 
-            const foundMap = new Map();
+            const foundMap = new Map(); // key: deviceKey (基于唯一 hostname 或 IP 去重)
             const ports = [3000, 3001, 3002, 3003, 3999];
 
-            const hostPool = new Set(['127.0.0.1', 'localhost']);
+            const hostPool = new Set();
+            const isLocalEnv = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
             if (savedServer) {
-                try { hostPool.add(new URL(savedServer).hostname); } catch (e) {}
+                try {
+                    const h = new URL(savedServer).hostname;
+                    if (h && h !== '127.0.0.1' && h !== 'localhost') hostPool.add(h);
+                } catch (e) {}
             }
             if (ipInput && ipInput.value.trim()) {
                 try {
                     const raw = ipInput.value.trim();
                     const parsed = raw.includes(':') ? raw.split(':')[0] : raw;
-                    if (parsed) hostPool.add(parsed.replace(/^https?:\/\//, ''));
+                    const cleanH = parsed.replace(/^https?:\/\//, '');
+                    if (cleanH && cleanH !== '127.0.0.1' && cleanH !== 'localhost') hostPool.add(cleanH);
                 } catch (e) {}
             }
-            if (window.location.hostname && window.location.hostname !== 'localhost') {
+            if (window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
                 hostPool.add(window.location.hostname);
             }
 
             const selectedSubnet = subnetSelect ? subnetSelect.value : 'auto';
             if (selectedSubnet === 'auto') {
-                const subnetsToScan = ['192.168.0', '192.168.1', '192.168.31', '192.168.50', '192.168.2', '10.0.0', '172.20.10'];
+                // 优先根据当前访问 IP 推导所在主网段
+                const curIp = window.location.hostname || '';
+                const m = curIp.match(/^(\d+\.\d+\.\d+)\.\d+$/);
+                const curSub = m ? m[1] : null;
+
+                const candidateSubnets = curSub ? [curSub, '192.168.0', '192.168.1', '192.168.31', '192.168.50', '192.168.2', '10.0.0', '172.20.10'] : ['192.168.0', '192.168.1', '192.168.31', '192.168.50', '192.168.2', '10.0.0', '172.20.10'];
+                const subnetsToScan = Array.from(new Set(candidateSubnets));
+
                 const priorityHostIds = [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 30, 50, 88, 120, 150, 188, 200, 1];
                 for (const sub of subnetsToScan) {
                     for (const hid of priorityHostIds) {
@@ -1002,6 +1015,11 @@
                 for (let hid = 1; hid <= 254; hid++) {
                     hostPool.add(`${selectedSubnet}.${hid}`);
                 }
+            }
+
+            // 仅当在本地浏览器运行且尚未发现局域网 IP 时作为备选
+            if (isLocalEnv) {
+                hostPool.add('127.0.0.1');
             }
 
             const hostList = Array.from(hostPool);
@@ -1037,6 +1055,10 @@
             }
 
             async function probeUrl(targetUrl) {
+                let parsedHost = '';
+                try { parsedHost = new URL(targetUrl).hostname; } catch (e) {}
+                const isTargetLoopback = (parsedHost === '127.0.0.1' || parsedHost === 'localhost');
+
                 try {
                     const r = await fetch(`${targetUrl}/api/ping`, {
                         method: 'GET',
@@ -1046,10 +1068,22 @@
                     if (r.ok) {
                         const data = await r.json().catch(() => ({}));
                         const osName = data.os || '电脑';
-                        const hostName = data.hostname || '';
-                        const displayName = `💻 ${hostName ? hostName + ' (' + osName + ')' : '猫步互联电脑'}`;
-                        if (!foundMap.has(targetUrl)) {
-                            foundMap.set(targetUrl, { url: targetUrl, name: displayName, requiresPin: !!data.requiresPin });
+                        const hostName = data.hostname || parsedHost || '猫步互联电脑';
+                        const displayName = `💻 ${hostName} (${osName})`;
+
+                        // 智能设备去重键：同一主机名 (hostname) 视为同一台电脑
+                        const deviceKey = data.hostname ? `device_${data.hostname}` : `host_${parsedHost}`;
+
+                        const existing = foundMap.get(deviceKey);
+                        // 若已存在但之前是 127.0.0.1 回环地址，当前发现真实局域网 IP 则覆盖为局域网 IP
+                        if (!existing || (existing.isLoopback && !isTargetLoopback)) {
+                            foundMap.set(deviceKey, {
+                                url: targetUrl,
+                                name: displayName,
+                                requiresPin: !!data.requiresPin,
+                                isLoopback: isTargetLoopback,
+                                hostname: data.hostname
+                            });
                             renderFoundCards();
                             if (statusEl) statusEl.textContent = `🎯 已发现 ${foundMap.size} 台在线电脑！`;
                         }
@@ -1063,11 +1097,14 @@
                         signal: AbortSignal.timeout(600)
                     });
                     if (r2.ok || r2.status === 401) {
-                        if (!foundMap.has(targetUrl)) {
-                            foundMap.set(targetUrl, {
+                        const deviceKey = `host_${parsedHost}`;
+                        const existing = foundMap.get(deviceKey);
+                        if (!existing || (existing.isLoopback && !isTargetLoopback)) {
+                            foundMap.set(deviceKey, {
                                 url: targetUrl,
                                 name: `💻 猫步互联电脑 (${targetUrl.replace(/^https?:\/\//, '')})`,
-                                requiresPin: (r2.status === 401)
+                                requiresPin: (r2.status === 401),
+                                isLoopback: isTargetLoopback
                             });
                             renderFoundCards();
                             if (statusEl) statusEl.textContent = `🎯 已发现 ${foundMap.size} 台在线电脑！`;
