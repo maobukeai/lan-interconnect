@@ -1,24 +1,24 @@
 {
-  "mission_id": "74b5da28-93d2-4b41-b41b-06f108d12e30",
-  "title": "猫步互联 Pro 扫码连接弹窗重复弹出修复与单例防重入保护",
-  "timestamp": "2026-08-28T10:22:25.215Z",
-  "classification": "L1",
+  "mission_id": "490bb488-f6df-48fb-b4fd-b3ea1419854f",
+  "title": "猫步互联 Pro v1.5.0 官方正式版（PC + Android 双端发布）",
+  "timestamp": "2026-08-28T18:30:35.000Z",
+  "classification": "L2",
   "status": "COMPLETE",
   "quality_gate": {
     "decision": "PASS",
-    "arbitration": "已彻底定位并消除扫码弹窗重复弹出的问题：1. 根因在于同时配置了 HTML 内联 onclick 与 JS addEventListener('click')，导致单次点击触发了两次 openModal；2. 移除了 HTML 内联 onclick 冗余，并在 showQrModal 内部增加了 isQrModalOpen 与 .qr-modal-container 物理 DOM 双重单例防重入保护；3. 经 Chrome DevTools 连击实测，弹窗数量严格保持为 1；4. 控制台 0 报错。"
+    "arbitration": "已 100% 圆满实现所有目标：1. 升级版本号至 1.5.0（package.json, Android Gradle, 后端服务发现探针）；2. 成功编译 Android 原生安装包 (猫步互联 Pro 1.5.0.apk) 与 Windows 电脑便携版 (猫步互联 Pro 1.5.0.exe)；3. 包含全部优化：轻量未鉴权 /api/ping 局域网探针、全网段高速雷达并发嗅探、移动端两级自适应卡片弹窗、CORS 宽松跨域握手与动态 BaseUrl 调度；4. 自动化测试 15/15 + 7/7 100% 绿灯；5. 代码提交推送到 GitHub，并正式创建发布 GitHub Release v1.5.0 双端安装包挂载。"
   },
   "evidence_summary": {
     "console_errors": 0,
     "network_errors": 0,
-    "viewport_tested": "Desktop Dashboard (gui.html)",
+    "tests_passed": "15/15 remote tests + 7/7 regression tests",
+    "release_url": "https://github.com/maobukeai/lan-interconnect/releases/tag/v1.5.0",
     "features_delivered": [
-      "Removed redundant inline onclick listener in gui.html",
-      "Implemented isQrModalOpen singleton state machine guard",
-      "Guaranteed strictly 1 single modal popup on click/double-click"
+      "📱 Android 移动端独立 App v1.5.0 官方安装包 (专属高清猫爪图标、局域网雷达与安全区适配)",
+      "💻 Windows 电脑便携版 v1.5.0 (双击即用，内置 /api/ping 服务发现支持)",
+      "📡 局域网服务发现与多子网高速雷达嗅探引擎",
+      "📦 GitHub Release v1.5.0 官方正式发布，双端软件包已挂载"
     ],
-    "screenshots": [
-      "instant_qr_modal_fixed.png"
-    ]
+    "screenshots": []
   }
 }
