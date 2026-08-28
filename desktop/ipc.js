@@ -72,11 +72,10 @@
             if (cfg.pin) localStorage.setItem('lan_disk_pin', cfg.pin);
         } catch (e) {}
 
-        if (!hasApi) {
+        if (!hasApi || typeof window.api.startServer !== 'function') {
             LanDiskUI.toast('当前环境不支持启动本机服务（需要桌面客户端）', 'error');
             return false;
         }
-
         const res = await window.api.startServer(cfg);
         if (!res || !res.success) {
             addLog('服务启动失败: ' + ((res && res.error) || '未知错误'), 'error');
@@ -114,8 +113,9 @@
     async function syncServiceState() {
         let running = false;
         let url = '';
+        let qrDataUrl = '';
+        let qrUrl = '';
         try {
-            // 优先当前已知地址，其次按配置端口探测（用户可能改过端口）
             const port = (getConfig().port || 3000);
             const probeUrl = state.url || `http://127.0.0.1:${port}`;
             const headers = (global.LanDiskAuth && global.LanDiskAuth.authHeaders) ? global.LanDiskAuth.authHeaders() : {};
@@ -124,15 +124,18 @@
                 const d = await res.json();
                 running = !!d.running;
                 url = d.url || probeUrl;
+                qrDataUrl = d.qrDataUrl || '';
+                qrUrl = d.qrUrl || url;
             }
         } catch (e) {}
-        if (running !== state.running || (running && url && url !== state.url)) {
-            state.running = running;
-            state.url = url;
-            window.isRunning = running;
-            window.currentServerUrl = running ? url : '';
-            notifyServiceChange();
-        }
+        
+        state.running = running;
+        state.url = url;
+        if (qrDataUrl) state.qrDataUrl = qrDataUrl;
+        if (qrUrl) state.qrUrl = qrUrl;
+        window.isRunning = running;
+        window.currentServerUrl = running ? url : '';
+        notifyServiceChange();
     }
 
     /* ---------- 对外接口 ---------- */
@@ -175,14 +178,14 @@
             return LanDiskUI.promptDialog({ title: '输入目录路径', placeholder: 'C:\\Users\\...\\Downloads' });
         },
         getNetworkInfo: async () => {
-            if (hasApi) return await window.api.getNetworkInfo() || [];
+            if (hasApi && typeof window.api.getNetworkInfo === 'function') return await window.api.getNetworkInfo() || [];
             try {
                 const res = await fetch('/api/network-info');
                 return res.ok ? await res.json() : [];
             } catch (e) { return []; }
         },
         getSysInfo: async () => {
-            if (hasApi) return await window.api.getSysInfo();
+            if (hasApi && typeof window.api.getSysInfo === 'function') return await window.api.getSysInfo();
             return null;
         },
         openRoot: () => hasApi ? window.api.openRoot() : global.LanDiskUI.toast('仅桌面客户端支持', 'info'),

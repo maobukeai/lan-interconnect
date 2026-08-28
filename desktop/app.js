@@ -13,6 +13,8 @@
     const UI = window.LanDiskUI;
     const auth = () => window.LanDiskAuth;
 
+        const escapeHtml = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+
     const fmtBytes = (b) => {
         if (!+b) return '0 B';
         const k = 1024, sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -176,30 +178,103 @@
         }
     }
 
-    function showQrModal() {
-        const st = IPC.state;
-        if (!st.running || !st.qrDataUrl) return;
-        const modal = UI.openModal(`
-            <div class="modal-title">扫码连接</div>
-            <div class="modal-message">用手机相机 / 微信扫一扫，免密接入局域网</div>
-            <div style="display:grid; place-items:center; margin-bottom:16px">
-                <div class="qr-box"><img src="${st.qrDataUrl}" alt="QR"></div>
+            let isQrModalOpen = false;
+    function showQrModal(e) {
+        if (e && e.preventDefault) e.preventDefault();
+        if (e && e.stopPropagation) e.stopPropagation();
+        
+        // 单例防重入：如果当前已有弹窗打开，直接忽略重复点击
+        if (isQrModalOpen || document.querySelector('.qr-modal-container')) return;
+        isQrModalOpen = true;
+
+        const st = (IPC && IPC.state) || {};
+        let qrImg = st.qrDataUrl || '';
+        let targetUrl = st.qrUrl || st.url || window.currentServerUrl || ('http://' + (window.location.hostname || '127.0.0.1') + ':' + (st.port || 3000));
+
+        const ui = window.LanDiskUI || window.UI;
+        if (!ui || !ui.openModal) {
+            isQrModalOpen = false;
+            console.error('LanDiskUI.openModal is not available');
+            return;
+        }
+
+        const modal = ui.openModal(`
+            <div class="qr-modal-container">
+                <div class="modal-title" style="display:flex; align-items:center; gap:8px;">
+                    <span style="color:var(--apple-system-blue)">${I('qr', 20)}</span>
+                    <span>手机扫码连接</span>
+                </div>
+                <div class="modal-message">用手机相机 / 微信扫一扫，免密接入局域网</div>
+                <div style="display:grid; place-items:center; margin:16px 0">
+                    <div class="qr-box" id="qr-modal-box" style="background:#ffffff; padding:12px; border-radius:16px; box-shadow:0 8px 24px rgba(0,0,0,0.12); width:224px; height:224px; display:flex; align-items:center; justify-content:center;">
+                        ${qrImg ? `<img src="${qrImg}" alt="QR" style="width:200px; height:200px; display:block;">` : `<div style="font-size:13px; color:#8e8e93; display:flex; flex-direction:column; align-items:center; gap:8px;"><span class="apple-badge-dot" style="background:var(--apple-system-blue); animation:apple-pulse 1.2s infinite"></span>正在生成连接码…</div>`}
+                    </div>
+                </div>
+                <div class="row-between" style="background:var(--mat-thin); border:1px solid var(--apple-border); border-radius:12px; padding:10px 14px; margin-bottom:16px">
+                    <span class="mono ellipsis" id="qr-modal-url" style="font-size:12.5px; flex:1; min-width:0; color:var(--apple-text-main)">${escapeHtml(targetUrl)}</span>
+                    <button class="apple-btn apple-btn-glass apple-btn-sm" data-act="copy">${I('copy', 13)} 复制</button>
+                </div>
+                <div class="modal-actions">
+                    <button class="apple-btn apple-btn-glass" data-act="close">关闭</button>
+                    <button class="apple-btn apple-btn-primary" data-act="open">${I('external', 15)} 在浏览器打开</button>
+                </div>
             </div>
-            <div class="row-between" style="background:var(--mat-thin); border-radius:12px; padding:10px 14px; margin-bottom:16px">
-                <span class="mono ellipsis" style="font-size:12px; flex:1; min-width:0">${escapeHtml(st.url)}</span>
-                <button class="apple-btn apple-btn-glass apple-btn-sm" data-act="copy">${I('copy', 13)} 复制</button>
-            </div>
-            <div class="modal-actions">
-                <button class="apple-btn apple-btn-glass" data-act="close">关闭</button>
-                <button class="apple-btn apple-btn-primary" data-act="open">${I('external', 15)} 在浏览器打开</button>
-            </div>
-        `, { width: 400 });
-        modal.el.querySelector('[data-act="close"]').addEventListener('click', () => modal.close());
-        modal.el.querySelector('[data-act="open"]').addEventListener('click', () => { IPC.openUrl(st.url); });
-        modal.el.querySelector('[data-act="copy"]').addEventListener('click', async () => {
-            try { await navigator.clipboard.writeText(st.url); UI.toast('地址已复制', 'success'); } catch (e) {}
+        `, {
+            width: 420,
+            onClose: () => {
+                isQrModalOpen = false;
+            }
         });
+
+        const origClose = modal.close;
+        modal.close = function() {
+            isQrModalOpen = false;
+            origClose.apply(this, arguments);
+        };
+
+        modal.el.querySelector('[data-act="close"]').addEventListener('click', () => modal.close());
+        modal.el.querySelector('[data-act="open"]').addEventListener('click', () => {
+            if (IPC && IPC.openUrl) IPC.openUrl(targetUrl);
+            else window.open(targetUrl, '_blank');
+        });
+        modal.el.querySelector('[data-act="copy"]').addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(targetUrl);
+                if (ui.toast) ui.toast('地址已复制到剪贴板', 'success');
+            } catch (e) {}
+        });
+
+        // 异步在后台拉取或本地生成高保真二维码并替换
+        (async () => {
+            try {
+                if (!qrImg) {
+                    const probeUrl = targetUrl.startsWith('http') ? targetUrl : `http://127.0.0.1:${st.port || 3000}`;
+                    const headers = (window.LanDiskAuth && window.LanDiskAuth.authHeaders) ? window.LanDiskAuth.authHeaders() : {};
+                    const res = await fetch(probeUrl.replace(/\/$/, '') + '/api/control/status', { headers }).then(r => r.json()).catch(() => ({}));
+                    if (res && res.qrDataUrl) {
+                        qrImg = res.qrDataUrl;
+                        st.qrDataUrl = qrImg;
+                        if (res.url) targetUrl = res.qrUrl || res.url;
+                    }
+                }
+            } catch (e) {}
+
+            if (!qrImg && window.api && window.api.generateQrCode) {
+                try {
+                    qrImg = await window.api.generateQrCode(targetUrl);
+                    if (qrImg) st.qrDataUrl = qrImg;
+                } catch (e) {}
+            }
+
+            if (qrImg && isQrModalOpen) {
+                const box = modal.el.querySelector('#qr-modal-box');
+                if (box) box.innerHTML = `<img src="${qrImg}" alt="QR" style="width:200px; height:200px; display:block;">`;
+                const urlEl = modal.el.querySelector('#qr-modal-url');
+                if (urlEl) urlEl.textContent = targetUrl;
+            }
+        })();
     }
+    window.LanDiskShowQrModal = showQrModal;
 
     /* ---------- 聊天未读角标 ---------- */
     let chatUnread = 0;
@@ -370,18 +445,22 @@
                 }
                 if (devRes.ok) {
                     const d = await devRes.json();
-                    const count = (d.devices && d.devices.length) ? d.devices.length : 0;
+                    const rawDevices = d.devices || [];
+                    // 过滤出真正连入的外接设备 (排除本机 127.0.0.1 / localhost)
+                    const externalDevices = rawDevices.filter(dev => dev.ip && dev.ip !== '127.0.0.1' && dev.ip !== 'localhost' && dev.ip !== '::1');
+                    const count = externalDevices.length;
+
                     $('#dash-device-count').textContent = count;
-                    $('#dash-device-sub').textContent = count ? `${count} 台设备在线协同中` : '等待手机/平板扫码连接';
+                    $('#dash-device-sub').textContent = count > 0 ? `${count} 台外接终端在线协同` : '等待手机/平板扫码连接';
                     
                     const badge = $('#dash-device-badge');
                     const badgeText = $('#dash-device-status-text');
                     if (badge && badgeText) {
-                        badge.className = 'apple-badge apple-badge-sm ' + (count ? 'apple-badge-success' : '');
-                        badgeText.textContent = count ? '极速互联' : '广播就绪';
+                        badge.className = 'apple-badge apple-badge-sm ' + (count > 0 ? 'apple-badge-success' : '');
+                        badgeText.textContent = count > 0 ? '极速互联' : '广播就绪';
                     }
                     if ($('#dash-devices-summary')) {
-                        $('#dash-devices-summary').textContent = count ? `已连 ${count} 台终端` : '免客户端直连';
+                        $('#dash-devices-summary').textContent = count > 0 ? `已连 ${count} 台终端` : '免客户端直连';
                     }
 
                     const fmtSpeed = b => b > 1024 * 1024 ? (b / 1024 / 1024).toFixed(1) + ' MB/s' : (b / 1024).toFixed(1) + ' KB/s';
@@ -393,7 +472,7 @@
                     if ($('#dash-net-sub')) {
                         $('#dash-net-sub').textContent = (tx + rx > 0) ? `双向流量 ${(tx + rx > 1024 * 1024 ? ((tx + rx) / 1024 / 1024).toFixed(1) + ' MB/s' : ((tx + rx) / 1024).toFixed(1) + ' KB/s')}` : '局域网千兆就绪';
                     }
-                    renderHomeDevices(d.devices || []);
+                    renderHomeDevices(externalDevices, IPC.state.info);
                 }
             } catch (e) { /* 轮询静默 */ }
         } else if (IPC.available) {
@@ -433,45 +512,85 @@
                 badgeText.textContent = '待启动';
             }
             if ($('#dash-devices-summary')) $('#dash-devices-summary').textContent = '启动后显示';
-            renderHomeDevices([]);
+            renderHomeDevices([], null);
         }
     }
 
-    function renderHomeDevices(devices) {
+    function renderHomeDevices(devices, serverInfo) {
         const el = $('#dash-devices-list');
         if (!el) return;
+        
+        const isRunning = IPC.state.running;
+        const hostIp = (serverInfo && serverInfo.ip) ? serverInfo.ip : '127.0.0.1';
+        const hostPort = (serverInfo && serverInfo.port) ? serverInfo.port : 3000;
+
         if (!devices || !devices.length) {
+            // 无外接设备时：对称渲染【本机主机服务节点】 + 【扫码连接引导卡片】
             el.innerHTML = `
-                <div class="devices-empty-guide">
-                    <div class="devices-empty-icon"><span data-icon="qr"></span></div>
-                    <div style="flex:1; min-width:0;">
-                        <div style="font-weight:600; font-size:12px; color:var(--apple-text-main);">手机/平板/电脑浏览器扫码或访问局域网 IP</div>
-                        <div class="subtle" style="font-size:11px; margin-top:2px;">免安装任何客户端，即享极速文件流、影音剧院与跨端互通</div>
+                <div class="device-node-card host-card">
+                    <div style="color:var(--apple-system-blue);"><span data-icon="monitor"></span></div>
+                    <div class="device-node-meta">
+                        <div class="device-node-name ellipsis">本机 (主控节点)</div>
+                        <div class="device-node-sub ellipsis">${isRunning ? `${hostIp}:${hostPort} · 服务待命中` : '服务未启动'}</div>
                     </div>
+                    <span class="status-dot ${isRunning ? 'on' : ''}"></span>
+                </div>
+                <div class="device-node-card qr-card" id="dash-quick-qr-card" style="cursor:pointer;" title="点击查看连接二维码">
+                    <div style="color:var(--apple-system-blue);"><span data-icon="qr"></span></div>
+                    <div class="device-node-meta">
+                        <div class="device-node-name ellipsis">扫码连接手机/平板</div>
+                        <div class="device-node-sub ellipsis">${isRunning ? '点击查看局域网连接码' : '启动服务后扫码接入'}</div>
+                    </div>
+                    <span class="apple-badge apple-badge-sm apple-badge-primary" style="font-size:10px; padding:2px 7px;">扫码 &gt;</span>
                 </div>
             `;
             if (window.Icons) {
                 el.querySelectorAll('[data-icon]').forEach(iEl => {
-                    iEl.innerHTML = Icons.render(iEl.getAttribute('data-icon'), 18);
+                    iEl.innerHTML = Icons.render(iEl.getAttribute('data-icon'), 17);
                 });
             }
+            $('#dash-quick-qr-card')?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (isRunning) showQrModal(e);
+            });
             return;
         }
-        el.innerHTML = devices.slice(0, 6).map(dev => `
+
+        // 有外接设备连接时：渲染所有外部设备卡片 + 快速加设备卡片
+        const cards = devices.slice(0, 4).map(dev => `
             <div class="device-node-card">
                 <div style="color:var(--apple-system-blue);"><span data-icon="smartphone"></span></div>
                 <div class="device-node-meta">
                     <div class="device-node-name ellipsis">${escapeHtml(dev.alias || dev.ip)}</div>
-                    <div class="device-node-sub ellipsis">${escapeHtml(dev.ip || '')} · 在线协同</div>
+                    <div class="device-node-sub ellipsis">${escapeHtml((dev.userAgent || '').slice(0, 24) || dev.ip)} · 协同中</div>
                 </div>
                 <span class="status-dot on"></span>
             </div>
-        `).join('');
+        `);
+
+        if (devices.length < 2) {
+            cards.push(`
+                <div class="device-node-card qr-card" id="dash-quick-qr-card" style="cursor:pointer;" title="点击查看连接二维码">
+                    <div style="color:var(--apple-system-blue);"><span data-icon="qr"></span></div>
+                    <div class="device-node-meta">
+                        <div class="device-node-name ellipsis">+ 连接更多设备</div>
+                        <div class="device-node-sub ellipsis">手机扫码即连</div>
+                    </div>
+                    <span class="apple-badge apple-badge-sm apple-badge-primary" style="font-size:10px; padding:2px 7px;">扫码 &gt;</span>
+                </div>
+            `);
+        }
+
+        el.innerHTML = cards.join('');
         if (window.Icons) {
             el.querySelectorAll('[data-icon]').forEach(iEl => {
-                iEl.innerHTML = Icons.render(iEl.getAttribute('data-icon'), 15);
+                iEl.innerHTML = Icons.render(iEl.getAttribute('data-icon'), 17);
             });
         }
+        $('#dash-quick-qr-card')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (isRunning) showQrModal(e);
+        });
     }
 
     async function loadHomeHistory() {
@@ -507,7 +626,11 @@
     /* ---------- 快捷操作 ---------- */
     function bindQuickActions() {
         $('#btn-service-toggle').addEventListener('click', toggleService);
-        $('#btn-show-qr').addEventListener('click', showQrModal);
+        const qrBtn = $('#btn-show-qr');
+        if (qrBtn) {
+            qrBtn.onclick = (e) => { if (e && e.preventDefault) e.preventDefault(); showQrModal(e); };
+            qrBtn.addEventListener('click', showQrModal);
+        }
         $('#btn-home-history-refresh').addEventListener('click', loadHomeHistory);
         $('#tile-devices').addEventListener('click', () => switchView('settings'));
 

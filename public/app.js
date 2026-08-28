@@ -350,47 +350,51 @@
 
             if (devRes.ok) {
                 const d = await devRes.json();
-                const count = (d.devices && d.devices.length) ? d.devices.length : 1;
-                $('#dash-device-count').textContent = count;
-                $('#dash-device-sub').textContent = count > 1 ? `${count} 台设备在线协同中` : '仅本机在线，等待手机接入';
-
-                const fmtSpeed = b => b > 1024 * 1024 ? (b / 1024 / 1024).toFixed(1) + ' MB/s' : (b / 1024).toFixed(1) + ' KB/s';
-                const tx = d.stats ? d.stats.txSpeed : 0;
-                const rx = d.stats ? d.stats.rxSpeed : 0;
-                $('#dash-tx-speed').textContent = fmtSpeed(tx);
-                $('#dash-rx-speed').textContent = fmtSpeed(rx);
-                sparkNet.push(tx + rx);
-                dashTxBytes.tx = d.stats ? d.stats.txBytes : 0;
-                dashTxBytes.rx = d.stats ? d.stats.rxBytes : 0;
-                $('#dash-tx-total').textContent = `发送 ${fmtBytes(dashTxBytes.tx)} · 接收 ${fmtBytes(dashTxBytes.rx)}`;
-
                 const list = $('#dash-devices-list');
-                if (d.devices && d.devices.length) {
-                    list.innerHTML = d.devices.map(dev => `
-                        <div class="device-node-card">
-                            <div style="color:var(--apple-system-blue);"><span data-icon="smartphone"></span></div>
-                            <div class="device-node-meta">
-                                <div class="device-node-name ellipsis">${escapeHtml(dev.alias || dev.ip)}</div>
-                                <div class="device-node-sub ellipsis">${escapeHtml((dev.userAgent || '').slice(0, 30) || dev.ip)}</div>
+                const rawDevs = d.devices || [];
+                const extDevs = rawDevs.filter(dev => dev.ip && dev.ip !== '127.0.0.1' && dev.ip !== 'localhost' && dev.ip !== '::1');
+                const activeCount = extDevs.length;
+
+                $('#dash-device-count').textContent = activeCount;
+                $('#dash-device-sub').textContent = activeCount > 0 ? `${activeCount} 台设备在线协同中` : '等待其他设备接入局域网';
+
+                if (list) {
+                    if (extDevs.length > 0) {
+                        list.innerHTML = extDevs.map(dev => `
+                            <div class="device-node-card">
+                                <div style="color:var(--apple-system-blue);"><span data-icon="smartphone"></span></div>
+                                <div class="device-node-meta">
+                                    <div class="device-node-name ellipsis">${escapeHtml(dev.alias || dev.ip)}</div>
+                                    <div class="device-node-sub ellipsis">${escapeHtml((dev.userAgent || '').slice(0, 30) || dev.ip)} · 在线</div>
+                                </div>
+                                <span class="status-dot on"></span>
                             </div>
-                            <span class="status-dot on"></span>
-                        </div>
-                    `).join('');
-                } else {
-                    list.innerHTML = `
-                        <div class="devices-empty-guide">
-                            <div class="devices-empty-icon"><span data-icon="devices"></span></div>
-                            <div style="flex:1; min-width:0;">
-                                <div style="font-weight:600; font-size:12px; color:var(--apple-text-main);">等待其他设备加入局域网</div>
-                                <div class="subtle" style="font-size:11px; margin-top:2px;">手机、平板或电脑打开浏览器访问即可极速互联</div>
+                        `).join('');
+                    } else {
+                        list.innerHTML = `
+                            <div class="device-node-card host-card">
+                                <div style="color:var(--apple-system-blue);"><span data-icon="monitor"></span></div>
+                                <div class="device-node-meta">
+                                    <div class="device-node-name ellipsis">当前设备 (已连接)</div>
+                                    <div class="device-node-sub ellipsis">局域网服务运行中</div>
+                                </div>
+                                <span class="status-dot on"></span>
                             </div>
-                        </div>
-                    `;
-                }
-                if (window.Icons) {
-                    list.querySelectorAll('[data-icon]').forEach(iEl => {
-                        iEl.innerHTML = Icons.render(iEl.getAttribute('data-icon'), 16);
-                    });
+                            <div class="device-node-card qr-card">
+                                <div style="color:var(--apple-system-blue);"><span data-icon="devices"></span></div>
+                                <div class="device-node-meta">
+                                    <div class="device-node-name ellipsis">等待其他设备加入</div>
+                                    <div class="device-node-sub ellipsis">手机扫码或输入网址即可直连</div>
+                                </div>
+                                <span class="apple-badge apple-badge-sm apple-badge-primary" style="font-size:10px;">待命</span>
+                            </div>
+                        `;
+                    }
+                    if (window.Icons) {
+                        list.querySelectorAll('[data-icon]').forEach(iEl => {
+                            iEl.innerHTML = Icons.render(iEl.getAttribute('data-icon'), 16);
+                        });
+                    }
                 }
             }
         } catch (e) { /* 静默：轮询失败不打扰 */ }
@@ -854,25 +858,105 @@
             if (e.target === modal) modal.style.display = 'none';
         });
 
-        const connectToServer = (url) => {
+        const connectToServer = async (url) => {
             let fullUrl = url.trim();
             if (!/^https?:\/\//i.test(fullUrl)) fullUrl = 'http://' + fullUrl;
             fullUrl = fullUrl.replace(/\/$/, '');
 
+            if (btnManual) {
+                btnManual.disabled = true;
+                btnManual.textContent = '连接中…';
+            }
+            if (statusEl) statusEl.textContent = `正在握手连接 ${fullUrl}…`;
+
+            let reachable = false;
+            let requiresPin = false;
+            let serverInfo = null;
+
+            try {
+                // 1. 优先探测免鉴权轻量发现接口
+                const pingRes = await fetch(`${fullUrl}/api/ping`, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' },
+                    signal: AbortSignal.timeout(2500)
+                });
+                if (pingRes.ok) {
+                    serverInfo = await pingRes.json().catch(() => ({}));
+                    reachable = true;
+                    requiresPin = !!serverInfo.requiresPin;
+                }
+            } catch (e) {}
+
+            if (!reachable) {
+                // 2. 降级探测 /api/verify
+                try {
+                    const vRes = await fetch(`${fullUrl}/api/verify`, {
+                        method: 'POST',
+                        headers: (auth() ? auth().authHeaders() : {}),
+                        signal: AbortSignal.timeout(2500)
+                    });
+                    if (vRes.ok || vRes.status === 401) {
+                        reachable = true;
+                        requiresPin = (vRes.status === 401);
+                    }
+                } catch (e2) {}
+            }
+
+            if (btnManual) {
+                btnManual.disabled = false;
+                btnManual.textContent = '直连';
+            }
+
+            if (!reachable) {
+                if (statusEl) statusEl.textContent = `❌ 无法连通 ${fullUrl}`;
+                LanDiskUI.toast(`连接失败：无法连通 ${fullUrl}，请检查 IP 端口与 Wi-Fi`, 'error', 4500);
+                return;
+            }
+
+            // 保存服务端配置
             if (auth() && auth().setServerUrl) {
                 auth().setServerUrl(fullUrl);
             } else {
                 localStorage.setItem('landisk_custom_server', fullUrl);
                 window.currentServerUrl = fullUrl;
             }
-            LanDiskUI.toast(`已成功连接到电脑: ${fullUrl}`, 'success');
+
+            const displayHost = fullUrl.replace(/^https?:\/\//, '');
+            if (labelEl) labelEl.textContent = `当前已绑定: ${displayHost}`;
+            if (btnLabel) btnLabel.textContent = displayHost.length > 18 ? displayHost.substring(0, 16) + '…' : displayHost;
+
             modal.style.display = 'none';
-            setTimeout(() => window.location.reload(), 300);
+
+            if (!requiresPin) {
+                LanDiskUI.toast(`已成功直连电脑 (${displayHost})！`, 'success');
+                enterApp();
+            } else {
+                // 检查已存 PIN 是否可以直接通过
+                const savedPin = (auth() && auth().getPin) ? auth().getPin() : (localStorage.getItem('lan_disk_pin') || '');
+                if (savedPin) {
+                    try {
+                        const testAuth = await fetch(`${fullUrl}/api/verify`, {
+                            method: 'POST',
+                            headers: { 'x-pin': savedPin, 'x-qr-token': (auth() ? auth().getToken() : '') },
+                            signal: AbortSignal.timeout(2000)
+                        });
+                        if (testAuth.ok) {
+                            LanDiskUI.toast(`已通过已存密码连入 (${displayHost})`, 'success');
+                            enterApp();
+                            return;
+                        }
+                    } catch (e) {}
+                }
+                $('#login-overlay').style.display = 'flex';
+                $('#pin-input').value = '';
+                $('#pin-input').focus();
+                LanDiskUI.toast(`已连通电脑，请输入电脑端设置的 PIN 密码`, 'info', 4000);
+            }
         };
 
         btnManual && btnManual.addEventListener('click', () => {
             const val = ipInput ? ipInput.value.trim() : '';
-            if (!val) return LanDiskUI.toast('请输入电脑 IP 地址', 'error');
+            if (!val) return LanDiskUI.toast('请输入电脑 IP 地址 (如 192.168.0.104:3000)', 'error');
             connectToServer(val);
         });
 
@@ -893,43 +977,53 @@
             if (savedServer) {
                 try { hostPool.add(new URL(savedServer).hostname); } catch (e) {}
             }
+            if (ipInput && ipInput.value.trim()) {
+                try {
+                    const raw = ipInput.value.trim();
+                    const parsed = raw.includes(':') ? raw.split(':')[0] : raw;
+                    if (parsed) hostPool.add(parsed.replace(/^https?:\/\//, ''));
+                } catch (e) {}
+            }
             if (window.location.hostname && window.location.hostname !== 'localhost') {
                 hostPool.add(window.location.hostname);
             }
 
             const selectedSubnet = subnetSelect ? subnetSelect.value : 'auto';
-            const subnetsToScan = [];
             if (selectedSubnet === 'auto') {
-                subnetsToScan.push('192.168.0', '192.168.1', '192.168.31', '192.168.50', '192.168.2', '10.0.0', '172.20.10');
+                const subnetsToScan = ['192.168.0', '192.168.1', '192.168.31', '192.168.50', '192.168.2', '10.0.0', '172.20.10'];
+                const priorityHostIds = [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 30, 50, 88, 120, 150, 188, 200, 1];
+                for (const sub of subnetsToScan) {
+                    for (const hid of priorityHostIds) {
+                        hostPool.add(`${sub}.${hid}`);
+                    }
+                }
             } else {
-                subnetsToScan.push(selectedSubnet);
-            }
-
-            // 高概率主机优先段
-            const priorityHostIds = [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 50, 88, 120, 150, 188, 200, 1];
-            for (const sub of subnetsToScan) {
-                for (const hid of priorityHostIds) {
-                    hostPool.add(`${sub}.${hid}`);
+                // 指定特定子网时，全量探测该子网 1~254
+                for (let hid = 1; hid <= 254; hid++) {
+                    hostPool.add(`${selectedSubnet}.${hid}`);
                 }
             }
 
             const hostList = Array.from(hostPool);
-            const batchSize = 35;
+            const batchSize = 40;
 
             function renderFoundCards() {
                 if (foundMap.size === 0) return;
                 listEl.innerHTML = Array.from(foundMap.values()).map(item => `
-                    <div class="row" style="justify-content:space-between; align-items:center; padding:11px 14px; background:var(--apple-bg-card); border:1px solid var(--apple-border); border-radius:14px; cursor:pointer; box-shadow:var(--shadow-1); transition:transform 0.2s;" data-connect-url="${item.url}">
-                        <div class="row" style="gap:10px; align-items:center;">
+                    <div class="row" style="justify-content:space-between; align-items:center; padding:11px 14px; background:var(--apple-bg-card); border:1px solid var(--apple-border); border-radius:14px; cursor:pointer; box-shadow:var(--shadow-1); transition:all 0.2s;" data-connect-url="${item.url}">
+                        <div class="row" style="gap:10px; align-items:center; min-width:0; flex:1;">
                             <div style="width:34px; height:34px; border-radius:10px; background:rgba(52,199,89,0.15); color:var(--apple-system-green); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
                                 <span data-icon="monitor" data-icon-size="18"></span>
                             </div>
-                            <div>
-                                <div style="font-size:13.5px; font-weight:600; letter-spacing:-0.01em;">${escapeHtml(item.name)}</div>
-                                <div style="font-size:11.5px; color:var(--apple-system-blue); font-family:monospace;">${escapeHtml(item.url)}</div>
+                            <div style="min-width:0; flex:1;">
+                                <div style="font-size:13.5px; font-weight:600; letter-spacing:-0.01em; display:flex; align-items:center; gap:6px;">
+                                    <span class="ellipsis">${escapeHtml(item.name)}</span>
+                                    ${item.requiresPin ? '<span style="font-size:10px; padding:1px 5px; border-radius:4px; background:rgba(255,159,10,0.15); color:var(--apple-system-orange); white-space:nowrap;">需密码</span>' : '<span style="font-size:10px; padding:1px 5px; border-radius:4px; background:rgba(52,199,89,0.15); color:var(--apple-system-green); white-space:nowrap;">免密直连</span>'}
+                                </div>
+                                <div style="font-size:11.5px; color:var(--apple-system-blue); font-family:monospace;" class="ellipsis">${escapeHtml(item.url)}</div>
                             </div>
                         </div>
-                        <button class="apple-btn apple-btn-primary" style="padding:6px 14px; font-size:12px; border-radius:10px; font-weight:600;">一键连接</button>
+                        <button class="apple-btn apple-btn-primary" style="padding:6px 14px; font-size:12px; border-radius:10px; font-weight:600; flex-shrink:0; margin-left:8px;">一键连接</button>
                     </div>
                 `).join('');
 
@@ -944,18 +1038,18 @@
 
             async function probeUrl(targetUrl) {
                 try {
-                    const r = await fetch(`${targetUrl}/api/sys-info`, {
+                    const r = await fetch(`${targetUrl}/api/ping`, {
                         method: 'GET',
                         headers: { 'Accept': 'application/json' },
                         signal: AbortSignal.timeout(800)
                     });
                     if (r.ok) {
                         const data = await r.json().catch(() => ({}));
-                        const osName = data.os ? `${data.os}` : '猫步互联电脑';
-                        const cpuName = data.cpu ? data.cpu.split('@')[0].trim() : '';
-                        const displayName = `💻 ${osName} ${cpuName ? '(' + cpuName + ')' : ''}`;
+                        const osName = data.os || '电脑';
+                        const hostName = data.hostname || '';
+                        const displayName = `💻 ${hostName ? hostName + ' (' + osName + ')' : '猫步互联电脑'}`;
                         if (!foundMap.has(targetUrl)) {
-                            foundMap.set(targetUrl, { url: targetUrl, name: displayName });
+                            foundMap.set(targetUrl, { url: targetUrl, name: displayName, requiresPin: !!data.requiresPin });
                             renderFoundCards();
                             if (statusEl) statusEl.textContent = `🎯 已发现 ${foundMap.size} 台在线电脑！`;
                         }
@@ -964,13 +1058,17 @@
                 } catch (e) {}
 
                 try {
-                    const r2 = await fetch(`${targetUrl}/api/devices`, {
-                        method: 'GET',
+                    const r2 = await fetch(`${targetUrl}/api/verify`, {
+                        method: 'POST',
                         signal: AbortSignal.timeout(600)
                     });
-                    if (r2.ok) {
+                    if (r2.ok || r2.status === 401) {
                         if (!foundMap.has(targetUrl)) {
-                            foundMap.set(targetUrl, { url: targetUrl, name: `💻 猫步互联电脑 (${targetUrl.replace(/^https?:\/\//, '')})` });
+                            foundMap.set(targetUrl, {
+                                url: targetUrl,
+                                name: `💻 猫步互联电脑 (${targetUrl.replace(/^https?:\/\//, '')})`,
+                                requiresPin: (r2.status === 401)
+                            });
                             renderFoundCards();
                             if (statusEl) statusEl.textContent = `🎯 已发现 ${foundMap.size} 台在线电脑！`;
                         }
@@ -988,7 +1086,7 @@
             for (let i = 0; i < tasks.length; i += batchSize) {
                 const chunk = tasks.slice(i, i + batchSize);
                 await Promise.all(chunk.map(url => probeUrl(url)));
-                if (foundMap.size > 0 && i > 100) break; // 已发现至少一个则加速完成
+                if (foundMap.size > 0 && selectedSubnet === 'auto' && i > 120) break; // 智能模式已发现设备则提早收尾
             }
 
             if (foundMap.size === 0) {
@@ -1063,8 +1161,7 @@
                 $('#pin-input').focus();
             }
         } catch (e) {
-            if (isAppContainer) {
-                LanDiskUI.toast('无法连通电脑端，请检查 Wi-Fi 或点击雷达重新扫描', 'info', 4000);
+            if (isAppContainer && !currentServer) {
                 if (window.triggerAppRadar) window.triggerAppRadar();
             } else {
                 $('#login-overlay').style.display = 'flex';

@@ -23,7 +23,8 @@ const INVOKABLE_CHANNELS = new Set([
     'get-home-dir',
     'get-network-info',
     'get-sys-info',
-    'schedule-shutdown'
+    'schedule-shutdown',
+    'generate-qr'
 ]);
 
 contextBridge.exposeInMainWorld('api', {
@@ -47,6 +48,7 @@ contextBridge.exposeInMainWorld('api', {
     quitApp: () => ipcRenderer.invoke('quit-app'),
     openDevTools: () => ipcRenderer.invoke('open-dev-tools'),
     scheduleShutdown: (minutes) => ipcRenderer.invoke('schedule-shutdown', minutes),
+    generateQrCode: (text) => ipcRenderer.invoke('generate-qr', text),
     invoke: (channel, data) => {
         if (!INVOKABLE_CHANNELS.has(channel)) {
             return Promise.resolve({ success: false, error: `IPC 通道未授权: ${channel}` });

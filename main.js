@@ -400,6 +400,15 @@ function createTray() {
     });
 }
 
+// IPC 通信：生成二维码
+ipcMain.handle('generate-qr', async (event, text) => {
+    try {
+        return await QRCode.toDataURL(text || 'http://localhost:3000', { width: 250, margin: 2 });
+    } catch (e) {
+        return '';
+    }
+});
+
 // IPC 通信：启动服务
 ipcMain.handle('start-server', async (event, config) => {
     try {

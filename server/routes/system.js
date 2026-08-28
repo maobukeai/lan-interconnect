@@ -98,6 +98,20 @@ async function getDiskSpace() {
     return diskSpacePending;
 }
 
+// 局域网服务发现与心跳轻量探针 (无需登录鉴权)
+router.get('/ping', (req, res) => {
+    const osType = os.type();
+    const osName = osType === 'Windows_NT' ? 'Windows' : (osType === 'Darwin' ? 'macOS' : (osType === 'Linux' ? 'Linux' : osType));
+    res.json({
+        app: '猫步互联 Pro',
+        version: '1.4.0',
+        hostname: os.hostname(),
+        os: osName,
+        requiresPin: !!state.currentConfig.pin,
+        mode: state.currentConfig.mode || 'full'
+    });
+});
+
 router.get('/sys-info', async (req, res) => {
     const diskSpace = await getDiskSpace();
 

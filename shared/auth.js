@@ -89,7 +89,7 @@
     }
 
     global.LanDiskAuth = { getPin, getToken, hasCredentials, authHeaders, authQuery, getServerUrl, setServerUrl, api };
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && typeof window.api === 'undefined') {
         window.api = api;
     }
 

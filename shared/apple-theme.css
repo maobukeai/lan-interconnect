@@ -485,19 +485,52 @@ body {
     align-items: stretch;
 }
 
+.devices-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 10px;
+    width: 100%;
+    align-items: stretch;
+}
+
 .device-node-card {
     display: flex;
     align-items: center;
-    gap: 9px;
-    padding: 8px 11px;
+    gap: 10px;
+    padding: 10px 13px;
     background: var(--apple-bg-card, rgba(120, 130, 160, 0.08));
     border: 1px solid var(--apple-border);
-    border-radius: 11px;
-    transition: all 0.16s ease;
+    border-radius: 12px;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    box-sizing: border-box;
+    min-width: 0;
+    width: 100%;
+}
+
+:root[data-theme="light"] .device-node-card {
+    background: rgba(255, 255, 255, 0.85);
+    border: 1px solid rgba(0, 0, 0, 0.08);
 }
 
 .device-node-card:hover {
     background: var(--apple-bg-card-hover, rgba(120, 130, 160, 0.16));
+    border-color: var(--apple-system-blue);
+    transform: translateY(-1.5px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.device-node-card.qr-card {
+    border: 1px dashed var(--apple-system-blue);
+    background: rgba(10, 132, 255, 0.04);
+}
+
+:root[data-theme="light"] .device-node-card.qr-card {
+    background: rgba(10, 132, 255, 0.05);
+    border: 1px dashed rgba(10, 132, 255, 0.35);
+}
+
+.device-node-card.qr-card:hover {
+    background: rgba(10, 132, 255, 0.1);
     border-color: var(--apple-system-blue);
 }
 
@@ -507,17 +540,20 @@ body {
 }
 
 .device-node-name {
-    font-size: 12px;
+    font-size: 12.5px;
     font-weight: 600;
     color: var(--apple-text-main);
+    line-height: 1.3;
 }
 
 .device-node-sub {
     font-size: 10.5px;
     color: var(--apple-text-muted);
+    margin-top: 1px;
 }
 
 .devices-empty-guide {
+    grid-column: 1 / -1;
     display: flex;
     align-items: center;
     gap: 12px;
@@ -525,7 +561,8 @@ body {
     background: rgba(120, 130, 160, 0.06);
     border: 1px dashed var(--apple-border);
     border-radius: 12px;
-    margin-top: 4px;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .devices-empty-icon {
@@ -3779,9 +3816,58 @@ input[type="range"].apple-range::-webkit-slider-thumb:active {
 /* 移动端 App 专属安全区与手感优化 */
 @media (max-width: 768px) {
     header.web-header {
-        padding-top: max(12px, env(safe-area-inset-top));
-        padding-left: max(14px, env(safe-area-inset-left));
-        padding-right: max(14px, env(safe-area-inset-right));
+        height: 48px !important;
+        padding-top: max(8px, env(safe-area-inset-top, 8px)) !important;
+        padding-bottom: 8px !important;
+        padding-left: max(10px, env(safe-area-inset-left, 10px)) !important;
+        padding-right: max(10px, env(safe-area-inset-right, 10px)) !important;
+        gap: 4px !important;
+    }
+    .web-brand {
+        gap: 6px !important;
+        white-space: nowrap !important;
+        flex-shrink: 0 !important;
+    }
+    .web-brand-logo,
+    .web-brand img {
+        width: 22px !important;
+        height: 22px !important;
+        flex-shrink: 0 !important;
+    }
+    .web-brand-title {
+        font-size: 14.5px !important;
+        white-space: nowrap !important;
+        flex-shrink: 0 !important;
+    }
+    #net-badge {
+        padding: 2px 6px !important;
+        font-size: 10.5px !important;
+        gap: 3px !important;
+        flex-shrink: 0 !important;
+        margin-left: 2px !important;
+    }
+    .web-header-actions {
+        gap: 4px !important;
+        flex-shrink: 1 !important;
+    }
+    #btn-radar-modal {
+        height: 28px !important;
+        padding: 0 6px !important;
+        font-size: 11px !important;
+        gap: 3px !important;
+        max-width: 105px !important;
+        flex-shrink: 1 !important;
+    }
+    #radar-btn-label {
+        max-width: 75px !important;
+        font-size: 11px !important;
+    }
+    header.web-header .apple-btn-icon {
+        width: 28px !important;
+        height: 28px !important;
+        min-width: 28px !important;
+        padding: 0 !important;
+        flex-shrink: 0 !important;
     }
     .apple-dock {
         padding-bottom: max(8px, env(safe-area-inset-bottom));

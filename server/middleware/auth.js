@@ -71,7 +71,7 @@ function checkAuth(req, res, next) {
         }
     }
 
-    if (req.path === '/' || req.path.startsWith('/index.html') || req.path.startsWith('/favicon.ico') || req.path.startsWith('/shared/download/')) {
+    if (req.path === '/' || req.path.startsWith('/index.html') || req.path.startsWith('/favicon.ico') || req.path.startsWith('/shared/download/') || req.path === '/ping' || req.path === '/api/ping') {
         return next();
     }
 
