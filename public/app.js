@@ -1184,21 +1184,44 @@
             return;
         }
 
-        // 静默校验登录态（扫码 token / 已存 PIN / 免密）
+        // 静默校验登录态（优先探测免鉴权 ping，再核验免密/PIN）
+        try {
+            const pingRes = await fetch(api('/api/ping'), {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' },
+                signal: AbortSignal.timeout(2000)
+            });
+            if (pingRes.ok) {
+                const sInfo = await pingRes.json().catch(() => ({}));
+                if (!sInfo.requiresPin) {
+                    // 免密模式直接直通进入，绝不弹密码框
+                    enterApp();
+                    return;
+                }
+            }
+        } catch (ePing) {}
+
         try {
             const res = await fetch(api('/api/verify'), {
-                method: 'POST',
+                method: 'GET',
                 headers: auth().authHeaders(),
-                signal: AbortSignal.timeout(3000)
+                signal: AbortSignal.timeout(2500)
             });
             if (res.ok) {
                 enterApp();
-            } else {
+            } else if (res.status === 401) {
+                // 服务端明确要求输入密码
                 $('#login-overlay').style.display = 'flex';
                 $('#pin-input').focus();
+            } else {
+                if (isAppContainer) {
+                    if (window.triggerAppRadar) window.triggerAppRadar();
+                } else {
+                    $('#login-overlay').style.display = 'flex';
+                }
             }
         } catch (e) {
-            if (isAppContainer && !currentServer) {
+            if (isAppContainer) {
                 if (window.triggerAppRadar) window.triggerAppRadar();
             } else {
                 $('#login-overlay').style.display = 'flex';
