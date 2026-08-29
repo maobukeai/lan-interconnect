@@ -627,10 +627,13 @@
                         </div>
                     </div>
 
-                    <!-- 屏幕中央 HUD 状态反馈 -->
-                    <div class="player-ctrl-center" id="ap-center-badge">
-                        <svg id="ap-center-icon-play" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                    <!-- 屏幕中央加载指示器 (Apple VisionOS Crystal Spinner) -->
+                    <div class="ap-loading-spinner" id="ap-loading-spinner">
+                        <div class="ap-spinner-ring"></div>
                     </div>
+
+                    <!-- 屏幕中央 HUD 状态反馈 (点按播放/暂停即时动态气泡) -->
+                    <div class="player-ctrl-center" id="ap-center-badge"></div>
 
                     <!-- 锁屏按钮 (Apple 悬浮水晶气泡) -->
                     <button class="ap-lock-btn" id="ap-lock-btn" title="锁定全屏屏幕">

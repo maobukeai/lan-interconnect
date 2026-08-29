@@ -80,6 +80,7 @@ class AppleCinemaPlayerEngine {
             controlsOverlay: document.getElementById('player-controls-overlay'),
             videoTitle: document.getElementById('ap-video-title'),
             videoBadge: document.getElementById('ap-video-badge'),
+            loadingSpinner: document.getElementById('ap-loading-spinner'),
             centerBadge: document.getElementById('ap-center-badge'),
             lockBtn: document.getElementById('ap-lock-btn'),
             iconUnlock: document.getElementById('ap-icon-unlock'),
@@ -160,10 +161,16 @@ class AppleCinemaPlayerEngine {
 
         media.addEventListener('timeupdate', () => this.onTimeUpdate());
         media.addEventListener('progress', () => this.onProgress());
+        media.addEventListener('loadstart', () => this.setLoading(true));
+        media.addEventListener('waiting', () => this.setLoading(true));
+        media.addEventListener('seeking', () => this.setLoading(true));
+        media.addEventListener('seeked', () => this.setLoading(false));
+        media.addEventListener('canplay', () => this.setLoading(false));
+        media.addEventListener('playing', () => { this.setLoading(false); this.onPlayStateChange(true); });
         media.addEventListener('play', () => this.onPlayStateChange(true));
         media.addEventListener('pause', () => this.onPlayStateChange(false));
         media.addEventListener('ended', () => this.onEnded());
-        media.addEventListener('loadedmetadata', () => this.onLoadedMetadata());
+        media.addEventListener('loadedmetadata', () => { this.setLoading(false); this.onLoadedMetadata(); });
 
         btnPlay?.addEventListener('click', (e) => { e.stopPropagation(); this.togglePlay(); });
         btnPrev?.addEventListener('click', (e) => { e.stopPropagation(); this.prev(); });
@@ -495,14 +502,13 @@ class AppleCinemaPlayerEngine {
             this.dom.audioLayer.style.display = 'none';
         }
 
-        // 彻底清空上一解码管道，避免硬件解码器死锁，再挂载新流实现秒开
+        // 直接流式直通挂载新媒体，配合 loadingSpinner 指示，避免双重 load() 与画面撕裂
         if (this.dom.media) {
-            this.dom.media.pause();
-            this.dom.media.removeAttribute('src');
-            this.dom.media.load();
+            this.setLoading(true);
             this.dom.media.preload = 'auto';
-            this.dom.media.src = streamUrl;
-            this.dom.media.load();
+            if (this.dom.media.src !== streamUrl) {
+                this.dom.media.src = streamUrl;
+            }
             this.dom.media.play().catch(() => {});
         }
 
@@ -1434,11 +1440,25 @@ class AppleCinemaPlayerEngine {
         }, 800);
     }
 
+    setLoading(loading) {
+        if (!this.dom.loadingSpinner) return;
+        if (loading) {
+            this.dom.loadingSpinner.classList.add('show');
+            if (this.dom.centerBadge) this.dom.centerBadge.classList.remove('show');
+        } else {
+            this.dom.loadingSpinner.classList.remove('show');
+        }
+    }
+
     showCenterBadge(text) {
         if (!this.dom.centerBadge) return;
+        if (this.dom.loadingSpinner && this.dom.loadingSpinner.classList.contains('show')) return;
         this.dom.centerBadge.textContent = text;
         this.dom.centerBadge.classList.add('show');
-        setTimeout(() => this.dom.centerBadge && this.dom.centerBadge.classList.remove('show'), 350);
+        if (this._centerBadgeTimer) clearTimeout(this._centerBadgeTimer);
+        this._centerBadgeTimer = setTimeout(() => {
+            if (this.dom.centerBadge) this.dom.centerBadge.classList.remove('show');
+        }, 320);
     }
 
     savePlayHistory(current, duration) {
