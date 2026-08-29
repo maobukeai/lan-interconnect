@@ -71,34 +71,115 @@ router.post('/download/batch', (req, res) => {
     archive.finalize();
 });
 
-// 视频/音频流式播放支持 (零拷贝 sendfile)
+// 媒体 MIME 类型映射字典
+const MEDIA_MIME_TYPES = {
+    '.mp4': 'video/mp4',
+    '.m4v': 'video/mp4',
+    '.mkv': 'video/x-matroska',
+    '.webm': 'video/webm',
+    '.mov': 'video/quicktime',
+    '.avi': 'video/x-msvideo',
+    '.flv': 'video/x-flv',
+    '.ts': 'video/mp2t',
+    '.mp3': 'audio/mpeg',
+    '.wav': 'audio/wav',
+    '.flac': 'audio/flac',
+    '.aac': 'audio/aac',
+    '.ogg': 'audio/ogg',
+    '.m4a': 'audio/mp4'
+};
+
+// 局域网极致秒开流式传输引擎 (Zero-latency LAN Media Streamer)
 router.get('/stream', (req, res) => {
     const targetPath = req.query.path;
     if (!targetPath || !fs.existsSync(targetPath)) return res.status(404).send('Not found');
     if (!isSafePath(targetPath)) return res.status(403).send('Forbidden');
 
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
+    const resolved = path.resolve(targetPath);
+    let stat;
+    try {
+        stat = fs.statSync(resolved);
+    } catch (e) {
+        return res.status(404).send('Not found');
+    }
 
-    res.sendFile(path.resolve(targetPath), {
-        dotfiles: 'allow',
-        acceptRanges: true,
-        cacheControl: false,
-        lastModified: false,
-        etag: false
-    }, (err) => {
-        if (err) {
-            if (err.code !== 'ECONNABORTED' && err.code !== 'EPIPE') {
-                console.error('sendFile error:', err.message);
-            }
-            if (!res.headersSent) {
-                res.status(500).end();
-            } else {
-                res.destroy();
-            }
+    if (stat.isDirectory()) return res.status(400).send('Cannot stream directory');
+
+    const fileSize = stat.size;
+    const ext = path.extname(resolved).toLowerCase();
+    const contentType = MEDIA_MIME_TYPES[ext] || 'application/octet-stream';
+
+    // 禁用 TCP Nagle 算法，消除网络数据包排队延迟，实现局域网 0ms 发送
+    if (res.socket && typeof res.socket.setNoDelay === 'function') {
+        res.socket.setNoDelay(true);
+    }
+
+    const range = req.headers.range;
+
+    // 允许客户端缓存已请求的视频切片（拖拽后退 0 耗时秒开）
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Last-Modified', stat.mtime.toUTCString());
+
+    if (range) {
+        // 解析 Range: bytes=start-end
+        const parts = range.replace(/bytes=/, "").split("-");
+        const start = parseInt(parts[0], 10);
+        let end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+        if (isNaN(start) || start >= fileSize) {
+            res.setHeader('Content-Range', `bytes */${fileSize}`);
+            return res.status(416).end();
         }
-    });
+
+        if (isNaN(end) || end >= fileSize) {
+            end = fileSize - 1;
+        }
+
+        const chunksize = (end - start) + 1;
+
+        res.status(206);
+        res.setHeader('Content-Range', `bytes ${start}-${end}/${fileSize}`);
+        res.setHeader('Content-Length', chunksize);
+
+        // 使用 512KB 高性能缓冲区流式直通
+        const stream = fs.createReadStream(resolved, {
+            start,
+            end,
+            highWaterMark: 512 * 1024
+        });
+
+        stream.on('error', (err) => {
+            if (!res.headersSent) res.status(500).end();
+            else res.destroy();
+        });
+
+        req.on('close', () => {
+            stream.destroy();
+        });
+
+        stream.pipe(res);
+    } else {
+        // 全量请求
+        res.setHeader('Content-Length', fileSize);
+        res.status(200);
+
+        const stream = fs.createReadStream(resolved, {
+            highWaterMark: 512 * 1024
+        });
+
+        stream.on('error', (err) => {
+            if (!res.headersSent) res.status(500).end();
+            else res.destroy();
+        });
+
+        req.on('close', () => {
+            stream.destroy();
+        });
+
+        stream.pipe(res);
+    }
 });
 
 // 生成分享链接（附二维码）

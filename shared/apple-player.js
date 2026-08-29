@@ -1117,6 +1117,20 @@ class AppleCinemaPlayerEngine {
             }
         };
 
+        let rafSeekId = null;
+        let pendingSeekSec = null;
+
+        const executeFastSeek = (sec) => {
+            if (!this.dom.media || isNaN(sec)) return;
+            try {
+                if (typeof this.dom.media.fastSeek === 'function') {
+                    this.dom.media.fastSeek(sec);
+                } else {
+                    this.dom.media.currentTime = sec;
+                }
+            } catch (e) {}
+        };
+
         const startDrag = (e) => {
             if (!this.dom.media || !this.dom.media.duration) return;
             isDragging = true;
@@ -1126,6 +1140,9 @@ class AppleCinemaPlayerEngine {
 
             const pos = getPosFromEvent(e);
             updateVisuals(pos);
+            const targetSec = pos * this.dom.media.duration;
+            executeFastSeek(targetSec);
+
             if (window.LanDiskUI && window.LanDiskUI.Haptic) {
                 window.LanDiskUI.Haptic.selection();
             }
@@ -1138,6 +1155,19 @@ class AppleCinemaPlayerEngine {
 
             const pos = getPosFromEvent(e);
             updateVisuals(pos);
+
+            // 拖拽移动时使用 requestAnimationFrame + fastSeek 实时平滑刷新关键帧画面
+            if (this.dom.media && this.dom.media.duration) {
+                pendingSeekSec = pos * this.dom.media.duration;
+                if (!rafSeekId) {
+                    rafSeekId = requestAnimationFrame(() => {
+                        rafSeekId = null;
+                        if (pendingSeekSec !== null) {
+                            executeFastSeek(pendingSeekSec);
+                        }
+                    });
+                }
+            }
         };
 
         const endDrag = (e) => {
@@ -1146,19 +1176,26 @@ class AppleCinemaPlayerEngine {
             wrap.classList.remove('is-dragging');
             if (e.stopPropagation) e.stopPropagation();
 
+            if (rafSeekId) {
+                cancelAnimationFrame(rafSeekId);
+                rafSeekId = null;
+            }
+
             const pos = getPosFromEvent(e);
             if (this.dom.media && this.dom.media.duration) {
                 const targetSec = pos * this.dom.media.duration;
-                this.dom.media.currentTime = targetSec;
+                try {
+                    this.dom.media.currentTime = targetSec;
+                } catch (e) {}
                 if (window.LanDiskUI && window.LanDiskUI.Haptic) {
                     window.LanDiskUI.Haptic.light();
                 }
             }
 
-            // 延迟 150ms 退出拖拽状态，恢复 timeupdate 自动同步
+            // 延迟 120ms 退出拖拽状态，恢复 timeupdate 自动同步
             setTimeout(() => {
                 this.isProgressDragging = false;
-            }, 150);
+            }, 120);
         };
 
         // 鼠标事件

@@ -215,10 +215,17 @@ function shouldCompress(req, res) {
     if (req.headers['x-no-compression']) {
         return false;
     }
-    // SSE 流不能压缩缓冲，否则实时消息会被 gzip 攒住不下发
-    if (res && res.getHeader && res.getHeader('Content-Type') === 'text/event-stream') {
+    // 音视频媒体流、下载与大文件严禁压缩，保证 Range 206 毫秒级直通与 0ms 拖拽
+    if (req.path && (req.path.includes('/stream') || req.path.includes('/download') || req.path.includes('/media'))) {
         return false;
     }
+    if (res && res.getHeader) {
+        const ct = (res.getHeader('Content-Type') || '').toLowerCase();
+        if (ct.startsWith('video/') || ct.startsWith('audio/') || ct === 'text/event-stream') {
+            return false;
+        }
+    }
+    // SSE 流不能压缩缓冲，否则实时消息会被 gzip 攒住不下发
     if (req.headers.accept === 'text/event-stream') {
         return false;
     }
