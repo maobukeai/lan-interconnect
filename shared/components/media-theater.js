@@ -44,7 +44,8 @@
             return (global.LanDiskAuth && global.LanDiskAuth.authQuery) ? global.LanDiskAuth.authQuery() : '';
         }
 
-        // 从本地存储还原已保存的多媒体目录与视图偏好
+        // 从本地存储还原已保存的多媒体目录与视图偏好，并与服务端资料库合并
+        // （服务端为共享主库：换设备/重装 App/桌面端添加的目录都能看到）
         restoreFolders() {
             try {
                 let savedList = null;
@@ -69,12 +70,44 @@
             }
             this._bindModeToggle();
             this.renderFolderChips();
+            this._syncFoldersFromServer();
+        }
+
+        // 拉取服务端媒体库并与本地合并（取并集后回写，弱网/离线时本地缓存仍可用）
+        async _syncFoldersFromServer() {
+            try {
+                const res = await fetch(this.getApiUrl('/api/media/dirs'), { headers: this._authHeaders() });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!data || !Array.isArray(data.dirs)) return;
+                const serverSet = new Set(data.dirs.filter(p => p && typeof p === 'string' && p.trim()));
+                const merged = Array.from(new Set([...serverSet, ...this.folders]
+                    .filter(p => p && typeof p === 'string' && p.trim())));
+                // 服务端缺少本地条目（如手机先离线添加）时也要回写，保持双向一致
+                const needsPush = merged.some(p => !serverSet.has(p));
+                const needsPull = this.folders.length !== merged.length ||
+                    merged.some(p => !this.folders.includes(p));
+                if (needsPush || needsPull) {
+                    this.folders = merged;
+                    this._saveFolders(); // 本地缓存 + 回 POST 服务端
+                    this.renderFolderChips();
+                    if (needsPull) this.refresh();
+                }
+            } catch (e) {}
         }
 
         _saveFolders() {
             try {
                 localStorage.setItem('landisk_media_folders', JSON.stringify(this.folders));
                 localStorage.setItem('landisk_media_folder', this.folders[0] || '');
+            } catch (e) {}
+            // 同步到服务端持久化（fire-and-forget，失败不影响本地体验）
+            try {
+                fetch(this.getApiUrl('/api/media/dirs'), {
+                    method: 'POST',
+                    headers: this._authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({ dirs: this.folders })
+                }).catch(() => {});
             } catch (e) {}
         }
 
@@ -782,10 +815,7 @@
 
             modal.el.querySelector('[data-act="manual"]').addEventListener('click', () => {
                 modal.close();
-                const manual = prompt('请输入要添加到媒体资料库的文件夹绝对路径：', currentPath || '');
-                if (manual && manual.trim()) {
-                    this.addFolder(manual.trim());
-                }
+                this._openManualPathInput(currentPath || '');
             });
 
             modal.el.querySelector('[data-act="pick"]').addEventListener('click', () => {
@@ -798,6 +828,38 @@
             });
 
             renderList('');
+        }
+
+        // 手动输入媒体目录：应用内自绘输入框（替代系统原生 prompt —— 样式统一、
+        // 移动端自动聚焦唤起键盘，不再出现中英文混排的系统对话框）
+        _openManualPathInput(defaultValue) {
+            const ui = global.LanDiskUI;
+            if (!ui || !ui.openModal) {
+                const manual = prompt('请输入要添加到媒体资料库的文件夹绝对路径：', defaultValue || '');
+                if (manual && manual.trim()) this.addFolder(manual.trim());
+                return;
+            }
+            const inputModal = ui.openModal(`
+                <div class="modal-title">手动输入媒体目录</div>
+                <div class="modal-message" style="font-size:12.5px; color:var(--apple-text-secondary); margin-bottom:10px;">输入服务器上的文件夹绝对路径，例如 D:\\Movies</div>
+                <input class="apple-input" data-mf="manual-path" type="text" placeholder="D:\\Movies 或 C:\\Users\\me\\Videos" value="${escapeHtml(defaultValue || '')}"
+                    style="width:100%; box-sizing:border-box; padding:11px 13px; border-radius:12px; border:1px solid var(--apple-border); background:rgba(255,255,255,0.06); color:var(--apple-text-main); font-size:14px; margin-bottom:16px; outline:none;" />
+                <div class="modal-actions" style="display:flex; justify-content:flex-end; gap:8px;">
+                    <button class="apple-btn apple-btn-glass" data-act="cancel2">取消</button>
+                    <button class="apple-btn apple-btn-primary" data-act="ok">${I('check', 14)} 添加到资料库</button>
+                </div>
+            `, { width: 460 });
+
+            const pathInput = inputModal.el.querySelector('[data-mf="manual-path"]');
+            const submit = () => {
+                const val = (pathInput.value || '').trim();
+                inputModal.close();
+                if (val) this.addFolder(val);
+            };
+            inputModal.el.querySelector('[data-act="ok"]').addEventListener('click', submit);
+            inputModal.el.querySelector('[data-act="cancel2"]').addEventListener('click', () => inputModal.close());
+            pathInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+            setTimeout(() => { try { pathInput.focus(); } catch (e) {} }, 120);
         }
 
         // 客户端 Canvas 视频首帧提取兜底方案（当服务端缩略图 API 离线或不可达时自动触发）

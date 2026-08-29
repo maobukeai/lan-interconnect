@@ -81,6 +81,16 @@ body.ap-fullscreen-active {
     overflow: hidden !important;
 }
 
+/* 全屏沉浸：隐藏应用品牌栏与底部 Dock。
+   视图切换动画给舞台祖先引入了 transform 层叠上下文，全屏舞台的 z-index
+   会被困在祖先上下文里输给 header(100)/dock(900) —— 直接隐藏比堆 z-index 可靠 */
+body.ap-fullscreen-active header.web-header,
+body.ap-fullscreen-active nav.dock,
+body.ap-fullscreen-active .apple-bottom-dock,
+body.ap-fullscreen-active #main-dock {
+    display: none !important;
+}
+
 .player-stage-box:fullscreen .player-controls-overlay,
 .player-stage-box:-webkit-full-screen .player-controls-overlay,
 .player-stage-box.is-fullscreen .player-controls-overlay {

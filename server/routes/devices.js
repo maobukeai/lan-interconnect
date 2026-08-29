@@ -2,6 +2,11 @@ const express = require('express');
 const router = express.Router();
 const { state, getCleanIp } = require('../config');
 
+// 幂等探测：雷达跨主机扫描用 GET（桌面端 file:// 页面对其他主机的写请求会被来源防护拦截）
+router.get('/verify', (req, res) => {
+    res.json({ success: true, mode: state.currentConfig.mode });
+});
+
 router.post('/verify', (req, res) => {
     res.json({ success: true, mode: state.currentConfig.mode });
 });

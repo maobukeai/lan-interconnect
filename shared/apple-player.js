@@ -444,8 +444,10 @@ class AppleCinemaPlayerEngine {
         if (this.dom.videoTitle) this.dom.videoTitle.textContent = item.name;
         if (this.dom.navTitle) this.dom.navTitle.textContent = item.name;
         if (this.dom.cardTitle) this.dom.cardTitle.textContent = item.name;
-        if (this.dom.cardSub) this.dom.cardSub.textContent = isAudio ? 'Apple Music 高保真无损音频 · 局域网直连' : '4K HDR 硬件加速解码 · 局域网直连';
-        if (this.dom.videoBadge) this.dom.videoBadge.innerHTML = `<span class="ap-status-dot"></span>${isAudio ? '无损音频' : '4K HDR'}`;
+        // 先渲染占位文案，元数据就绪后在 onLoadedMetadata 里替换为真实分辨率
+        if (this.dom.cardSub) this.dom.cardSub.textContent = isAudio ? 'Apple Music 高保真无损音频 · 局域网直连' : '读取视频信息… · 局域网直连';
+        this._pendingVideoMetaText = !isAudio;
+        if (this.dom.videoBadge) this.dom.videoBadge.innerHTML = `<span class="ap-status-dot"></span>${isAudio ? '无损音频' : '视频'}`;
 
         if (isAudio) {
             this.dom.audioLayer.style.display = 'flex';
@@ -755,7 +757,14 @@ class AppleCinemaPlayerEngine {
         const isCurrentlyFull = stageBox.classList.contains('is-fullscreen') || !!(document.fullscreenElement || document.webkitFullscreenElement);
 
         if (!isCurrentlyFull) {
-            // 进入全屏：优先走沉浸式网页全屏 (无浏览器 Esc 黑条干扰)
+            // 摘挂到 body：视图切换动画给舞台祖先引入 transform 层叠上下文，
+            // 会把 position:fixed 和 z-index 困在祖先内，导致 header/Dock 依旧盖在
+            // "全屏"舞台之上 —— 移出后全屏必定铺满整个视口
+            this._stageOriginalParent = stageBox.parentNode;
+            this._stageOriginalNext = stageBox.nextSibling;
+            try { document.body.appendChild(stageBox); } catch (e) {}
+
+            // 进入全屏：沉浸式网页全屏 (无浏览器 Esc 黑条干扰)
             stageBox.classList.add('is-fullscreen');
             document.body.classList.add('ap-fullscreen-active');
             if (this.dom.fsBtnLabel) this.dom.fsBtnLabel.textContent = '还原';
@@ -771,11 +780,7 @@ class AppleCinemaPlayerEngine {
                 } catch (e) {}
             }
 
-            try {
-                if (screen.orientation && screen.orientation.lock) {
-                    screen.orientation.lock('landscape').catch(() => {});
-                }
-            } catch (e) {}
+            this._lockLandscape(true);
         } else {
             // 退出全屏
             stageBox.classList.remove('is-fullscreen');
@@ -792,12 +797,41 @@ class AppleCinemaPlayerEngine {
                 }
             } catch (e) {}
 
-            try {
-                if (screen.orientation && screen.orientation.unlock) {
-                    screen.orientation.unlock();
-                }
-            } catch (e) {}
+            this._lockLandscape(false);
+            this._restoreStageParent();
         }
+    }
+
+    // 横屏锁定：App 内优先走 Capacitor 插件（WebView 下不依赖原生全屏态即可生效），
+    // 浏览器环境回退标准 screen.orientation API
+    _lockLandscape(lock) {
+        try {
+            const capPlugin = (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.ScreenOrientation) || null;
+            if (capPlugin) {
+                if (lock) capPlugin.lock({ orientation: 'landscape' }).catch(() => {});
+                else capPlugin.unlock().catch(() => {});
+                return;
+            }
+            if (screen.orientation && screen.orientation.lock) {
+                if (lock) screen.orientation.lock('landscape').catch(() => {});
+                else if (screen.orientation.unlock) screen.orientation.unlock();
+            }
+        } catch (e) {}
+    }
+
+    // 退出全屏后把舞台放回文档流原位
+    _restoreStageParent() {
+        const stageBox = this.dom.stageBox;
+        if (!stageBox || !this._stageOriginalParent) return;
+        try {
+            if (this._stageOriginalNext && this._stageOriginalNext.parentNode === this._stageOriginalParent) {
+                this._stageOriginalParent.insertBefore(stageBox, this._stageOriginalNext);
+            } else {
+                this._stageOriginalParent.appendChild(stageBox);
+            }
+        } catch (e) {}
+        this._stageOriginalParent = null;
+        this._stageOriginalNext = null;
     }
 
     onFullscreenChange() {
@@ -809,6 +843,8 @@ class AppleCinemaPlayerEngine {
                 document.body.classList.add('ap-fullscreen-active');
             } else if (!isNativeFull && !this.dom.stageBox.classList.contains('is-fullscreen')) {
                 document.body.classList.remove('ap-fullscreen-active');
+                // Esc 等途径退出原生全屏时，同样把舞台归位
+                this._restoreStageParent();
             }
         }
         if (this.dom.fsBtnLabel) {
@@ -985,6 +1021,19 @@ class AppleCinemaPlayerEngine {
     onLoadedMetadata() {
         this.onTimeUpdate();
         this.onProgress();
+        this.renderRealVideoMeta();
+    }
+
+    // 用真实探测到的分辨率替换占位文案（videoWidth/videoHeight 来自解码元数据）
+    renderRealVideoMeta() {
+        if (!this._pendingVideoMetaText || !this.dom.media) return;
+        const w = this.dom.media.videoWidth;
+        const h = this.dom.media.videoHeight;
+        if (!w || !h) return;
+        this._pendingVideoMetaText = false;
+        const tier = h >= 2160 ? '4K' : (h >= 1080 ? '1080P' : (h >= 720 ? '720P' : h + 'P'));
+        if (this.dom.cardSub) this.dom.cardSub.textContent = `${w}×${h} (${tier}) · 局域网直连流式播放`;
+        if (this.dom.videoBadge) this.dom.videoBadge.innerHTML = `<span class="ap-status-dot"></span>${tier}`;
     }
 
     formatTime(sec) {
@@ -1129,6 +1178,10 @@ class AppleCinemaPlayerEngine {
 
             const now = Date.now();
             if (now - this.lastTapTime < 280) {
+                // 双击：撤销未执行的单击动作（避免控制条先闪一下再隐藏）
+                clearTimeout(this._singleTapTimer);
+                this._singleTapTimer = null;
+                this.lastTapTime = 0;
                 const rect = box.getBoundingClientRect();
                 const clickX = e.clientX - rect.left;
                 if (clickX < rect.width * 0.35) {
@@ -1139,9 +1192,14 @@ class AppleCinemaPlayerEngine {
                     this.togglePlay();
                 }
             } else {
-                this.toggleControls();
+                // 单击延迟到双击窗口过后再执行
+                this.lastTapTime = now;
+                clearTimeout(this._singleTapTimer);
+                this._singleTapTimer = setTimeout(() => {
+                    this._singleTapTimer = null;
+                    this.toggleControls();
+                }, 270);
             }
-            this.lastTapTime = now;
         });
 
         box.addEventListener('touchstart', (e) => {
@@ -1185,7 +1243,9 @@ class AppleCinemaPlayerEngine {
                     const rect = box.getBoundingClientRect();
                     const deltaPercent = (-dy / rect.height) * 100;
                     if (this.touchStartX < rect.width * 0.5) {
-                        const newBrightness = Math.max(20, Math.min(150, this.startBrightness + deltaPercent * 1.2));
+                        // 亮度即 CSS 滤镜，只对画面生效：限制在 20%-100%，
+                        // 超过 100% 会过曝且 HUD 会让人误以为在调系统亮度
+                        const newBrightness = Math.max(20, Math.min(100, this.startBrightness + deltaPercent * 1.2));
                         this.brightness = newBrightness;
                         if (this.dom.media) this.dom.media.style.filter = `brightness(${newBrightness}%)`;
                         this.showBrightnessHUD(newBrightness);
@@ -1249,7 +1309,7 @@ class AppleCinemaPlayerEngine {
     showBrightnessHUD(val) {
         if (!this.dom.hudBrightness) return;
         this.dom.hudBrightness.classList.add('show');
-        const percent = Math.round((val / 150) * 100);
+        const percent = Math.round(val); // 亮度值本身即百分比（20-100）
         if (this.dom.hudBrightnessFill) this.dom.hudBrightnessFill.style.height = percent + '%';
         if (this.dom.hudBrightnessVal) this.dom.hudBrightnessVal.textContent = Math.round(val) + '%';
     }

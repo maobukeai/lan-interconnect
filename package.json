@@ -1,6 +1,6 @@
 {
   "name": "lan-disk",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "猫步互联 - 局域网文件共享与跨设备通信工具",
   "author": "Developer",
   "main": "main.js",
@@ -54,6 +54,7 @@
   },
   "dependencies": {
     "@capacitor/core": "^8.5.0",
+    "@capacitor/screen-orientation": "^8.0.1",
     "7zip-bin": "^5.2.0",
     "archiver": "^7.0.1",
     "archiver-utils": "^5.0.2",

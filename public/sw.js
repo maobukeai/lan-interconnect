@@ -103,7 +103,11 @@ async function handleVideoRangeRequest(request, event) {
     const rangeHeader = request.headers.get('range');
     const url = new URL(request.url);
 
-    const cacheKey = url.origin + url.pathname + url.search + (url.search ? '&' : '?') + 'range=' + encodeURIComponent(rangeHeader);
+    // 缓存 key 剥离 pin/token 凭据参数，避免鉴权凭据被持久化到磁盘缓存
+    const keyUrl = new URL(request.url);
+    keyUrl.searchParams.delete('pin');
+    keyUrl.searchParams.delete('token');
+    const cacheKey = keyUrl.origin + keyUrl.pathname + keyUrl.search + (keyUrl.search ? '&' : '?') + 'range=' + encodeURIComponent(rangeHeader);
     
     // 1. 检查是否有本地视频切片缓存
     const cachedResponse = await cache.match(cacheKey);

@@ -353,7 +353,8 @@ router.post('/upload/base64', (req, res) => {
     if (typeof image !== 'string' || !/^data:image\/\w+;base64,/.test(image)) {
         return res.status(400).json({ error: 'Invalid image data' });
     }
-    if (image.length > 15 * 1024 * 1024) return res.status(413).json({ error: '图片数据过大（限制 10MB）' });
+    // 字符串长度仅做粗筛（防解码前占用过多内存），实际限制按解码后字节数判定
+    if (image.length > 20 * 1024 * 1024) return res.status(413).json({ error: '图片数据过大（限制 10MB）' });
     // 未指定保存目录时默认写入共享目录（如手机端涂鸦板直接保存）
     const saveDir = targetPath || state.sharedDir;
     if (!saveDir || !isSafePath(saveDir, true)) return res.status(403).json({ error: 'Forbidden' });
@@ -361,6 +362,9 @@ router.post('/upload/base64', (req, res) => {
     try {
         const base64Data = image.replace(/^data:image\/\w+;base64,/, "");
         const dataBuffer = Buffer.from(base64Data, 'base64');
+        if (dataBuffer.length > 10 * 1024 * 1024) {
+            return res.status(413).json({ error: '图片数据过大（限制 10MB）' });
+        }
         const fullPath = path.join(saveDir, safeName);
 
         if (!fs.existsSync(saveDir)) {

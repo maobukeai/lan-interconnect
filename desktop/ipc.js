@@ -126,6 +126,13 @@
                 url = d.url || probeUrl;
                 qrDataUrl = d.qrDataUrl || '';
                 qrUrl = d.qrUrl || url;
+                // 服务由托盘启动时渲染进程拿不到 Token，这里从 qrUrl 补存，
+                // 保证免密模式下桌面端（file:// 来源）的写请求也携带有效凭据
+                const tokenMatch = qrUrl && qrUrl.match(/[?&]token=([0-9a-fA-F]+)/);
+                if (tokenMatch && tokenMatch[1]) {
+                    try { localStorage.setItem('lan_disk_qr_token', tokenMatch[1]); } catch (e) {}
+                    state.token = tokenMatch[1];
+                }
             }
         } catch (e) {}
         

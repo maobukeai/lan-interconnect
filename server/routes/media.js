@@ -83,6 +83,37 @@ router.post('/media/progress', (req, res) => {
     res.json({ success: true, progress: progressStore[targetPath] });
 });
 
+// 3.5 媒体资料库目录持久化：服务端统一存储（~/.landisk/media_dirs.json），
+//     所有设备共享同一份资料库，服务/Electron 重启不再丢失
+const MEDIA_DIRS_FILE = path.join(DATA_DIR, 'media_dirs.json');
+let mediaDirs = [];
+try {
+    if (fs.existsSync(MEDIA_DIRS_FILE)) {
+        const arr = JSON.parse(fs.readFileSync(MEDIA_DIRS_FILE, 'utf8'));
+        if (Array.isArray(arr)) {
+            mediaDirs = arr.filter(p => p && typeof p === 'string' && p.trim());
+        }
+    }
+} catch (e) {
+    mediaDirs = [];
+}
+
+router.get('/media/dirs', (req, res) => {
+    res.json({ success: true, dirs: mediaDirs });
+});
+
+router.post('/media/dirs', (req, res) => {
+    const { dirs } = req.body || {};
+    if (!Array.isArray(dirs)) {
+        return res.status(400).json({ error: 'dirs must be an array' });
+    }
+    mediaDirs = Array.from(new Set(dirs.filter(p => p && typeof p === 'string' && p.trim()))).slice(0, 50);
+    try {
+        fs.writeFileSync(MEDIA_DIRS_FILE, JSON.stringify(mediaDirs, null, 2), 'utf8');
+    } catch (e) {}
+    res.json({ success: true, dirs: mediaDirs });
+});
+
 // 3. 探查并自动匹配同级目录下的字幕文件
 // GET /api/media/subtitles?path=...
 router.get('/media/subtitles', (req, res) => {

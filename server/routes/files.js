@@ -209,8 +209,8 @@ router.get('/read-text', (req, res) => {
     }
 });
 
-// 保存文本文件
-router.post('/save-text', (req, res) => {
+// 保存文本文件（任意位置写入属敏感操作，与 mkdir/rename/delete 同级保护）
+router.post('/save-text', checkSensitive, (req, res) => {
     const { path: targetPath, content } = req.body;
     if (!targetPath || content === undefined) return res.status(400).json({ error: 'Path and content required' });
     if (!isSafePath(targetPath, true)) return res.status(403).json({ error: 'Forbidden' });

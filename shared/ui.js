@@ -224,12 +224,10 @@
             return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
         },
         apply() {
-            const t = Theme.get();
-            if (t === 'auto') {
-                document.documentElement.removeAttribute('data-theme');
-            } else {
-                document.documentElement.setAttribute('data-theme', t);
-            }
+            // CSS 只认 html[data-theme]（apple-theme.css 无 prefers-color-scheme 回退），
+            // auto 必须落到解析后的实际值：否则系统浅色时页面仍是深色，而图标却显示浅色，
+            // 用户点切换会觉得"没反应"
+            document.documentElement.setAttribute('data-theme', Theme.resolved());
         },
         set(t) {
             localStorage.setItem('landisk_theme', t);
@@ -244,6 +242,14 @@
             return Theme.resolved() === 'dark' ? 'moon' : 'sun';
         }
     };
+
+    // auto 模式下跟随系统深浅切换实时更新
+    try {
+        const themeMedia = window.matchMedia('(prefers-color-scheme: light)');
+        const onSystemThemeChange = () => { if (Theme.get() === 'auto') Theme.apply(); };
+        if (themeMedia.addEventListener) themeMedia.addEventListener('change', onSystemThemeChange);
+        else if (themeMedia.addListener) themeMedia.addListener(onSystemThemeChange);
+    } catch (e) {}
 
     /* ---------- 通用下载（<a download> 点击触发） ----------
        不用 window.open：Electron 的 setWindowOpenHandler 会拦截，

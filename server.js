@@ -1,12 +1,11 @@
 const express = require('express');
 const compression = require('compression');
-const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
 const { state, generateQrToken, cleanupExpiredTokens, shouldCompress, getLocalIpAddress } = require('./server/config');
-const { checkAuth, checkSensitive, isLocalRequest } = require('./server/middleware/auth');
+const { checkAuth, checkSensitive, isLocalRequest, isAllowedApiOrigin } = require('./server/middleware/auth');
 const mdnsResponder = require('./server/services/mdns');
 const trashService = require('./server/services/trash');
 
@@ -48,13 +47,25 @@ function startServer(config) {
         app.disable('x-powered-by');
 
         app.use(compression({ filter: shouldCompress }));
-        app.use(cors({
-            origin: true,
-            credentials: true,
-            methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-            allowedHeaders: ['Content-Type', 'Authorization', 'x-pin', 'x-qr-token', 'Range', 'Accept', 'x-requested-with'],
-            exposedHeaders: ['Content-Range', 'Accept-Ranges', 'Content-Length']
-        }));
+        // CORS 收紧：只对同机/本机/局域网来源（桌面端 file://、Capacitor http://localhost、
+        // 私有网段网页互访）下发跨域头；互联网公网网页一律不下发，配合鉴权层的来源
+        // 白名单，防止用户浏览器里的恶意网页 drive-by 读取/调用本机 API。
+        app.use((req, res, next) => {
+            const origin = req.headers.origin;
+            if (origin && isAllowedApiOrigin(req)) {
+                res.setHeader('Access-Control-Allow-Origin', origin);
+                res.setHeader('Vary', 'Origin');
+                res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+                res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-pin, x-qr-token, Range, Accept, x-requested-with, x-upload-dir, x-file-name, x-no-compression');
+                res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Accept-Ranges, Content-Length');
+                res.setHeader('Access-Control-Max-Age', '600');
+            }
+            if (req.method === 'OPTIONS') {
+                res.status(origin && !isAllowedApiOrigin(req) ? 403 : 204).end();
+                return;
+            }
+            next();
+        });
         app.use(express.json({ limit: '50mb' }));
         app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -126,6 +137,15 @@ function startServer(config) {
             ? path.join(__dirname.replace('app.asar', 'app.asar.unpacked'), 'shared')
             : path.join(__dirname, 'shared');
             
+        // 主页禁止缓存（原先写在挂载于 /api 的 checkAuth 里，req.path 永远匹配不到根路径，从未生效）
+        app.use((req, res, next) => {
+            if (req.path === '/' || req.path === '/index.html') {
+                res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+                res.setHeader('Pragma', 'no-cache');
+                res.setHeader('Expires', '0');
+            }
+            next();
+        });
         app.use(express.static(publicDir));
         app.use('/shared', express.static(sharedDirStatic));
         app.use('/api', checkAuth);
@@ -145,6 +165,9 @@ function startServer(config) {
         app.use('/api/tools/clean-links', checkSensitive);
         app.use('/api/remote/power', checkSensitive);
         app.use('/api/remote/mouse', checkSensitive);
+        // 音量与屏幕截屏同属敏感控制：截屏涉及隐私，免密模式下不应向局域网访客开放
+        app.use('/api/remote/volume', checkSensitive);
+        app.use('/api/remote/screen', checkSensitive);
 
         const QRCode = require('qrcode');
 

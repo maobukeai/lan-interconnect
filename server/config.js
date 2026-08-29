@@ -134,6 +134,8 @@ function isSafePath(targetPath, forWrite) {
     if (/^\\\\[^\\]/.test(targetPath) || targetPath.startsWith(path.sep + path.sep)) return false;
 
     const resolvedPath = path.resolve(targetPath);
+    // 正斜杠写法（//host/share）会绕过上面的原始串检查，但 resolve 后仍是 UNC，必须在归一化后再拦一次
+    if (process.platform === 'win32' && resolvedPath.startsWith('\\\\')) return false;
     if (state.currentConfig.mode === 'shared') {
         const resolvedShared = path.resolve(state.sharedDir);
         const a = process.platform === 'win32' ? resolvedPath.toLowerCase() : resolvedPath;

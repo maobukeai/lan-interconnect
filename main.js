@@ -42,10 +42,19 @@ function isBoundsOnScreen(bounds) {
     }
 }
 
-const logFile = path.join(__dirname, 'startup_debug.log');
+// 日志统一放 ~/.landisk（asar 包内目录不可写，写项目根会静默失败），超 1MB 自动清空防膨胀
+const logFile = path.join(os.homedir(), '.landisk', 'startup_debug.log');
 function debugLog(msg) {
     const text = `[${new Date().toISOString()}] ${msg}\n`;
-    try { fs.appendFileSync(logFile, text); } catch(e) {}
+    try {
+        fs.mkdirSync(path.dirname(logFile), { recursive: true });
+        try {
+            if (fs.statSync(logFile).size > 1024 * 1024) {
+                fs.truncateSync(logFile, 0);
+            }
+        } catch (e) {}
+        fs.appendFileSync(logFile, text);
+    } catch(e) {}
     console.log(msg);
 }
 

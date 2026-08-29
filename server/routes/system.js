@@ -104,7 +104,7 @@ router.get('/ping', (req, res) => {
     const osName = osType === 'Windows_NT' ? 'Windows' : (osType === 'Darwin' ? 'macOS' : (osType === 'Linux' ? 'Linux' : osType));
     res.json({
         app: '猫步互联 Pro',
-        version: '1.5.0',
+        version: '1.6.0',
         hostname: os.hostname(),
         os: osName,
         requiresPin: !!state.currentConfig.pin,
@@ -302,8 +302,8 @@ router.post('/terminal', (req, res) => {
 
     const cmdToRun = process.platform === 'win32' ? `chcp 65001 >nul && ${command}` : command;
 
-    exec(cmdToRun, { 
-        cwd: cwd || 'C:\\', 
+    exec(cmdToRun, {
+        cwd: cwd || (process.platform === 'win32' ? 'C:\\' : os.homedir()),
         encoding: 'buffer',
         timeout: 10000
     }, (error, stdoutBuf, stderrBuf) => {

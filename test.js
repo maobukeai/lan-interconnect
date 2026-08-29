@@ -46,8 +46,8 @@ async function runTests() {
         assert.strictEqual(res1.status, 403, 'Path traversal should return 403 Forbidden');
         console.log('Test 1 Passed.');
 
-        // Test 2: Chat XSS Escaping
-        console.log('Running Test 2: Chat XSS Escaping...');
+        // Test 2: Chat XSS 防护契约（服务端存原文，渲染层统一转义）
+        console.log('Running Test 2: Chat XSS Escaping Contract...');
         const xssPayload = '<script>alert(1)</script>';
         const body = JSON.stringify({ text: xssPayload, sender: 'test' });
         const res2 = await request(`/api/chat?token=${startInfo.token}`, {
@@ -57,8 +57,11 @@ async function runTests() {
         });
         const res2Data = JSON.parse(res2.data);
         assert.strictEqual(res2Data.success, true);
-        assert.ok(!res2Data.message.text.includes('<script>'), 'XSS payload should be escaped');
-        assert.ok(res2Data.message.text.includes('&lt;script&gt;'), 'XSS payload should be HTML entity encoded');
+        // 服务端存储原文：转义统一在渲染层做，避免服务端+客户端双重转义把 & < 显示成实体
+        assert.ok(res2Data.message.text.includes('<script>'), 'Server should store raw text (rendering layer escapes)');
+        // 渲染层转义契约：共享聊天组件插入 innerHTML 前必须对 m.text 做 escapeHtml
+        const chatCompSrc = fs.readFileSync(path.join(__dirname, 'shared', 'components', 'imessage-chat.js'), 'utf8');
+        assert.ok(chatCompSrc.includes("escapeHtml((m.text || '').trim())"), 'Chat component must escape message text before innerHTML');
         console.log('Test 2 Passed.');
 
         // Test 3: Normal File Access

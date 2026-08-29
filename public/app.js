@@ -888,10 +888,10 @@
             } catch (e) {}
 
             if (!reachable) {
-                // 2. 降级探测 /api/verify
+                // 2. 降级探测 /api/verify（用 GET：写方法在免密模式下会被服务端来源防护视为跨站写而拒绝）
                 try {
                     const vRes = await fetch(`${fullUrl}/api/verify`, {
-                        method: 'POST',
+                        method: 'GET',
                         headers: (auth() ? auth().authHeaders() : {}),
                         signal: AbortSignal.timeout(2500)
                     });
