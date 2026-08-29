@@ -482,20 +482,23 @@ class AppleCinemaPlayerEngine {
     }
 
     prefetchNextMedia() {
-        if (!this.playlist || this.playlist.length <= 1) return;
-        const nextIdx = this.currentIndex + 1;
-        if (nextIdx < this.playlist.length) {
-            const nextItem = this.playlist[nextIdx];
-            const nextUrl = this.getStreamUrl(nextItem);
-            if (nextUrl) {
-                try {
-                    fetch(nextUrl, {
-                        headers: { 'Range': 'bytes=0-524287' },
-                        cache: 'force-cache'
-                    }).catch(() => {});
-                } catch (e) {}
+        if (this._prefetchTimer) clearTimeout(this._prefetchTimer);
+        this._prefetchTimer = setTimeout(() => {
+            if (!this.playlist || this.playlist.length <= 1) return;
+            const nextIdx = this.currentIndex + 1;
+            if (nextIdx < this.playlist.length) {
+                const nextItem = this.playlist[nextIdx];
+                const nextUrl = this.getStreamUrl(nextItem);
+                if (nextUrl) {
+                    try {
+                        fetch(nextUrl, {
+                            headers: { 'Range': 'bytes=0-524287' },
+                            cache: 'force-cache'
+                        }).catch(() => {});
+                    } catch (e) {}
+                }
             }
-        }
+        }, 4000);
     }
 
     loadCurrentMedia() {
@@ -529,8 +532,9 @@ class AppleCinemaPlayerEngine {
             this.setLoading(true);
             this.dom.media.playsInline = true;
             this.dom.media.preload = 'auto';
-            this.dom.media.src = streamUrl;
-            this.dom.media.load();
+            if (this.dom.media.src !== streamUrl) {
+                this.dom.media.src = streamUrl;
+            }
             const playPromise = this.dom.media.play();
             if (playPromise && typeof playPromise.catch === 'function') {
                 playPromise.catch((err) => {
