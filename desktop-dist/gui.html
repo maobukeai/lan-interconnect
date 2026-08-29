@@ -1,0 +1,1149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>猫步互联 Pro</title>
+    <link rel="stylesheet" href="shared/apple-theme.css?v=20260828_v44">
+    <link rel="stylesheet" href="shared/apple-player.css?v=20260828_v44">
+    <!-- 基础引擎与共享组件库（与 Web 端完全同源） -->
+    <script src="shared/icons.js"></script>
+    <script src="shared/auth.js"></script>
+    <script src="shared/ui.js?v=20260828_v44"></script>
+    <script src="shared/apple-player.js?v=20260828_v44"></script>
+    <script src="shared/components/file-bookmarks.js"></script>
+    <script src="shared/components/file-batch.js"></script>
+    <script src="shared/components/file-uploader.js"></script>
+    <script src="shared/components/file-explorer.js"></script>
+    <script src="shared/components/media-hub.js"></script>
+    <script src="shared/components/media-theater.js?v=20260828_v44"></script>
+    <script src="shared/components/imessage-chat.js"></script>
+    <script src="shared/components/whiteboard.js"></script>
+    <script src="shared/components/process-monitor.js"></script>
+    <script src="shared/components/web-terminal.js"></script>
+    <script src="shared/components/remote-control.js?v=20260828_v44"></script>
+    <style>
+                /* ---------- 自定义标题栏与窗体圆角 ---------- */
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: var(--apple-bg-base);
+            user-select: none;
+            border-radius: 16px;
+        }
+
+        .app-titlebar {
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            height: 46px;
+            z-index: 500;
+            display: flex;
+            align-items: center;
+            padding: 0 14px;
+            gap: 12px;
+            background: rgba(14, 18, 28, 0.65);
+            backdrop-filter: blur(36px) saturate(190%);
+            -webkit-backdrop-filter: blur(36px) saturate(190%);
+            border-bottom: 1px solid var(--apple-border);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+            border-top-left-radius: 16px;
+            border-top-right-radius: 16px;
+            -webkit-app-region: drag;
+            user-select: none;
+        }
+
+        :root[data-theme="light"] .app-titlebar {
+            background: rgba(255, 255, 255, 0.82);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+            box-shadow: inset 0 1px 0 #ffffff;
+        }
+
+        .titlebar-name {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            flex: 1;
+            text-align: left;
+            -webkit-app-region: drag;
+            overflow: hidden;
+            white-space: nowrap;
+        }
+
+        .titlebar-logo {
+            width: 22px;
+            height: 22px;
+            border-radius: 6px;
+            object-fit: contain;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+            pointer-events: none;
+            flex-shrink: 0;
+        }
+
+        .titlebar-title-text {
+            font-size: 13.5px;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+            color: var(--apple-text-main);
+            pointer-events: none;
+        }
+
+        .titlebar-actions {
+            display: flex;
+            gap: 8px;
+            -webkit-app-region: no-drag !important;
+            flex-shrink: 0;
+            z-index: 502;
+        }
+        .titlebar-actions .apple-btn-icon {
+            width: 30px;
+            height: 30px;
+            border-radius: 9px;
+            -webkit-app-region: no-drag !important;
+            cursor: pointer;
+        }
+        .titlebar-actions .apple-btn-icon * {
+            pointer-events: none;
+            -webkit-app-region: no-drag !important;
+        }
+
+        /* Windows 风格窗口控制区（右对齐、通高按钮、禁止拖拽拦截） */
+        .win-controls {
+            display: flex;
+            align-self: stretch;
+            margin-right: -14px;
+            -webkit-app-region: no-drag !important;
+            flex-shrink: 0;
+            z-index: 501;
+        }
+
+        .win-ctl {
+            width: 46px;
+            height: 100%;
+            border: none;
+            background: transparent;
+            color: var(--apple-text-main);
+            cursor: pointer;
+            padding: 0;
+            display: grid;
+            place-items: center;
+            transition: background 0.12s, color 0.12s;
+            outline: none;
+            -webkit-app-region: no-drag !important;
+            user-select: none;
+        }
+        .win-ctl * { pointer-events: none; }
+        .win-ctl:hover { background: rgba(128, 128, 138, 0.22); }
+        .win-ctl:active { background: rgba(128, 128, 138, 0.34); }
+        .win-ctl-close:hover { background: #e81123 !important; color: #ffffff !important; }
+        .win-ctl-close:active { background: #c50f1f !important; color: #ffffff !important; }
+
+        /* ---------- 主画布 ---------- */
+        .app-viewport {
+            position: fixed;
+            inset: 46px 0 0 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+
+        .view-wrap {
+            max-width: 1060px;
+            margin: 0 auto;
+            padding: 24px 24px calc(120px + env(safe-area-inset-bottom));
+        }
+
+        .view-section { display: none; }
+        .view-section.active { display: block; animation: viewIn 0.3s cubic-bezier(0.25, 1, 0.5, 1); }
+
+        @keyframes viewIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ---------- 服务主卡（Home 头部） ---------- */
+        .service-hero {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            padding: 20px 22px;
+            margin-bottom: 16px;
+        }
+
+        .service-hero-light {
+            width: 52px; height: 52px;
+            border-radius: 16px;
+            display: grid;
+            place-items: center;
+            flex-shrink: 0;
+            background: rgba(48, 209, 88, 0.14);
+            color: var(--apple-system-green);
+            box-shadow: 0 0 24px var(--apple-glow-green);
+        }
+        .service-hero-light.off { background: rgba(140, 148, 170, 0.15); color: var(--apple-text-subtle); box-shadow: none; }
+
+        /* ---------- 传输抽屉 ---------- */
+        .transfer-drawer {
+            position: fixed;
+            right: 18px;
+            bottom: 96px;
+            width: 320px;
+            z-index: 400;
+            background: var(--mat-thick);
+            backdrop-filter: blur(var(--blur-l)) saturate(180%);
+            -webkit-backdrop-filter: blur(var(--blur-l)) saturate(180%);
+            border: 1px solid var(--apple-border);
+            border-radius: 20px;
+            box-shadow: var(--shadow-3);
+            overflow: hidden;
+            animation: drawerIn 0.3s var(--ease-spring);
+        }
+
+        @keyframes drawerIn {
+            from { opacity: 0; transform: translateY(14px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .transfer-drawer-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 11px 14px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--hairline);
+        }
+
+        .transfer-drawer-body { max-height: 220px; overflow-y: auto; padding: 8px 14px; }
+        .transfer-drawer.collapsed .transfer-drawer-body { display: none; }
+
+        .transfer-item { padding: 8px 0; border-bottom: 1px solid var(--hairline); }
+        .transfer-item:last-child { border-bottom: none; }
+
+        /* ---------- 设置页 ---------- */
+        .settings-nav { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
+        .settings-panel { display: none; }
+        .settings-panel.active { display: block; animation: viewIn 0.25s ease; }
+
+        .device-card {
+            display: flex; align-items: center; gap: 12px;
+            padding: 12px 14px;
+            background: var(--apple-bg-card);
+            border: 1px solid var(--hairline);
+            border-radius: 14px;
+            margin-bottom: 8px;
+        }
+
+        .log-view {
+            font-family: ui-monospace, Consolas, monospace;
+            font-size: 12px;
+            line-height: 1.7;
+            max-height: 380px;
+            overflow-y: auto;
+            background: var(--mat-ultrathin);
+            border-radius: 14px;
+            padding: 14px;
+        }
+        .log-line.info { color: var(--apple-text-muted); }
+        .log-line.ok { color: var(--apple-system-green); }
+        .log-line.warn { color: var(--apple-system-orange); }
+        .log-line.error { color: var(--apple-system-red); }
+
+        .blacklist-chip {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: rgba(255, 69, 58, 0.12);
+            border: 1px solid rgba(255, 69, 58, 0.25);
+            color: var(--apple-system-red);
+            padding: 4px 6px 4px 11px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+
+<!-- 背景光晕 -->
+<div class="apple-bg-orbs">
+    <div class="apple-orb apple-orb-1"></div>
+    <div class="apple-orb apple-orb-2"></div>
+    <div class="apple-orb apple-orb-3"></div>
+    <div class="apple-orb apple-orb-4"></div>
+</div>
+
+<!-- 标题栏（Windows 布局：标题居左，窗口控制按钮居右） -->
+<header class="app-titlebar">
+    <div class="titlebar-name">
+        <img src="icon.png" class="titlebar-logo" alt="logo">
+        <span class="titlebar-title-text">猫步互联 Pro</span>
+    </div>
+    <div class="titlebar-actions">
+        <button class="apple-btn-icon" id="btn-theme" title="深浅主题"></button>
+        <button class="apple-btn-icon" id="btn-devtools" title="开发者调试工具 (F12)"><span data-icon="terminal" data-icon-size="15"></span></button>
+    </div>
+    <div class="win-controls" style="-webkit-app-region: no-drag;">
+        <button class="win-ctl" id="win-min" title="最小化" style="-webkit-app-region: no-drag;"></button>
+        <button class="win-ctl" id="win-max" title="最大化 / 还原" style="-webkit-app-region: no-drag;"></button>
+        <button class="win-ctl win-ctl-close" id="win-close" title="关闭" style="-webkit-app-region: no-drag;"></button>
+    </div>
+</header>
+
+<!-- 主画布 -->
+<main class="app-viewport">
+<div class="view-wrap">
+
+    <!-- 1. 主页 -->
+    <section id="view-home" class="view-section active">
+        <div class="glass-card service-hero">
+            <div class="service-hero-light" id="service-light"><span data-icon="zap" data-icon-size="24"></span></div>
+            <div style="flex:1; min-width:0">
+                <div class="row" style="gap:10px">
+                    <span style="font-size:19px; font-weight:700; letter-spacing:-0.02em" id="service-title">服务未启动</span>
+                    <span class="apple-badge" id="service-badge"><span class="apple-badge-dot"></span>离线</span>
+                </div>
+                <div class="muted ellipsis" style="font-size:12.5px; margin-top:3px" id="service-sub">点击右侧按钮启动局域网共享服务</div>
+            </div>
+            <div class="row" style="flex-shrink:0">
+                <button class="apple-btn apple-btn-glass" id="btn-show-qr" title="查看连接二维码" style="display:none"><span data-icon="qr" data-icon-size="15"></span>扫码连接</button>
+                <button class="apple-btn apple-btn-primary" id="btn-service-toggle" style="min-width:96px"><span data-icon="power" data-icon-size="15"></span>启动服务</button>
+            </div>
+        </div>
+
+        <div class="bento-grid" style="margin-bottom:16px">
+            <!-- 1. CPU 处理器 -->
+            <div class="bento-tile col-3">
+                <div class="tile-header">
+                    <div class="tile-label"><span data-icon="cpu"></span>处理器</div>
+                    <span class="status-dot on" title="监控就绪"></span>
+                </div>
+                <div class="tile-value-row">
+                    <div class="tile-value" id="dash-cpu">--</div>
+                </div>
+                <svg class="sparkline" id="spark-cpu"></svg>
+                <div class="tile-sub ellipsis" id="dash-cpu-name" title="处理器型号">--</div>
+            </div>
+
+            <!-- 2. 内存 -->
+            <div class="bento-tile col-3">
+                <div class="tile-header">
+                    <div class="tile-label"><span data-icon="memory"></span>运行内存</div>
+                </div>
+                <div class="tile-value-row">
+                    <div class="tile-value" id="dash-mem">--</div>
+                </div>
+                <svg class="sparkline" id="spark-mem"></svg>
+                <div class="tile-sub ellipsis" id="dash-mem-sub">系统负载正常</div>
+            </div>
+
+            <!-- 3. 存储磁盘 -->
+            <div class="bento-tile col-3">
+                <div class="tile-header">
+                    <div class="tile-label"><span data-icon="drive"></span>共享存储</div>
+                </div>
+                <div class="tile-value-row">
+                    <div class="tile-value" id="dash-disk" style="font-size:21px">--</div>
+                </div>
+                <div class="apple-progress-track" style="margin: 9px 0 5px;">
+                    <div class="apple-progress-fill" id="dash-disk-bar" style="width: 50%; background: linear-gradient(90deg, #007aff, #5856d6);"></div>
+                </div>
+                <div class="tile-sub ellipsis" id="dash-disk-sub">可用空间充足</div>
+            </div>
+
+            <!-- 4. 实时网络带宽 -->
+            <div class="bento-tile col-3">
+                <div class="tile-header">
+                    <div class="tile-label"><span data-icon="activity"></span>网络流速</div>
+                    <div class="speed-capsules">
+                        <span class="speed-pill tx" title="发送速度"><b id="dash-tx-speed">0 B/s</b> ↑</span>
+                        <span class="speed-pill rx" title="接收速度"><b id="dash-rx-speed">0 B/s</b> ↓</span>
+                    </div>
+                </div>
+                <svg class="sparkline" id="spark-net" style="height:36px; margin-top:auto;"></svg>
+                <div class="tile-sub ellipsis" id="dash-net-sub">局域网广播就绪</div>
+            </div>
+
+            <!-- 5. 在线设备总览 (占 4 列) -->
+            <div class="bento-tile col-4">
+                <div class="tile-header">
+                    <div class="tile-label"><span data-icon="devices"></span>互联设备</div>
+                    <span class="apple-badge apple-badge-sm" id="dash-device-badge"><span class="apple-badge-dot"></span><span id="dash-device-status-text">局域网待命</span></span>
+                </div>
+                <div class="device-count-box">
+                    <div class="device-count-radar">
+                        <div class="tile-value large" id="dash-device-count">0</div>
+                    </div>
+                    <div class="device-count-info">
+                        <div class="device-count-title" id="dash-device-sub">等待终端扫码连接</div>
+                        <div class="subtle" style="font-size:11px; margin-top:2px;">免安装 · 跨设备秒级直连</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 6. 设备与通信明细 (占 8 列) -->
+            <div class="bento-tile col-8 clickable" id="tile-devices">
+                <div class="tile-header">
+                    <div class="tile-label"><span data-icon="smartphone"></span>已连接设备与通信节点</div>
+                    <span class="subtle" style="font-size:11.5px;" id="dash-devices-summary">点击管理</span>
+                </div>
+                <div id="dash-devices-list" class="devices-grid">
+                    <!-- 动态注入设备列表或空状态引导 -->
+                </div>
+            </div>
+        </div>
+
+        <div class="row wrap" style="gap:10px; margin-bottom:16px">
+            <button class="apple-btn apple-btn-glass" id="qa-remote-control"><span data-icon="remoteControl" data-icon-size="15"></span>便携遥控</button>
+            <button class="apple-btn apple-btn-glass" id="qa-open-shared"><span data-icon="external" data-icon-size="15"></span>打开共享目录</button>
+            <button class="apple-btn apple-btn-glass" id="qa-firewall"><span data-icon="shield" data-icon-size="15"></span>防火墙设置</button>
+            <button class="apple-btn apple-btn-glass" id="qa-shutdown"><span data-icon="clock" data-icon-size="15"></span>定时关机</button>
+            <button class="apple-btn apple-btn-glass" id="qa-copy-link"><span data-icon="copy" data-icon-size="15"></span>复制访问地址</button>
+        </div>
+
+        <div class="glass-card">
+            <div class="apple-card-title">
+                <span class="apple-card-title-text"><span data-icon="history"></span>最近传输</span>
+                <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-home-history-refresh">刷新</button>
+            </div>
+            <div id="home-history"><div class="empty-state">暂无传输记录</div></div>
+        </div>
+    </section>
+
+    <!-- 2. 文件 -->
+    <section id="view-files" class="view-section">
+                <div class="toolbar-row file-toolbar-row">
+            <button class="apple-btn apple-btn-glass file-tool-btn" id="btn-go-up" title="返回上级"><span data-icon="chevronUp" data-icon-size="16"></span></button>
+            <div class="apple-input-box file-search-box">
+                <svg class="file-search-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                <input type="text" id="search-input" class="apple-input" placeholder="搜索当前目录…">
+            </div>
+            <button class="apple-btn apple-btn-glass file-tool-btn" id="btn-mkdir" title="新建文件夹"><span data-icon="folderPlus" data-icon-size="16"></span></button>
+            <button class="apple-btn apple-btn-glass file-tool-btn" id="btn-explorer-refresh" title="刷新"><span data-icon="refresh" data-icon-size="16"></span></button>
+            <label class="apple-btn apple-btn-primary file-upload-btn" id="btn-upload-label" title="上传文件">
+                <span id="btn-upload-icon"></span>
+                <span>上传</span>
+                <input type="file" id="file-input" multiple style="display:none">
+            </label>
+        </div>
+
+        <div id="progress-container" class="glass-card" style="display:none; margin-bottom:14px; padding:16px">
+            <div id="progress-text" class="row-between" style="font-size:13px; margin-bottom:8px">
+                <span>准备上传…</span><span>0%</span>
+            </div>
+            <div class="progress-track"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+        </div>
+
+                <div class="path-bookmarks-card" id="path-bookmarks-panel">
+            <div class="path-header-row">
+                <div class="path-location-box">
+                    <svg class="path-location-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+                    <div class="path-breadcrumb-text" id="current-path">根目录</div>
+                </div>
+                <button class="path-bookmark-btn" id="btn-add-bookmark" title="收藏当前路径">
+                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/></svg>
+                    <span>收藏路径</span>
+                </button>
+            </div>
+            <div class="bookmarks-scroll-row" id="web-bookmarks-bar">
+                <span class="bookmarks-label">
+                    <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/></svg>
+                    <span>常用</span>
+                </span>
+                <div class="bookmarks-pill-container" id="web-bookmarks-list"></div>
+            </div>
+        </div>
+
+        <div class="apple-file-grid" id="file-list">
+            <div class="skeleton" style="height:52px"></div>
+            <div class="skeleton" style="height:52px"></div>
+        </div>
+        <p class="subtle" style="font-size:11.5px; text-align:center; margin-top:14px">右键文件：分享 / 重命名 / 删除 · 拖拽文件到此页直接上传</p>
+    </section>
+
+    <!-- 3. 影音 -->
+    <section id="view-media" class="view-section">
+        <div class="media-toolbar-row" id="media-toolbar-row">
+            <button class="apple-btn apple-btn-glass" id="btn-media-folder">
+                <span data-icon="folder" data-icon-size="14"></span>
+                <span class="btn-text-full">+ 添加媒体目录</span>
+                <span class="btn-text-mobile">+ 目录</span>
+            </button>
+            <div class="segmented segmented-compact" id="media-view-mode-toggle" style="margin-bottom:0; padding:2px;">
+                <button class="segmented-item active" data-mode="tree" title="按文件夹层级浏览">
+                    <span data-icon="folder" data-icon-size="13"></span>
+                    <span class="btn-text-full">按文件夹</span>
+                    <span class="btn-text-mobile">文件夹</span>
+                </button>
+                <button class="segmented-item" data-mode="flat" title="平铺全部媒体文件">
+                    <span data-icon="playCircle" data-icon-size="13"></span>
+                    <span class="btn-text-full">平铺全部</span>
+                    <span class="btn-text-mobile">平铺</span>
+                </button>
+            </div>
+            <button class="apple-btn apple-btn-glass" id="btn-media-scan" title="刷新媒体库">
+                <span data-icon="refresh" data-icon-size="14"></span>
+                <span class="btn-text-full">刷新</span>
+            </button>
+            <span class="subtle ellipsis media-count-badge" id="media-folder-label">0 个媒体源</span>
+        </div>
+        <div class="media-folders-chip-row" id="media-folders-chip-row"></div>
+        <div id="media-breadcrumb-container" style="display:none; margin: 10px 0 6px 0;"></div>
+        <div class="poster-grid" id="poster-grid">
+            <div class="empty-state" style="grid-column:1/-1">
+                <span data-icon="playCircle" data-icon-size="34"></span>
+                添加电脑上的电影/音乐文件夹，即刻享受局域网影音剧院
+            </div>
+        </div>
+    </section>
+
+    <!-- 播放器专属视图 (影院级标准播放页) -->
+    <section id="view-player" class="view-section" style="padding-bottom: 24px;">
+        <!-- 顶部返回与导航 -->
+        <div class="player-nav-header">
+            <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-player-back">
+                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                <span>返回</span>
+            </button>
+            <div class="player-nav-title ellipsis" id="player-nav-title">正在播放</div>
+            <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-player-pip" title="画中画">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+            </button>
+        </div>
+
+        <!-- 16:9 标准视频核心视窗容器 (Apple 原生无 AI 痕迹精细化体系) -->
+        <div class="player-stage-container" id="player-stage-container">
+            <div class="player-stage-box" id="player-stage-box">
+                <!-- 核心 Video 标签 -->
+                <video id="apple-media-element" playsinline webkit-playsinline x5-playsinline x5-video-player-type="h5" preload="metadata"></video>
+
+                <!-- 音频专属全景黑胶舞台 -->
+                <div class="ap-audio-layer" id="ap-audio-layer">
+                    <div class="ap-audio-mesh"></div>
+                    <div class="ap-audio-vinyl-box">
+                        <div class="ap-audio-vinyl" id="ap-audio-vinyl">
+                            <div class="ap-audio-center">
+                                <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/></svg>
+                            </div>
+                        </div>
+                    </div>
+                    <canvas class="ap-audio-canvas" id="ap-audio-canvas"></canvas>
+                </div>
+
+                <!-- 外挂字幕实时渲染层 (Apple Cinematic Subtitles) -->
+                <div class="ap-subtitle-layer" id="ap-subtitle-layer">
+                    <div class="ap-subtitle-text sub-size-md" id="ap-subtitle-text"></div>
+                </div>
+
+                <!-- 浮动控制遮罩层 (Apple QuickTime / Vision 极简通透全套控制) -->
+                <div class="player-controls-overlay" id="player-controls-overlay">
+                    <!-- 顶部精致无边框水晶栏 -->
+                    <div class="player-ctrl-top" id="player-ctrl-top">
+                        <div class="player-ctrl-top-left">
+                            <button class="player-top-icon-btn" id="ap-btn-top-back" title="返回 / 退出全屏">
+                                <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M15 19l-7-7 7-7"/></svg>
+                            </button>
+                            <span class="player-ctrl-title ellipsis" id="ap-video-title">媒体名称</span>
+                            <span class="ap-status-badge" id="ap-video-badge"><span class="ap-status-dot"></span>4K HDR</span>
+                        </div>
+                        <div class="player-ctrl-top-right">
+                            <button class="player-top-icon-btn" id="ap-btn-snapshot" title="一键截帧">
+                                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><circle cx="12" cy="13" r="3" stroke-width="2"/></svg>
+                            </button>
+                            <button class="player-top-icon-btn" id="ap-btn-pip" title="画中画">
+                                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                            </button>
+                            <button class="player-top-icon-btn" id="ap-btn-top-episodes" title="剧集列表">
+                                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+                            </button>
+                            <button class="player-top-icon-btn" id="ap-btn-top-settings" title="影院级设置">
+                                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 屏幕中央 HUD 状态反馈 -->
+                    <div class="player-ctrl-center" id="ap-center-badge">
+                        <svg id="ap-center-icon-play" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                    </div>
+
+                    <!-- 锁屏按钮 (Apple 悬浮水晶气泡) -->
+                    <button class="ap-lock-btn" id="ap-lock-btn" title="锁定全屏屏幕">
+                        <svg id="ap-icon-unlock" width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
+                        <svg id="ap-icon-lock" width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="display:none;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+                    </button>
+
+                    <!-- 2.0X 极速长按胶囊 -->
+                    <div class="ap-speed-badge" id="ap-speed-badge">2.0X 极速播放中</div>
+                    <div class="ap-gesture-toast" id="ap-gesture-toast"></div>
+
+                    <!-- 断点续播浮动胶囊 -->
+                    <div class="ap-resume-toast" id="ap-resume-toast">
+                        <span id="ap-resume-text">上次播放至 00:00</span>
+                        <button id="ap-btn-resume-action">继续播放</button>
+                        <button id="ap-btn-resume-dismiss">✕</button>
+                    </div>
+
+                    <!-- 左侧亮度 HUD -->
+                    <div class="ap-hud left" id="ap-hud-brightness">
+                        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                        <div class="ap-hud-track"><div class="ap-hud-fill" id="ap-hud-brightness-fill"></div></div>
+                        <div class="ap-hud-val" id="ap-hud-brightness-val">100%</div>
+                    </div>
+
+                    <!-- 右侧音量 HUD -->
+                    <div class="ap-hud right" id="ap-hud-volume">
+                        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
+                        <div class="ap-hud-track"><div class="ap-hud-fill" id="ap-hud-volume-fill"></div></div>
+                        <div class="ap-hud-val" id="ap-hud-volume-val">100%</div>
+                    </div>
+
+                    <!-- 底部全套控制栏面板 -->
+                    <div class="player-ctrl-bottom">
+                        <!-- 极光双色流光进度条 (Apple Fluid Scrubber) -->
+                        <div class="ap-progress-wrap" id="ap-progress-wrap">
+                            <div class="ap-progress-tooltip" id="ap-progress-tooltip">00:00</div>
+                            <div class="ap-progress-track">
+                                <div class="ap-progress-buffer" id="ap-progress-buffer"></div>
+                                <div class="ap-progress-fill" id="ap-progress-fill"></div>
+                            </div>
+                            <div class="ap-progress-thumb" id="ap-progress-thumb"></div>
+                        </div>
+
+                        <!-- 底部功能按钮行 (响应式优雅排布) -->
+                        <div class="player-ctrl-row">
+                            <div class="player-ctrl-left">
+                                <button class="player-btn-icon ap-btn-desktop-only" id="ap-btn-prev" title="上一集">
+                                    <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+                                </button>
+                                <button class="player-btn-icon player-main-play-btn" id="ap-btn-play" title="播放/暂停">
+                                    <svg id="ap-icon-play" width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                    <svg id="ap-icon-pause" width="16" height="16" fill="currentColor" viewBox="0 0 24 24" style="display:none;"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                                </button>
+                                <button class="player-btn-icon ap-btn-desktop-only" id="ap-btn-next" title="下一集">
+                                    <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+                                </button>
+                                <span class="player-time-display" id="ap-time-text">00:00 / 00:00</span>
+                            </div>
+                            <div class="player-ctrl-right">
+                                <button class="player-btn-pill" id="ap-btn-speed" title="播放倍速">1.0x</button>
+                                <button class="player-btn-pill" id="ap-btn-fit-toggle" title="画面比例">
+                                    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+                                    <span class="ap-btn-label">自适应</span>
+                                </button>
+                                <button class="player-btn-pill" id="ap-btn-filter-toggle" title="色彩风格">
+                                    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4 4 4 0 014-4c2 0 2-4 6-4 4 0 7 3 7 7a7 7 0 01-7 7H7z"/></svg>
+                                    <span class="ap-btn-label">原画</span>
+                                </button>
+                                <button class="player-btn-pill player-btn-fullscreen" id="ap-btn-fullscreen" title="全屏 / 还原">
+                                    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+                                    <span class="ap-btn-label" id="ap-fs-btn-label">全屏</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 悬浮弹窗选项菜单 (Apple VisionOS Popover Menu) -->
+                    <div class="ap-menu-popover" id="ap-menu-popover">
+                        <div class="ap-popover-title" id="ap-popover-title">选择选项</div>
+                        <div class="ap-popover-list" id="ap-popover-list"></div>
+                    </div>
+                </div>
+
+                <!-- 全屏内嵌半透毛玻璃抽屉：选集抽屉 -->
+                <div class="ap-fs-drawer" id="ap-fs-drawer-episodes">
+                    <div class="ap-fs-drawer-header">
+                        <div class="row" style="gap:6px;">
+                            <span style="font-weight:600; font-size:13.5px; color:#fff;">剧集与播放列表</span>
+                            <span class="subtle" id="ap-fs-episodes-count" style="font-size:12px; color:#94a3b8;">(0)</span>
+                        </div>
+                        <button class="ap-fs-drawer-close" id="ap-fs-drawer-episodes-close">✕</button>
+                    </div>
+                    <div style="padding: 0 16px 6px 16px;">
+                        <div class="ap-fs-ep-ranges" id="ap-fs-ep-ranges">
+                            <!-- 动态注入全屏选集分页胶囊 -->
+                        </div>
+                    </div>
+                    <div class="ap-fs-drawer-body" id="ap-fs-drawer-episodes-list">
+                        <!-- 动态注入全屏选集卡片 -->
+                    </div>
+                </div>
+
+                <!-- 全屏内嵌半透毛玻璃抽屉：影院级设置抽屉 -->
+                <div class="ap-fs-drawer" id="ap-fs-drawer-settings">
+                    <div class="ap-fs-drawer-header">
+                        <span style="font-weight:600; font-size:13.5px; color:#fff;">影院级播放设置</span>
+                        <button class="ap-fs-drawer-close" id="ap-fs-drawer-settings-close">✕</button>
+                    </div>
+                    <div class="ap-fs-drawer-body">
+                        <div class="player-control-group">
+                            <div class="player-group-title">播放倍速</div>
+                            <div class="player-pill-grid" id="ap-fs-speed-grid">
+                                <button class="player-opt-pill" data-speed="0.5">0.5x</button>
+                                <button class="player-opt-pill" data-speed="0.75">0.75x</button>
+                                <button class="player-opt-pill active" data-speed="1.0">1.0x</button>
+                                <button class="player-opt-pill" data-speed="1.25">1.25x</button>
+                                <button class="player-opt-pill" data-speed="1.5">1.5x</button>
+                                <button class="player-opt-pill" data-speed="2.0">2.0x</button>
+                                <button class="player-opt-pill" data-speed="3.0">3.0x</button>
+                            </div>
+                        </div>
+
+                        <div class="player-control-group" style="margin-top: 16px;">
+                            <div class="player-group-title">画面色彩风格</div>
+                            <div class="player-pill-grid" id="ap-fs-filter-grid">
+                                <button class="player-opt-pill active" data-filter="none">原画</button>
+                                <button class="player-opt-pill" data-filter="warm">夜间暖光</button>
+                                <button class="player-opt-pill" data-filter="cinema">影院高对比</button>
+                                <button class="player-opt-pill" data-filter="vivid">鲜艳生动</button>
+                            </div>
+                        </div>
+
+                        <div class="player-control-group" style="margin-top: 16px;">
+                            <div class="player-group-title">画面填充与旋转</div>
+                            <div class="player-pill-grid" id="ap-fs-fit-grid">
+                                <button class="player-opt-pill active" data-fit="contain">自适应</button>
+                                <button class="player-opt-pill" data-fit="cover">铺满全屏</button>
+                                <button class="player-opt-pill" data-fit="fill">拉伸全屏</button>
+                                <button class="player-opt-pill" id="ap-fs-btn-rotate">旋转 90°</button>
+                            </div>
+                        </div>
+
+                        <div class="player-control-group" style="margin-top: 16px;">
+                            <div class="player-group-title">循环模式</div>
+                            <div class="player-pill-grid" id="ap-fs-loop-grid">
+                                <button class="player-opt-pill active" data-loop="all">列表循环</button>
+                                <button class="player-opt-pill" data-loop="one">单曲循环</button>
+                                <button class="player-opt-pill" data-loop="off">顺序播放</button>
+                            </div>
+                        </div>
+
+                        <!-- 外挂字幕设置 -->
+                        <div class="player-control-group" style="margin-top: 16px;">
+                            <div class="player-group-title" style="display:flex; justify-content:space-between; align-items:center;">
+                                <span>外挂字幕</span>
+                                <span class="subtle" style="font-size:11px;" id="ap-fs-sub-status">自动加载同名字幕</span>
+                            </div>
+                            <div class="player-pill-grid" id="ap-fs-sub-tracks-grid" style="margin-bottom:8px;">
+                                <button class="player-opt-pill active" data-sub="auto">自动探测</button>
+                                <button class="player-opt-pill" data-sub="off">关闭字幕</button>
+                            </div>
+                            <div class="row" style="gap:6px; margin-top:8px;">
+                                <label class="apple-btn apple-btn-glass apple-btn-sm" style="flex:1; cursor:pointer; font-size:11.5px; justify-content:center;">
+                                    <input type="file" id="ap-fs-input-custom-sub" accept=".srt,.vtt,.ass" style="display:none">
+                                    <span>+ 导入本地字幕 (.srt/.vtt)</span>
+                                </label>
+                            </div>
+                            <div class="player-group-title" style="margin-top:10px; font-size:11px;">字幕字号与时间轴微调</div>
+                            <div class="player-pill-grid" id="ap-fs-sub-size-grid">
+                                <button class="player-opt-pill" data-subsize="sm">小</button>
+                                <button class="player-opt-pill active" data-subsize="md">中</button>
+                                <button class="player-opt-pill" data-subsize="lg">大</button>
+                                <button class="player-opt-pill" data-subsize="xl">特大</button>
+                            </div>
+                            <div class="player-pill-grid" id="ap-fs-sub-delay-grid" style="margin-top:6px;">
+                                <button class="player-opt-pill" data-subdelay="-0.5">-0.5s</button>
+                                <button class="player-opt-pill active" data-subdelay="0">0s 正常</button>
+                                <button class="player-opt-pill" data-subdelay="0.5">+0.5s</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 下部：标准功能与选集控制面板 -->
+        <div class="player-info-section">
+            <!-- 媒体信息卡片 -->
+            <div class="glass-card" style="margin-bottom: 12px; padding: 14px 16px;">
+                <div class="row-between">
+                    <div style="flex:1; min-width:0;">
+                        <div class="player-main-title ellipsis" id="player-card-title">媒体名称</div>
+                        <div class="subtle" style="font-size:11.5px; margin-top:4px;" id="player-card-sub">局域网 4K HDR 硬件加速直连</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 选集列表 (横向滑动卡片 + 分页区间胶囊) -->
+            <div class="glass-card" style="margin-bottom: 12px; padding: 14px 16px;">
+                <div class="row-between" style="margin-bottom: 10px; gap: 8px; flex-wrap: wrap;">
+                    <div class="row" style="gap:6px; flex-shrink: 0;">
+                        <span class="apple-card-title-text"><span data-icon="playCircle"></span>剧集与播放列表</span>
+                        <span class="subtle" id="player-episodes-count" style="font-size:12px;">(0)</span>
+                    </div>
+                    <div class="player-ep-ranges-container" id="player-ep-ranges-container">
+                        <!-- 动态注入选集分页胶囊，如 [ 01-30 ] [ 31-60 ] [ 61-92 ] -->
+                    </div>
+                </div>
+                <div class="player-episodes-scroll" id="player-episodes-scroll">
+                    <!-- 动态注入选集卡片 -->
+                </div>
+            </div>
+
+            <!-- 快捷播放控制卡片 (倍速 / 滤镜 / 比例 / 循环) -->
+            <div class="glass-card" style="margin-bottom: 12px; padding: 14px 16px;">
+                <div class="player-control-group">
+                    <div class="player-group-title">播放倍速</div>
+                    <div class="player-pill-grid" id="player-speed-grid">
+                        <button class="player-opt-pill" data-speed="0.5">0.5x</button>
+                        <button class="player-opt-pill" data-speed="0.75">0.75x</button>
+                        <button class="player-opt-pill active" data-speed="1.0">1.0x</button>
+                        <button class="player-opt-pill" data-speed="1.25">1.25x</button>
+                        <button class="player-opt-pill" data-speed="1.5">1.5x</button>
+                        <button class="player-opt-pill" data-speed="2.0">2.0x</button>
+                        <button class="player-opt-pill" data-speed="3.0">3.0x</button>
+                    </div>
+                </div>
+
+                <div class="player-control-group" style="margin-top: 14px;">
+                    <div class="player-group-title">画面色彩风格</div>
+                    <div class="player-pill-grid" id="player-filter-grid">
+                        <button class="player-opt-pill active" data-filter="none">原画</button>
+                        <button class="player-opt-pill" data-filter="warm">夜间暖光</button>
+                        <button class="player-opt-pill" data-filter="cinema">影院高对比</button>
+                        <button class="player-opt-pill" data-filter="vivid">鲜艳生动</button>
+                    </div>
+                </div>
+
+                <div class="player-control-group" style="margin-top: 14px;">
+                    <div class="player-group-title">画面比例与循环</div>
+                    <div class="player-pill-grid" id="player-fit-grid">
+                        <button class="player-opt-pill active" data-fit="contain">自适应</button>
+                        <button class="player-opt-pill" data-fit="cover">铺满全屏</button>
+                        <button class="player-opt-pill" data-fit="fill">拉伸</button>
+                        <button class="player-opt-pill" id="btn-player-rotate">旋转 90°</button>
+                    </div>
+                </div>
+
+                <div class="player-control-group" style="margin-top: 14px;">
+                    <div class="player-group-title" style="display:flex; justify-content:space-between; align-items:center;">
+                        <span>外挂字幕</span>
+                        <span class="subtle" style="font-size:11px;" id="player-sub-status">自动加载同名字幕</span>
+                    </div>
+                    <div class="player-pill-grid" id="player-sub-tracks-grid" style="margin-bottom:8px;">
+                        <button class="player-opt-pill active" data-sub="auto">自动探测</button>
+                        <button class="player-opt-pill" data-sub="off">关闭字幕</button>
+                    </div>
+                    <div class="row" style="gap:6px; margin-top:8px;">
+                        <label class="apple-btn apple-btn-glass apple-btn-sm" style="flex:1; cursor:pointer; font-size:11.5px; justify-content:center;">
+                            <input type="file" id="player-input-custom-sub" accept=".srt,.vtt,.ass" style="display:none">
+                            <span>+ 导入本地字幕 (.srt/.vtt)</span>
+                        </label>
+                    </div>
+                    <div class="player-group-title" style="margin-top:10px; font-size:11px;">字幕字号与时间轴微调</div>
+                    <div class="player-pill-grid" id="player-sub-size-grid">
+                        <button class="player-opt-pill" data-subsize="sm">小</button>
+                        <button class="player-opt-pill active" data-subsize="md">中</button>
+                        <button class="player-opt-pill" data-subsize="lg">大</button>
+                        <button class="player-opt-pill" data-subsize="xl">特大</button>
+                    </div>
+                    <div class="player-pill-grid" id="player-sub-delay-grid" style="margin-top:6px;">
+                        <button class="player-opt-pill" data-subdelay="-0.5">-0.5s</button>
+                        <button class="player-opt-pill active" data-subdelay="0">0s 正常</button>
+                        <button class="player-opt-pill" data-subdelay="0.5">+0.5s</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 4. 消息 -->
+    <section id="view-chat" class="view-section">
+        <div class="glass-card">
+            <div class="apple-card-title">
+                <span class="apple-card-title-text"><span data-icon="chat"></span>跨端消息</span>
+                <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-chat-clear">清空记录</button>
+            </div>
+            <div class="apple-chat-container" id="chat-messages"></div>
+                        <div class="chat-input-row" id="chat-input-toolbar">
+                <label class="chat-tool-btn" title="发送图片" style="cursor:pointer">
+                    <span data-icon="camera"></span>
+                    <input type="file" accept="image/*" style="display:none" id="chat-image-input">
+                </label>
+                <button class="chat-tool-btn" id="btn-voice" title="按住录音"><span data-icon="mic"></span></button>
+                <div class="apple-input-box chat-input-capsule">
+                    <input type="text" id="chat-input" class="apple-input" placeholder="输入消息…" autocomplete="off">
+                </div>
+                <button class="apple-btn apple-btn-primary chat-send-btn" id="btn-chat-send">
+                    <span>发送</span>
+                </button>
+            </div>
+            <div id="voice-status" style="display:none; color:var(--apple-system-red); font-size:12px; margin-top:8px; text-align:center">正在录音中…再次点击完成发送</div>
+        </div>
+    </section>
+
+    <!-- 5. 工具 -->
+    <section id="view-tools" class="view-section">
+        <div id="desktop-remote-control-container" style="margin-bottom:16px;"></div>
+
+        <div class="glass-card" style="margin-bottom:16px">
+            <div class="apple-card-title">
+                <span class="apple-card-title-text"><span data-icon="clipboard"></span>剪贴板互通</span>
+                <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-clip-pull">拉取电脑剪贴板</button>
+            </div>
+            <div class="apple-input-box" style="margin-bottom:10px">
+                <textarea id="clip-text" class="apple-input" rows="3" placeholder="输入文本推送到剪贴板（手机端也可拉取/推送）" style="resize:vertical; min-height:64px; line-height:1.5"></textarea>
+            </div>
+            <button class="apple-btn apple-btn-primary" id="btn-clip-push" style="width:100%">推送到系统剪贴板</button>
+        </div>
+
+        <div class="glass-card" style="margin-bottom:16px">
+            <div class="apple-card-title">
+                <span class="apple-card-title-text"><span data-icon="cpu"></span>系统进程</span>
+                <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-proc-refresh">刷新进程</button>
+            </div>
+            <div class="apple-input-box" style="margin-bottom:12px">
+                <input type="text" id="process-search" class="apple-input" placeholder="搜索 PID 或进程名…">
+            </div>
+            <div id="process-list" style="max-height:300px; overflow-y:auto"></div>
+        </div>
+
+        <div class="glass-card" style="margin-bottom:16px">
+            <div class="apple-card-title"><span class="apple-card-title-text"><span data-icon="terminal"></span>Shell 控制台</span></div>
+            <div id="terminal-output" class="mono" style="background:#0b0d14; border-radius:12px; padding:14px; font-size:12.5px; color:#34c759; height:190px; overflow-y:auto; white-space:pre-wrap; border:1px solid var(--apple-border)">ready — 本机 Shell 控制台</div>
+            <div class="row" style="margin-top:12px">
+                <div class="apple-input-box" style="flex:1">
+                    <input type="text" id="terminal-input" class="apple-input mono" placeholder="输入 Shell 命令…">
+                </div>
+                <button class="apple-btn apple-btn-primary" id="btn-terminal-run">执行</button>
+            </div>
+        </div>
+
+        <div class="glass-card">
+            <div class="apple-card-title"><span class="apple-card-title-text"><span data-icon="palette"></span>随手涂鸦</span></div>
+            <div style="background:#fff; border-radius:16px; overflow:hidden; margin-bottom:12px; touch-action:none">
+                <canvas id="whiteboard" width="700" height="420" style="width:100%; display:block"></canvas>
+            </div>
+            <div class="row">
+                <button class="apple-btn apple-btn-glass" id="btn-draw-clear" style="flex:1">清空画布</button>
+                <button class="apple-btn apple-btn-primary" id="btn-draw-save" style="flex:1">保存到共享目录</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- 6. 设置 -->
+    <section id="view-settings" class="view-section">
+        <div class="settings-nav" id="settings-nav">
+            <button class="apple-btn apple-btn-glass apple-btn-sm active" data-panel="security"><span data-icon="shield" data-icon-size="14"></span>服务与安全</button>
+            <button class="apple-btn apple-btn-glass apple-btn-sm" data-panel="devices"><span data-icon="devices" data-icon-size="14"></span>设备管理</button>
+            <button class="apple-btn apple-btn-glass apple-btn-sm" data-panel="trash"><span data-icon="trash" data-icon-size="14"></span>回收站</button>
+            <button class="apple-btn apple-btn-glass apple-btn-sm" data-panel="shares"><span data-icon="qr" data-icon-size="14"></span>分享管理</button>
+            <button class="apple-btn apple-btn-glass apple-btn-sm" data-panel="history"><span data-icon="history" data-icon-size="14"></span>传输记录</button>
+            <button class="apple-btn apple-btn-glass apple-btn-sm" data-panel="app"><span data-icon="settings" data-icon-size="14"></span>应用</button>
+            <button class="apple-btn apple-btn-glass apple-btn-sm" data-panel="logs"><span data-icon="list" data-icon-size="14"></span>日志</button>
+        </div>
+
+        <!-- 服务与安全 -->
+        <div class="settings-panel active glass-card" data-panel="security">
+            <div class="apple-card-title"><span class="apple-card-title-text"><span data-icon="shield"></span>服务与安全</span>
+                <button class="apple-btn apple-btn-primary apple-btn-sm" id="btn-apply-config">应用配置并重启服务</button>
+            </div>
+            <div class="kv-row">
+                <div class="kv-row-label"><span data-icon="lock" data-icon-size="16"></span><div>访问密码 PIN<div class="kv-row-desc">留空 = 免密模式（敏感操作仅限本机）</div></div></div>
+                <div class="apple-input-box" style="width:170px"><input type="text" id="cfg-pin" class="apple-input" placeholder="如 123456"></div>
+            </div>
+            <div class="kv-row">
+                <div class="kv-row-label"><span data-icon="server" data-icon-size="16"></span><div>共享范围<div class="kv-row-desc">全盘模式可浏览所有磁盘；互传模式仅共享目录</div></div></div>
+                <div class="segmented" id="cfg-mode">
+                    <button class="segmented-item active" data-v="full">全盘模式</button>
+                    <button class="segmented-item" data-v="shared">互传模式</button>
+                </div>
+            </div>
+            <div class="kv-row">
+                <div class="kv-row-label"><span data-icon="folder" data-icon-size="16"></span><div>共享目录<div class="kv-row-desc ellipsis" id="cfg-dir-label" style="max-width:340px">默认：下载/LanDiskShared</div></div></div>
+                <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-select-dir">选择目录</button>
+            </div>
+            <div class="kv-row">
+                <div class="kv-row-label"><span data-icon="globe" data-icon-size="16"></span><div>端口<div class="kv-row-desc">局域网访问端口</div></div></div>
+                <div class="apple-input-box" style="width:120px"><input type="number" id="cfg-port" class="apple-input" placeholder="3000" min="1024" max="65535"></div>
+            </div>
+            <div class="kv-row">
+                <div class="kv-row-label"><span data-icon="wifi" data-icon-size="16"></span><div>绑定网卡<div class="kv-row-desc">仅监听指定网卡，默认全部</div></div></div>
+                <div class="apple-input-box" style="width:220px"><select id="cfg-bindip" class="apple-select"><option value="">全部网卡 (0.0.0.0)</option></select></div>
+            </div>
+            <div class="kv-row">
+                <div class="kv-row-label"><span data-icon="check" data-icon-size="16"></span><div>IP 白名单<div class="kv-row-desc">开启后仅白名单内 IP 可访问</div></div></div>
+                <label class="apple-switch"><input type="checkbox" id="cfg-whitelist"><span class="apple-slider"></span></label>
+            </div>
+            <div id="cfg-whitelist-row" style="display:none; padding:4px 0 8px">
+                <div class="apple-input-box"><input type="text" id="cfg-whitelist-ips" class="apple-input mono" placeholder="逗号分隔，如 192.168.0.5,192.168.0.8"></div>
+            </div>
+        </div>
+
+        <!-- 设备管理 -->
+        <div class="settings-panel glass-card" data-panel="devices">
+            <div class="apple-card-title"><span class="apple-card-title-text"><span data-icon="devices"></span>在线设备</span>
+                <button class="apple-btn apple-btn-danger apple-btn-sm" id="btn-kick-all">断开全部</button>
+            </div>
+            <div id="devices-list"></div>
+            <div class="apple-card-title" style="margin-top:20px"><span class="apple-card-title-text"><span data-icon="warning"></span>IP 黑名单</span></div>
+            <div class="row wrap" id="blacklist-list"><span class="subtle" style="font-size:12.5px">暂无封禁 IP</span></div>
+        </div>
+
+        <!-- 回收站 -->
+        <div class="settings-panel glass-card" data-panel="trash">
+            <div class="apple-card-title"><span class="apple-card-title-text"><span data-icon="trash"></span>回收站</span>
+                <div class="row">
+                    <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-trash-refresh">刷新</button>
+                    <button class="apple-btn apple-btn-danger apple-btn-sm" id="btn-trash-clear">清空回收站</button>
+                </div>
+            </div>
+            <div id="trash-list"><div class="empty-state">回收站为空</div></div>
+        </div>
+
+        <!-- 分享管理 -->
+        <div class="settings-panel glass-card" data-panel="shares">
+            <div class="apple-card-title"><span class="apple-card-title-text"><span data-icon="qr"></span>活动分享链接</span>
+                <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-shares-refresh">刷新</button>
+            </div>
+            <div id="shares-list"><div class="empty-state">暂无活动分享<br><span class="subtle" style="font-size:11.5px">在文件页右键文件即可生成分享</span></div></div>
+        </div>
+
+        <!-- 传输记录 -->
+        <div class="settings-panel glass-card" data-panel="history">
+            <div class="apple-card-title"><span class="apple-card-title-text"><span data-icon="history"></span>传输记录</span>
+                <button class="apple-btn apple-btn-danger apple-btn-sm" id="btn-history-clear">清空记录</button>
+            </div>
+            <div id="settings-history"><div class="empty-state">暂无传输记录</div></div>
+        </div>
+
+        <!-- 应用 -->
+        <div class="settings-panel glass-card" data-panel="app">
+            <div class="apple-card-title"><span class="apple-card-title-text"><span data-icon="settings"></span>应用设置</span></div>
+            <div class="kv-row">
+                <div class="kv-row-label"><span data-icon="power" data-icon-size="16"></span><div>开机自启动</div></div>
+                <label class="apple-switch"><input type="checkbox" id="cfg-autostart"><span class="apple-slider"></span></label>
+            </div>
+            <div class="kv-row">
+                <div class="kv-row-label"><span data-icon="zap" data-icon-size="16"></span><div>启动软件即开服务</div></div>
+                <label class="apple-switch"><input type="checkbox" id="cfg-autoserve" checked><span class="apple-slider"></span></label>
+            </div>
+                        <div class="kv-row">
+                <div class="kv-row-label"><span data-icon="close" data-icon-size="16"></span><div>关闭窗口动作<div class="kv-row-desc">点击右上角关闭或快捷键时的行为</div></div></div>
+                <div class="segmented" id="cfg-close-action">
+                    <button class="segmented-item active" data-v="ask">每次询问</button>
+                    <button class="segmented-item" data-v="minimize">后台运行</button>
+                    <button class="segmented-item" data-v="quit">完全退出</button>
+                </div>
+            </div>
+            <div class="kv-row">
+                <div class="kv-row-label"><span data-icon="moon" data-icon-size="16"></span><div>外观主题</div></div>
+                <div class="segmented" id="cfg-theme">
+                    <button class="segmented-item active" data-v="auto">跟随系统</button>
+                    <button class="segmented-item" data-v="light">浅色</button>
+                    <button class="segmented-item" data-v="dark">深色</button>
+                </div>
+            </div>
+            <div class="kv-row">
+                <div class="kv-row-label"><span data-icon="external" data-icon-size="16"></span><div>打开数据目录<div class="kv-row-desc">回收站 / 记录等数据存放处</div></div></div>
+                <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-open-home">打开 ~/.landisk</button>
+            </div>
+            <div class="kv-row">
+                <div class="kv-row-label"><span data-icon="logout" data-icon-size="16"></span><div>退出应用<div class="kv-row-desc">同时停止共享服务</div></div></div>
+                <button class="apple-btn apple-btn-danger apple-btn-sm" id="btn-quit">退出</button>
+            </div>
+        </div>
+
+        <!-- 日志 -->
+        <div class="settings-panel glass-card" data-panel="logs">
+            <div class="apple-card-title"><span class="apple-card-title-text"><span data-icon="list"></span>运行日志</span>
+                <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-logs-clear">清空</button>
+            </div>
+            <div class="log-view" id="log-view"></div>
+        </div>
+    </section>
+
+</div>
+</main>
+
+<!-- 悬浮 Dock (带苹果灵动滑动指示器) -->
+<nav class="dock" id="main-dock">
+    <div class="dock-glider" id="dock-glider"></div>
+    <button class="dock-item active" data-view="home"><span data-icon="home" data-icon-size="22"></span><span class="dock-tip">主页</span></button>
+    <button class="dock-item" data-view="files"><span data-icon="folder" data-icon-size="22"></span><span class="dock-tip">文件</span></button>
+    <button class="dock-item" data-view="media"><span data-icon="playCircle" data-icon-size="22"></span><span class="dock-tip">影音</span></button>
+    <button class="dock-item" data-view="chat"><span data-icon="chat" data-icon-size="22"></span><span class="dock-tip">消息</span></button>
+    <button class="dock-item" data-view="tools"><span data-icon="tools" data-icon-size="22"></span><span class="dock-tip">工具</span></button>
+    <button class="dock-item" data-view="settings"><span data-icon="settings" data-icon-size="22"></span><span class="dock-tip">设置</span></button>
+</nav>
+
+<!-- 传输抽屉 -->
+<div class="transfer-drawer collapsed" id="transfer-drawer" style="display:none">
+    <div class="transfer-drawer-head" id="transfer-drawer-head">
+        <div class="row" style="gap:8px; font-size:13px; font-weight:600"><span data-icon="zap" data-icon-size="15"></span>传输任务</div>
+        <span class="subtle" id="transfer-count" style="font-size:12px">0</span>
+    </div>
+    <div class="transfer-drawer-body" id="transfer-body"></div>
+</div>
+
+<!-- 图片 / 文本 模态框（组件依赖） -->
+<div id="image-modal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(4,6,12,0.94); backdrop-filter:blur(20px); align-items:center; justify-content:center; flex-direction:column; padding:20px">
+    <div style="width:100%; max-width:900px" class="row-between">
+        <div id="image-gallery-title" style="font-weight:600; font-size:14px; color:#fff; max-width:70%" class="ellipsis"></div>
+        <button class="apple-btn-icon" id="image-modal-close" style="flex-shrink:0; color:#fff"></button>
+    </div>
+    <div style="max-width:90vw; max-height:80vh; position:relative" class="row">
+        <button class="apple-gallery-nav-btn" id="img-prev" style="position:absolute; left:-14px; z-index:10">‹</button>
+        <img id="image-viewer" src="" alt="preview" style="max-width:100%; max-height:75vh; border-radius:16px; object-fit:contain; box-shadow:0 20px 50px rgba(0,0,0,0.8)">
+        <button class="apple-gallery-nav-btn" id="img-next" style="position:absolute; right:-14px; z-index:10">›</button>
+    </div>
+</div>
+
+<div id="text-modal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(4,6,12,0.9); backdrop-filter:blur(20px); align-items:center; justify-content:center; padding:20px">
+    <div style="width:min(92vw,700px)" class="glass-card">
+        <div class="row-between" style="margin-bottom:14px">
+            <div id="text-title" style="font-weight:600"></div>
+            <button class="apple-btn-icon" id="text-modal-close"></button>
+        </div>
+        <div id="text-viewer" class="mono" style="background:#0b0d14; padding:16px; border-radius:12px; white-space:pre-wrap; max-height:55vh; overflow-y:auto; font-size:12.5px; color:#e8eaf0"></div>
+    </div>
+</div>
+
+<!-- 桌面端脚本 -->
+<script src="desktop/ipc.js"></script>
+<script src="desktop/app.js"></script>
+<script>
+    // 窗口控制直连保障与原生兜底
+    (function() {
+        function attachDirectWindowControls() {
+            const minBtn = document.getElementById('win-min');
+            const maxBtn = document.getElementById('win-max');
+            const closeBtn = document.getElementById('win-close');
+
+            if (minBtn && !minBtn._directAttached) {
+                minBtn._directAttached = true;
+                minBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    if (window.api && window.api.minimizeWindow) window.api.minimizeWindow();
+                    else if (window.api && window.api.invoke) window.api.invoke('minimize-window');
+                }, true);
+            }
+            if (maxBtn && !maxBtn._directAttached) {
+                maxBtn._directAttached = true;
+                maxBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    if (window.api && window.api.maximizeWindow) window.api.maximizeWindow();
+                    else if (window.api && window.api.invoke) window.api.invoke('maximize-window');
+                }, true);
+            }
+            if (closeBtn && !closeBtn._directAttached) {
+                closeBtn._directAttached = true;
+                closeBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    if (typeof window.LanDiskIPC !== 'undefined' && window.LanDiskIPC.close) {
+                        window.LanDiskIPC.close();
+                    } else if (window.api && window.api.closeWindow) {
+                        window.api.closeWindow();
+                    } else if (window.api && window.api.invoke) {
+                        window.api.invoke('close-window');
+                    }
+                }, true);
+            }
+        }
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', attachDirectWindowControls);
+        } else {
+            attachDirectWindowControls();
+        }
+    })();
+</script>
+</body>
+</html>

@@ -4,8 +4,8 @@
   "version": "1.6.0",
   "identifier": "com.landisk.desktop",
   "build": {
-    "frontendDist": "../mobile-dist",
-    "beforeBuildCommand": "node scripts/build-mobile-web.js"
+    "frontendDist": "../desktop-dist",
+    "beforeBuildCommand": "node scripts/build-desktop-web.js"
   },
   "app": {
     "windows": [

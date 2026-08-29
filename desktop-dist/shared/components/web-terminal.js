@@ -1,0 +1,209 @@
+/**
+ * 局域网互联 Pro - macOS Web 终端组件 (WebTerminal)
+ * 职责：处理终端 Shell 命令提交执行、等宽文本流式输出追加与自适应滚动、命令历史记录上下翻阅与清屏。
+ * 遵循无全局变量污染、高扩展性设计。
+ */
+
+(function (global) {
+    'use strict';
+
+    class WebTerminal {
+        constructor(config = {}) {
+            this.outputElement = typeof config.outputElement === 'string' ? document.querySelector(config.outputElement) : config.outputElement;
+            this.inputElement = typeof config.inputElement === 'string' ? document.querySelector(config.inputElement) : config.inputElement;
+            this.executeBtnElement = typeof config.executeBtnElement === 'string' ? document.querySelector(config.executeBtnElement) : config.executeBtnElement;
+
+            this.getPin = config.getPin || (() => typeof localStorage !== 'undefined' ? (localStorage.getItem('lan_disk_pin') || '') : '');
+            this.getCwd = config.getCwd || (() => 'C:\\');
+            this.getApiUrl = config.getApiUrl || ((p) => {
+                if (typeof global.LanDiskAuth !== 'undefined' && global.LanDiskAuth.api) {
+                    return global.LanDiskAuth.api(p);
+                }
+                if (typeof window !== 'undefined') {
+                    const baseUrl = window.currentServerUrl || (typeof localStorage !== 'undefined' && localStorage.getItem('landisk_custom_server')) || '';
+                    if (baseUrl) return baseUrl.replace(/\/$/, '') + (p.startsWith('/') ? p : '/' + p);
+                }
+                return p;
+            });
+
+            this.history = [];
+            this.historyIndex = -1;
+
+            this._ensureElements();
+            this._bindEvents();
+        }
+
+        _ensureElements() {
+            if (!this.outputElement) {
+                this.outputElement = document.querySelector('#terminal-output') || document.querySelector('#pc-terminal-output');
+            }
+            if (!this.inputElement) {
+                this.inputElement = document.querySelector('#terminal-input') || document.querySelector('#pc-terminal-input');
+            }
+        }
+
+        _bindEvents() {
+            this._ensureElements();
+            if (this.inputElement) {
+                this.inputElement.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        this.executeCommand();
+                    } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        this.navigateHistory('up');
+                    } else if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        this.navigateHistory('down');
+                    }
+                });
+            }
+
+            if (this.executeBtnElement) {
+                this.executeBtnElement.addEventListener('click', () => {
+                    this.executeCommand();
+                });
+            }
+        }
+
+        navigateHistory(direction) {
+            this._ensureElements();
+            if (!this.history.length || !this.inputElement) return;
+
+            if (direction === 'up') {
+                if (this.historyIndex === -1) {
+                    this.historyIndex = this.history.length - 1;
+                } else if (this.historyIndex > 0) {
+                    this.historyIndex--;
+                }
+            } else if (direction === 'down') {
+                if (this.historyIndex !== -1 && this.historyIndex < this.history.length - 1) {
+                    this.historyIndex++;
+                } else {
+                    this.historyIndex = -1;
+                    this.inputElement.value = '';
+                    return;
+                }
+            }
+
+            if (this.historyIndex >= 0 && this.historyIndex < this.history.length) {
+                this.inputElement.value = this.history[this.historyIndex];
+            }
+        }
+
+        async executeCommand(customCommand) {
+            this._ensureElements();
+            let cmd = customCommand;
+            if (typeof cmd !== 'string' && this.inputElement) {
+                cmd = this.inputElement.value;
+            }
+
+            if (!cmd || !cmd.trim()) return;
+            cmd = cmd.trim();
+
+            if (this.inputElement && typeof customCommand !== 'string') {
+                this.inputElement.value = '';
+            }
+
+            this.history.push(cmd);
+            this.historyIndex = -1;
+
+            if (cmd.toLowerCase() === 'clear' || cmd.toLowerCase() === 'cls') {
+                this.clearOutput();
+                return;
+            }
+
+            this.appendLine(`$ ${cmd}`, 'command');
+
+            const cwd = this.getCwd();
+            const getUrl = typeof this.getApiUrl === 'function' ? this.getApiUrl : (p => p);
+            const terminalUrl = getUrl('/api/terminal');
+
+            try {
+                const res = await fetch(terminalUrl, {
+                    method: 'POST',
+                    headers: (global.LanDiskAuth ? global.LanDiskAuth.authHeaders({ 'Content-Type': 'application/json' }) : { 'Content-Type': 'application/json', 'x-pin': this.getPin() }),
+                    body: JSON.stringify({
+                        command: cmd,
+                        cwd: cwd
+                    })
+                });
+
+                const data = await res.json().catch(() => ({}));
+                if (data.error) {
+                    this.appendLine(data.error, 'error');
+                } else if (data.output) {
+                    this.appendLine(data.output, 'normal');
+                } else {
+                    this.appendLine('(命令执行完毕，无输出)', 'muted');
+                }
+            } catch (err) {
+                this.appendLine(`执行错误: ${err.message}`, 'error');
+            }
+        }
+
+        appendLine(text, type = 'normal') {
+            this._ensureElements();
+            if (!this.outputElement) return;
+
+            const lineDiv = document.createElement('div');
+            lineDiv.style.margin = '2px 0';
+            lineDiv.style.wordBreak = 'break-all';
+
+            if (type === 'command') {
+                lineDiv.style.color = '#ffffff';
+                lineDiv.style.fontWeight = '600';
+            } else if (type === 'error') {
+                lineDiv.style.color = 'var(--apple-system-red, #ff453a)';
+            } else if (type === 'muted') {
+                lineDiv.style.color = 'var(--apple-text-muted, #8e8e93)';
+            } else {
+                lineDiv.style.color = '#34c759';
+            }
+
+            lineDiv.textContent = text;
+            this.outputElement.appendChild(lineDiv);
+
+            this.scrollToBottom();
+        }
+
+        scrollToBottom() {
+            this._ensureElements();
+            if (this.outputElement) {
+                this.outputElement.scrollTop = this.outputElement.scrollHeight;
+            }
+        }
+
+        clearOutput() {
+            this._ensureElements();
+            if (this.outputElement) {
+                this.outputElement.innerHTML = '<div style="color: #8e8e93;">zsh - 猫步互联 Pro 控制台 ready...</div>';
+            }
+        }
+    }
+
+    let instance = null;
+
+    function getOrCreateInstance(inputId, outputId) {
+        if (!instance) {
+            instance = new WebTerminal({
+                outputElement: typeof outputId === 'string' ? '#' + outputId : (outputId || '#terminal-output'),
+                inputElement: typeof inputId === 'string' ? '#' + inputId : (inputId || '#terminal-input')
+            });
+        }
+        return instance;
+    }
+
+    WebTerminal.execute = function(inputId, outputId) {
+        const inst = getOrCreateInstance(inputId, outputId);
+        inst.executeCommand();
+    };
+
+    WebTerminal.clear = function() {
+        const inst = getOrCreateInstance();
+        inst.clearOutput();
+    };
+
+    global.WebTerminalComponent = WebTerminal;
+
+})(typeof window !== 'undefined' ? window : this);

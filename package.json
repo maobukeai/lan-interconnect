@@ -20,6 +20,7 @@
     "directories": {
       "output": "release"
     },
+    "afterPack": "scripts/clean-electron.js",
     "asar": true,
     "asarUnpack": [
       "**/*.node",
@@ -31,11 +32,29 @@
       "server/services/**/*"
     ],
     "files": [
-      "**/*",
+      "main.js",
+      "preload.js",
+      "gui.html",
+      "server.js",
+      "server/**/*",
+      "public/**/*",
+      "shared/**/*",
+      "desktop/**/*",
+      "icon.png",
+      "icon.ico",
+      "package.json",
+      "node_modules/**/*",
+      "!node_modules/*/{README.md,README,readme.md,CHANGELOG.md,LICENSE,LICENSE.txt,license}",
+      "!node_modules/*/{test,tests,example,examples,doc,docs}/**",
+      "!node_modules/**/*.d.ts",
+      "!node_modules/**/*.map",
       "!node_modules/7zip-bin/win/ia32/**",
       "!node_modules/7zip-bin/win/arm64/**",
       "!node_modules/7zip-bin/mac/**",
       "!node_modules/7zip-bin/linux/**",
+      "!android/**",
+      "!src-tauri/**",
+      "!mobile-dist/**",
       "!dist/**",
       "!release/**",
       "!.git/**",
