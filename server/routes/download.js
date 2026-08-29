@@ -132,19 +132,14 @@ const handleStream = (req, res, isHead = false) => {
         // 解析 Range: bytes=start-end
         const parts = range.replace(/bytes=/, "").split("-");
         const start = parseInt(parts[0], 10);
-        let end = parts[1] ? parseInt(parts[1], 10) : NaN;
+        let end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
 
         if (isNaN(start) || start >= fileSize) {
             res.setHeader('Content-Range', `bytes */${fileSize}`);
             return res.status(416).end();
         }
 
-        // 如果客户端发起开放式 Range (如 Range: bytes=0-)，限制每次响应最大 2MB~4MB 切片
-        // 使得客户端在局域网内仅需 15ms~25ms 即可收齐首批关键帧并瞬间起播，无需等待整个大文件 TCP 协商
-        if (isNaN(end) || !parts[1] || parts[1].trim() === '') {
-            const maxChunk = start === 0 ? 2 * 1024 * 1024 : 4 * 1024 * 1024;
-            end = Math.min(fileSize - 1, start + maxChunk - 1);
-        } else if (end >= fileSize) {
+        if (isNaN(end) || end >= fileSize) {
             end = fileSize - 1;
         }
 
@@ -154,11 +149,11 @@ const handleStream = (req, res, isHead = false) => {
         res.setHeader('Content-Range', `bytes ${start}-${end}/${fileSize}`);
         res.setHeader('Content-Length', chunksize);
 
-        // 使用 512KB 高性能流式直通缓冲区
+        // 使用 1MB 高性能流式直通缓冲区，千兆局域网可达到 100MB/s+ 吞吐
         const stream = fs.createReadStream(resolved, {
             start,
             end,
-            highWaterMark: 512 * 1024
+            highWaterMark: 1024 * 1024
         });
 
         stream.on('error', (err) => {
@@ -172,12 +167,12 @@ const handleStream = (req, res, isHead = false) => {
 
         stream.pipe(res);
     } else {
-        // 全量请求（仅在未带 Range 头且非流式客户端时触发）
+        // 全量请求
         res.setHeader('Content-Length', fileSize);
         res.status(200);
 
         const stream = fs.createReadStream(resolved, {
-            highWaterMark: 512 * 1024
+            highWaterMark: 1024 * 1024
         });
 
         stream.on('error', (err) => {

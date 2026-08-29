@@ -507,9 +507,8 @@ class AppleCinemaPlayerEngine {
             this.setLoading(true);
             this.dom.media.playsInline = true;
             this.dom.media.preload = 'auto';
-            if (this.dom.media.src !== streamUrl) {
-                this.dom.media.src = streamUrl;
-            }
+            this.dom.media.src = streamUrl;
+            this.dom.media.load();
             const playPromise = this.dom.media.play();
             if (playPromise && typeof playPromise.catch === 'function') {
                 playPromise.catch((err) => {
@@ -525,12 +524,17 @@ class AppleCinemaPlayerEngine {
             }
         }
 
-        this.renderEpisodes();
         this.resetTransform();
-        this.detectSubtitles(item);
-        this.checkResumeHistory(item);
         this.showControls();
-        this.prefetchNextMedia();
+
+        // 将非关键 DOM 渲染与网络探测异步延迟执行，绝不阻塞主线程音视频解码管道
+        const deferFn = window.requestIdleCallback || ((fn) => setTimeout(fn, 16));
+        deferFn(() => {
+            this.renderEpisodes();
+            this.detectSubtitles(item);
+            this.checkResumeHistory(item);
+            this.prefetchNextMedia();
+        });
     }
 
     renderEpisodes() {
