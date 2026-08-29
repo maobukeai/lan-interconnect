@@ -430,6 +430,45 @@ class AppleCinemaPlayerEngine {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
+    getStreamUrl(item) {
+        if (!item) return '';
+        if (item.url) return item.url;
+        let authQ = '';
+        if (window.LanDiskAuth && typeof window.LanDiskAuth.authQuery === 'function') {
+            const q = window.LanDiskAuth.authQuery();
+            if (q) authQ = q.replace(/^\?/, '&');
+        } else {
+            const pin = localStorage.getItem('lan_disk_pin') || localStorage.getItem('landisk_pin') || '';
+            const token = localStorage.getItem('lan_disk_qr_token') || '';
+            if (pin) authQ += '&pin=' + encodeURIComponent(pin);
+            if (token) authQ += '&token=' + encodeURIComponent(token);
+        }
+        let baseUrl = '/api/stream';
+        if (window.LanDiskAuth && typeof window.LanDiskAuth.api === 'function') {
+            baseUrl = window.LanDiskAuth.api('/api/stream');
+        } else if (window.api) {
+            baseUrl = window.api('/api/stream');
+        }
+        return baseUrl + '?path=' + encodeURIComponent(item.path) + authQ;
+    }
+
+    prefetchNextMedia() {
+        if (!this.playlist || this.playlist.length <= 1) return;
+        const nextIdx = this.currentIndex + 1;
+        if (nextIdx < this.playlist.length) {
+            const nextItem = this.playlist[nextIdx];
+            const nextUrl = this.getStreamUrl(nextItem);
+            if (nextUrl) {
+                try {
+                    fetch(nextUrl, {
+                        headers: { 'Range': 'bytes=0-524287' },
+                        cache: 'force-cache'
+                    }).catch(() => {});
+                } catch (e) {}
+            }
+        }
+    }
+
     loadCurrentMedia() {
         if (this.dom.stageBox) {
             this.dom.stageBox.scrollLeft = 0;
@@ -440,26 +479,11 @@ class AppleCinemaPlayerEngine {
         this.currentMedia = item;
 
         const isAudio = item.type === 'audio' || /\.(mp3|wav|flac|aac|ogg|m4a)$/i.test(item.name);
-        
-        let streamUrl = item.url;
-        if (!streamUrl) {
-            let authQ = '';
-            if (window.LanDiskAuth && typeof window.LanDiskAuth.authQuery === 'function') {
-                const q = window.LanDiskAuth.authQuery();
-                if (q) authQ = q.replace(/^\?/, '&');
-            } else {
-                const pin = localStorage.getItem('lan_disk_pin') || localStorage.getItem('landisk_pin') || '';
-                const token = localStorage.getItem('lan_disk_qr_token') || '';
-                if (pin) authQ += '&pin=' + encodeURIComponent(pin);
-                if (token) authQ += '&token=' + encodeURIComponent(token);
-            }
-            streamUrl = '/api/stream?path=' + encodeURIComponent(item.path) + authQ;
-        }
+        const streamUrl = this.getStreamUrl(item);
 
         if (this.dom.videoTitle) this.dom.videoTitle.textContent = item.name;
         if (this.dom.navTitle) this.dom.navTitle.textContent = item.name;
         if (this.dom.cardTitle) this.dom.cardTitle.textContent = item.name;
-        // 先渲染占位文案，元数据就绪后在 onLoadedMetadata 里替换为真实分辨率
         if (this.dom.cardSub) this.dom.cardSub.textContent = isAudio ? 'Apple Music 高保真无损音频 · 局域网直连' : '读取视频信息… · 局域网直连';
         this._pendingVideoMetaText = !isAudio;
         if (this.dom.videoBadge) this.dom.videoBadge.innerHTML = `<span class="ap-status-dot"></span>${isAudio ? '无损音频' : '视频'}`;
@@ -471,15 +495,23 @@ class AppleCinemaPlayerEngine {
             this.dom.audioLayer.style.display = 'none';
         }
 
-        this.dom.media.src = streamUrl;
-        this.dom.media.load();
-        this.dom.media.play().catch(() => {});
+        // 彻底清空上一解码管道，避免硬件解码器死锁，再挂载新流实现秒开
+        if (this.dom.media) {
+            this.dom.media.pause();
+            this.dom.media.removeAttribute('src');
+            this.dom.media.load();
+            this.dom.media.preload = 'auto';
+            this.dom.media.src = streamUrl;
+            this.dom.media.load();
+            this.dom.media.play().catch(() => {});
+        }
 
         this.renderEpisodes();
         this.resetTransform();
         this.detectSubtitles(item);
         this.checkResumeHistory(item);
         this.showControls();
+        this.prefetchNextMedia();
     }
 
     renderEpisodes() {
@@ -1467,7 +1499,8 @@ class AppleCinemaPlayerEngine {
                 const q = window.LanDiskAuth.authQuery();
                 if (q) authQ = q.replace(/^\?/, '&');
             }
-            const res = await fetch(`/api/media/progress?path=${encodeURIComponent(item.path)}${authQ}`);
+            const endpoint = (window.LanDiskAuth && window.LanDiskAuth.api) ? window.LanDiskAuth.api('/api/media/progress') : (window.api ? window.api('/api/media/progress') : '/api/media/progress');
+            const res = await fetch(`${endpoint}?path=${encodeURIComponent(item.path)}${authQ}`);
             if (res.ok) {
                 const data = await res.json();
                 if (data.success && data.progress && data.progress.time > 8) {
@@ -1608,7 +1641,8 @@ class AppleCinemaPlayerEngine {
                 const q = window.LanDiskAuth.authQuery();
                 if (q) authQ = q.replace(/^\?/, '&');
             }
-            const res = await fetch(`/api/media/subtitles?path=${encodeURIComponent(item.path)}${authQ}`);
+            const endpoint = (window.LanDiskAuth && window.LanDiskAuth.api) ? window.LanDiskAuth.api('/api/media/subtitles') : (window.api ? window.api('/api/media/subtitles') : '/api/media/subtitles');
+            const res = await fetch(`${endpoint}?path=${encodeURIComponent(item.path)}${authQ}`);
             if (res.ok) {
                 const data = await res.json();
                 if (data.success && Array.isArray(data.subtitles) && data.subtitles.length > 0) {
