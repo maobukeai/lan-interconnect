@@ -1452,8 +1452,12 @@ body.theme-light .player-range-pill.active {
         gap: 6px !important;
     }
 
-    .player-stage-box:not(.is-fullscreen) #ap-btn-top-back {
-        display: none !important; /* 小窗下外层已有大返回按钮，避免重复 */
+    .player-stage-box #ap-btn-top-back {
+        display: inline-flex !important;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        cursor: pointer;
     }
 
     .player-ctrl-title {

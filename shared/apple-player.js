@@ -168,15 +168,19 @@ class AppleCinemaPlayerEngine {
         btnPlay?.addEventListener('click', (e) => { e.stopPropagation(); this.togglePlay(); });
         btnPrev?.addEventListener('click', (e) => { e.stopPropagation(); this.prev(); });
         btnNext?.addEventListener('click', (e) => { e.stopPropagation(); this.next(); });
-        btnBack?.addEventListener('click', () => this.close());
-        btnTopBack?.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (document.fullscreenElement || document.webkitFullscreenElement) {
-                this.toggleFullscreen();
-            } else {
-                this.close();
+        
+        const handleBack = (e) => {
+            if (e) {
+                e.preventDefault();
+                e.stopPropagation();
             }
-        });
+            this.close();
+        };
+
+        btnBack?.addEventListener('click', handleBack);
+        btnBack?.addEventListener('touchend', handleBack);
+        btnTopBack?.addEventListener('click', handleBack);
+        btnTopBack?.addEventListener('touchend', handleBack);
 
         btnSnapshot?.addEventListener('click', (e) => { e.stopPropagation(); this.takeSnapshot(); });
         btnPip?.addEventListener('click', (e) => { e.stopPropagation(); this.togglePiP(); });
@@ -396,12 +400,22 @@ class AppleCinemaPlayerEngine {
             this.dom.media.pause();
         }
         this.closeDrawers();
+        this.closeMenuPopover();
         if (this.dom.stageBox) {
             this.dom.stageBox.scrollLeft = 0;
             this.dom.stageBox.scrollTop = 0;
+            this.dom.stageBox.classList.remove('is-fullscreen');
         }
+        document.body.classList.remove('ap-fullscreen-active');
+        if (this.dom.fsBtnLabel) this.dom.fsBtnLabel.textContent = '全屏';
+        this._lockLandscape(false);
+        this._restoreStageParent();
+
         if (document.fullscreenElement || document.webkitFullscreenElement) {
-            if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+            try {
+                if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+                else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+            } catch (e) {}
         }
 
         const targetView = this.previousView || 'files';
@@ -413,6 +427,7 @@ class AppleCinemaPlayerEngine {
             const fallback = document.getElementById('view-' + targetView) || document.getElementById('view-files');
             if (fallback) fallback.classList.add('active');
         }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
     loadCurrentMedia() {
@@ -625,6 +640,15 @@ class AppleCinemaPlayerEngine {
                 }
             }
         }
+    }
+
+    isDrawerOpen() {
+        return !!((this.dom.drawerEpisodes && this.dom.drawerEpisodes.classList.contains('open')) ||
+                  (this.dom.drawerSettings && this.dom.drawerSettings.classList.contains('open')));
+    }
+
+    isMenuOpen() {
+        return !!(this.dom.menuPopover && this.dom.menuPopover.classList.contains('open'));
     }
 
     closeDrawers() {

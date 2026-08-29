@@ -89,6 +89,7 @@
     }
   },
   "dependencies": {
+    "@capacitor/app": "^8.1.1",
     "@capacitor/core": "^8.5.0",
     "@capacitor/screen-orientation": "^8.0.1",
     "7zip-bin": "^5.2.0",

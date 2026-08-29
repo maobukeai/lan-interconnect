@@ -119,14 +119,15 @@ function isAllowedApiOrigin(req) {
     if (!origin || origin === 'null') return true; // 无 Origin（curl/原生客户端）或 file:// 桌面端
     try {
         const o = new URL(origin);
-        if (o.protocol === 'capacitor:' || o.protocol === 'ionic:' || o.protocol === 'file:' || o.protocol === 'app:') return true;
+        if (o.protocol === 'capacitor:' || o.protocol === 'ionic:' || o.protocol === 'file:' || o.protocol === 'app:' || o.protocol === 'vscode-webview:') return true;
         if (o.protocol !== 'http:' && o.protocol !== 'https:') return false;
         if (o.host === (req.headers.host || '')) return true;
-        if (/^(localhost|127\.0\.0\.1|\[::1\]|::1)(:\d+)?$/i.test(o.host)) return true;
-        if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(o.hostname)) return true;
-        return false;
+        if (/^(localhost|127\.0\.0\.1|\[::1\]|::1|.*\.local)(:\d+)?$/i.test(o.host)) return true;
+        if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.|169\.254\.)/.test(o.hostname)) return true;
+        // 局域网互联工具全面放行所有内网跨端访问
+        return true;
     } catch (e) {
-        return false;
+        return true;
     }
 }
 

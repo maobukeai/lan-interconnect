@@ -1239,6 +1239,111 @@
                 navigator.serviceWorker.register('/sw.js').catch(() => {});
             });
         }
+
+        /* ---------- Android / 移动端 原生物理返回键与全场景逐级返回治理 ---------- */
+        let lastBackPressTime = 0;
+        
+        function handleGlobalBack() {
+            // 1. 关闭全屏大图查看器
+            const imgModal = $('#image-modal');
+            if (imgModal && (imgModal.style.display === 'flex' || imgModal.classList.contains('active'))) {
+                const closeBtn = $('#image-modal-close');
+                if (closeBtn) closeBtn.click();
+                else imgModal.style.display = 'none';
+                return true;
+            }
+
+            // 2. 关闭文本查看 / 编辑器
+            const txtModal = $('#text-modal');
+            if (txtModal && (txtModal.style.display === 'flex' || txtModal.classList.contains('active'))) {
+                const closeBtn = $('#text-modal-close');
+                if (closeBtn) closeBtn.click();
+                else txtModal.style.display = 'none';
+                return true;
+            }
+
+            // 3. 关闭局域网雷达探测弹窗
+            const radarModal = $('#radar-modal');
+            if (radarModal && (radarModal.style.display === 'flex' || radarModal.classList.contains('active'))) {
+                const closeBtn = $('#radar-modal-close');
+                if (closeBtn) closeBtn.click();
+                else radarModal.style.display = 'none';
+                return true;
+            }
+
+            // 4. 关闭播放器内部抽屉或菜单
+            if (window.ApplePlayerInstance) {
+                if (typeof window.ApplePlayerInstance.isDrawerOpen === 'function' && window.ApplePlayerInstance.isDrawerOpen()) {
+                    window.ApplePlayerInstance.closeDrawers();
+                    return true;
+                }
+                if (typeof window.ApplePlayerInstance.isMenuOpen === 'function' && window.ApplePlayerInstance.isMenuOpen()) {
+                    window.ApplePlayerInstance.closeMenuPopover();
+                    return true;
+                }
+                // 如果处于全屏播放态或在播放器视图中，退出播放器返回文件列表
+                const playerView = $('#view-player');
+                const stageBox = $('#player-stage-box');
+                const isPlayerActive = (playerView && playerView.classList.contains('active')) || (stageBox && stageBox.classList.contains('is-fullscreen'));
+                if (isPlayerActive) {
+                    window.ApplePlayerInstance.close();
+                    return true;
+                }
+            }
+
+            // 5. 文件浏览器子目录返回上一级
+            if (window.FileExplorerComponent && !window.FileExplorerComponent.isRoot) {
+                window.FileExplorerComponent.goUp();
+                return true;
+            }
+
+            // 6. 如果在非主文件视图（如聊天、屏幕监控、大盘、工具等），返回主文件视图
+            const activeView = document.querySelector('.view-section.active');
+            if (activeView && activeView.id !== 'view-files') {
+                const filesDock = document.querySelector('.dock-item[data-view="files"]');
+                if (filesDock) {
+                    filesDock.click();
+                    return true;
+                }
+            }
+
+            // 7. 已经在主界面根目录且无弹窗：双击防误触退出 App
+            const now = Date.now();
+            if (now - lastBackPressTime < 2000) {
+                if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+                    window.Capacitor.Plugins.App.exitApp();
+                } else if (navigator.app && navigator.app.exitApp) {
+                    navigator.app.exitApp();
+                }
+                return true;
+            }
+
+            lastBackPressTime = now;
+            LanDiskUI.toast('再按一次返回键退出猫步互联', 'info', 2000);
+            return true;
+        }
+
+        // 注册 Capacitor 原生物理返回键事件
+        if (typeof window !== 'undefined') {
+            const registerBack = () => {
+                if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+                    window.Capacitor.Plugins.App.addListener('backButton', () => {
+                        handleGlobalBack();
+                    });
+                }
+            };
+            registerBack();
+            document.addEventListener('deviceready', registerBack);
+
+            // 浏览器环境/PWA 历史后退拦截
+            window.addEventListener('popstate', () => {
+                const handled = handleGlobalBack();
+                if (handled) {
+                    history.pushState(null, '', window.location.href);
+                }
+            });
+            history.pushState(null, '', window.location.href);
+        }
     }
 
     document.addEventListener('DOMContentLoaded', init);
