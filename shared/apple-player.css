@@ -1404,37 +1404,24 @@ body.theme-light .player-range-pill.active {
    9. 移动端/手机竖屏专属体验深度调优 (Mobile Player Master Experience)
    ========================================================================== */
 @media (max-width: 680px) {
-    /* 1. 外层导航栏紧凑纯净 */
+    /* 1. 移动端彻底隐藏多余的外层导航栏，由视频内部顶部水晶栏统一承载返回与标题 */
+    #view-player {
+        padding-top: 0 !important;
+        margin-top: -6px !important;
+    }
+
     .player-nav-header {
-        margin-bottom: 8px !important;
-        gap: 8px !important;
-    }
-
-    #btn-player-back {
-        padding: 5px 10px !important;
-        font-size: 12.5px !important;
-        height: 32px !important;
-        flex-shrink: 0 !important;
-    }
-
-    .player-nav-title {
-        font-size: 13px !important;
-        font-weight: 600 !important;
-        text-align: left !important;
-        margin-left: 4px !important;
-    }
-
-    #btn-player-pip {
         display: none !important;
     }
 
-    /* 2. 视频视窗微圆角与阴影 */
+    /* 2. 视频视窗贴顶与紧凑微圆角 */
     .player-stage-container {
+        margin-top: 0 !important;
         margin-bottom: 10px !important;
     }
 
     .player-stage-box:not(.is-fullscreen) {
-        border-radius: 14px !important;
+        border-radius: 12px !important;
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35) !important;
     }
 
@@ -1443,13 +1430,15 @@ body.theme-light .player-range-pill.active {
         display: none !important;
     }
 
-    /* 4. 视频内部顶部浮层精炼防溢出 */
+    /* 4. 视频内部顶部浮层精炼防溢出并紧贴顶部 */
     .player-controls-overlay {
-        padding: 10px 12px !important;
+        padding: 6px 10px !important;
     }
 
     .player-ctrl-top {
         gap: 6px !important;
+        padding-top: 0 !important;
+        margin-top: 0 !important;
     }
 
     .player-stage-box #ap-btn-top-back {
