@@ -65,6 +65,7 @@ class AppleCinemaPlayerEngine {
             view: document.getElementById('view-player'),
             btnBack: document.getElementById('btn-player-back'),
             btnTopBack: document.getElementById('ap-btn-top-back'),
+            btnExternalApp: document.getElementById('ap-btn-external-app'),
             btnSnapshot: document.getElementById('ap-btn-snapshot'),
             btnPip: document.getElementById('ap-btn-pip'),
             btnTopEpisodes: document.getElementById('ap-btn-top-episodes'),
@@ -135,6 +136,9 @@ class AppleCinemaPlayerEngine {
             fsSubSizeGrid: document.getElementById('ap-fs-sub-size-grid'),
             fsSubDelayGrid: document.getElementById('ap-fs-sub-delay-grid'),
             fsInputCustomSub: document.getElementById('ap-fs-input-custom-sub'),
+            fsBtnOpenIntent: document.getElementById('ap-fs-btn-open-intent'),
+            fsBtnOpenVlc: document.getElementById('ap-fs-btn-open-vlc'),
+            fsBtnCopyStream: document.getElementById('ap-fs-btn-copy-stream'),
             // 下部大面板
             cardTitle: document.getElementById('player-card-title'),
             cardSub: document.getElementById('player-card-sub'),
@@ -199,6 +203,24 @@ class AppleCinemaPlayerEngine {
         btnTopSettings?.addEventListener('click', (e) => { e.stopPropagation(); this.toggleDrawer('settings'); });
         drawerEpisodesClose?.addEventListener('click', (e) => { e.stopPropagation(); this.closeDrawers(); });
         drawerSettingsClose?.addEventListener('click', (e) => { e.stopPropagation(); this.closeDrawers(); });
+
+        // 外部专业播放器 App 联动
+        this.dom.btnExternalApp?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const options = [
+                { label: '🌟 唤起手机/系统播放器 (MX Player / 系统相册)', value: 'intent' },
+                { label: '🎬 在 VLC 播放器中打开', value: 'vlc' },
+                { label: '📱 在 nPlayer 播放器中打开', value: 'nplayer' },
+                { label: '📋 复制局域网直连播放地址 (可粘贴至 Infuse/PotPlayer)', value: 'copy' }
+            ];
+            this.openMenuPopover(this.dom.btnExternalApp, '🚀 调用外部专业播放器 App', options, null, (val) => {
+                this.openInExternalApp(val);
+            });
+        });
+
+        this.dom.fsBtnOpenIntent?.addEventListener('click', (e) => { e.stopPropagation(); this.openInExternalApp('intent'); });
+        this.dom.fsBtnOpenVlc?.addEventListener('click', (e) => { e.stopPropagation(); this.openInExternalApp('vlc'); });
+        this.dom.fsBtnCopyStream?.addEventListener('click', (e) => { e.stopPropagation(); this.openInExternalApp('copy'); });
 
         // 快捷倍速选择菜单 (Apple Popover Menu)
         btnSpeed?.addEventListener('click', (e) => {
@@ -1476,6 +1498,79 @@ class AppleCinemaPlayerEngine {
         this._centerBadgeTimer = setTimeout(() => {
             if (this.dom.centerBadge) this.dom.centerBadge.classList.remove('show');
         }, 320);
+    }
+
+    openInExternalApp(protocol = 'intent') {
+        if (!this.currentMedia) return;
+        const streamUrl = this.getStreamUrl(this.currentMedia);
+        if (!streamUrl) return;
+
+        let absoluteUrl = streamUrl;
+        if (absoluteUrl.startsWith('/')) {
+            if (window.LanDiskAuth && typeof window.LanDiskAuth.api === 'function') {
+                absoluteUrl = window.LanDiskAuth.api(streamUrl);
+            } else {
+                const baseUrl = window.currentServerUrl || window.location.origin;
+                absoluteUrl = baseUrl.replace(/\/$/, '') + streamUrl;
+            }
+        }
+
+        if (protocol === 'copy') {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(absoluteUrl).then(() => {
+                    if (window.LanDiskUI && window.LanDiskUI.showToast) {
+                        window.LanDiskUI.showToast('✅ 局域网直连串流地址已复制，可在 Infuse / VLC / PotPlayer 中粘贴播放');
+                    } else {
+                        alert('已复制串流地址: ' + absoluteUrl);
+                    }
+                }).catch(() => {
+                    prompt('请手动复制局域网串流地址：', absoluteUrl);
+                });
+            } else {
+                prompt('请手动复制局域网串流地址：', absoluteUrl);
+            }
+            return;
+        }
+
+        if (protocol === 'vlc') {
+            const vlcUrl = `vlc://${absoluteUrl.replace(/^https?:\/\//, 'http://')}`;
+            window.location.href = vlcUrl;
+            if (window.LanDiskUI && window.LanDiskUI.showToast) {
+                window.LanDiskUI.showToast('正在尝试唤起 VLC 播放器...');
+            }
+            return;
+        }
+
+        if (protocol === 'nplayer') {
+            const nplayerUrl = `nplayer-${absoluteUrl}`;
+            window.location.href = nplayerUrl;
+            if (window.LanDiskUI && window.LanDiskUI.showToast) {
+                window.LanDiskUI.showToast('正在尝试唤起 nPlayer 播放器...');
+            }
+            return;
+        }
+
+        if (protocol === 'potplayer') {
+            const potUrl = `potplayer://${absoluteUrl}`;
+            window.location.href = potUrl;
+            return;
+        }
+
+        // 默认: 唤起移动端系统播放器选择器 (MX Player, 系统相册, VLC 等)
+        const isAndroid = /android/i.test(navigator.userAgent);
+        if (isAndroid) {
+            const cleanHttp = absoluteUrl.replace(/^https?:\/\//, '');
+            const intentUrl = `intent://${cleanHttp}#Intent;scheme=http;type=video/*;action=android.intent.action.VIEW;end`;
+            window.location.href = intentUrl;
+            if (window.LanDiskUI && window.LanDiskUI.showToast) {
+                window.LanDiskUI.showToast('正在调起系统与外部播放器 App...');
+            }
+        } else {
+            const choice = confirm(`是否使用外部播放器打开？\n\n点击【确定】复制局域网直连播放地址（可在 Infuse / PotPlayer / VLC / IINA / VidHub 中直接粘贴秒开），点击【取消】留在网页播放。`);
+            if (choice) {
+                this.openInExternalApp('copy');
+            }
+        }
     }
 
     savePlayHistory(current, duration) {
