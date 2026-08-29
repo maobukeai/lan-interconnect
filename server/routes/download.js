@@ -90,7 +90,7 @@ const MEDIA_MIME_TYPES = {
 };
 
 // 局域网极致秒开流式传输引擎 (Zero-latency LAN Media Streamer)
-router.get('/stream', (req, res) => {
+const handleStream = (req, res, isHead = false) => {
     const targetPath = req.query.path;
     if (!targetPath || !fs.existsSync(targetPath)) return res.status(404).send('Not found');
     if (!isSafePath(targetPath)) return res.status(403).send('Forbidden');
@@ -116,24 +116,35 @@ router.get('/stream', (req, res) => {
 
     const range = req.headers.range;
 
-    // 允许客户端缓存已请求的视频切片（拖拽后退 0 耗时秒开）
+    // 允许客户端强缓存已请求的视频切片（拖拽后退 0 耗时秒开）
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Content-Type', contentType);
     res.setHeader('Cache-Control', 'public, max-age=86400');
     res.setHeader('Last-Modified', stat.mtime.toUTCString());
+    res.setHeader('Connection', 'keep-alive');
+
+    if (isHead) {
+        res.setHeader('Content-Length', fileSize);
+        return res.status(200).end();
+    }
 
     if (range) {
         // 解析 Range: bytes=start-end
         const parts = range.replace(/bytes=/, "").split("-");
         const start = parseInt(parts[0], 10);
-        let end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+        let end = parts[1] ? parseInt(parts[1], 10) : NaN;
 
         if (isNaN(start) || start >= fileSize) {
             res.setHeader('Content-Range', `bytes */${fileSize}`);
             return res.status(416).end();
         }
 
-        if (isNaN(end) || end >= fileSize) {
+        // 如果客户端发起开放式 Range (如 Range: bytes=0-)，限制每次响应最大 2MB~4MB 切片
+        // 使得客户端在局域网内仅需 15ms~25ms 即可收齐首批关键帧并瞬间起播，无需等待整个大文件 TCP 协商
+        if (isNaN(end) || !parts[1] || parts[1].trim() === '') {
+            const maxChunk = start === 0 ? 2 * 1024 * 1024 : 4 * 1024 * 1024;
+            end = Math.min(fileSize - 1, start + maxChunk - 1);
+        } else if (end >= fileSize) {
             end = fileSize - 1;
         }
 
@@ -143,7 +154,7 @@ router.get('/stream', (req, res) => {
         res.setHeader('Content-Range', `bytes ${start}-${end}/${fileSize}`);
         res.setHeader('Content-Length', chunksize);
 
-        // 使用 512KB 高性能缓冲区流式直通
+        // 使用 512KB 高性能流式直通缓冲区
         const stream = fs.createReadStream(resolved, {
             start,
             end,
@@ -161,7 +172,7 @@ router.get('/stream', (req, res) => {
 
         stream.pipe(res);
     } else {
-        // 全量请求
+        // 全量请求（仅在未带 Range 头且非流式客户端时触发）
         res.setHeader('Content-Length', fileSize);
         res.status(200);
 
@@ -180,7 +191,10 @@ router.get('/stream', (req, res) => {
 
         stream.pipe(res);
     }
-});
+};
+
+router.head('/stream', (req, res) => handleStream(req, res, true));
+router.get('/stream', (req, res) => handleStream(req, res, false));
 
 // 生成分享链接（附二维码）
 router.post('/share', async (req, res) => {

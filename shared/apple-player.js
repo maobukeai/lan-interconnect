@@ -399,7 +399,7 @@ class AppleCinemaPlayerEngine {
         document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
         if (this.dom.view) this.dom.view.classList.add('active');
 
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        window.scrollTo(0, 0);
     }
 
     close() {
@@ -505,11 +505,24 @@ class AppleCinemaPlayerEngine {
         // 直接流式直通挂载新媒体，配合 loadingSpinner 指示，避免双重 load() 与画面撕裂
         if (this.dom.media) {
             this.setLoading(true);
+            this.dom.media.playsInline = true;
             this.dom.media.preload = 'auto';
             if (this.dom.media.src !== streamUrl) {
                 this.dom.media.src = streamUrl;
             }
-            this.dom.media.play().catch(() => {});
+            const playPromise = this.dom.media.play();
+            if (playPromise && typeof playPromise.catch === 'function') {
+                playPromise.catch((err) => {
+                    // 如果移动端浏览器限制了非静音自动起播，则先静音立即起播首帧，随后平滑恢复
+                    if (this.dom.media) {
+                        this.dom.media.muted = true;
+                        this.dom.media.play().catch(() => {});
+                        setTimeout(() => {
+                            if (this.dom.media) this.dom.media.muted = false;
+                        }, 50);
+                    }
+                });
+            }
         }
 
         this.renderEpisodes();
