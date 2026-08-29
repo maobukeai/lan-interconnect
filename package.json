@@ -8,6 +8,9 @@
     "start": "electron .",
     "server": "node server.js",
     "build": "electron-builder --win --x64",
+    "build:tauri": "tauri build",
+    "build:android": "node scripts/build-mobile-web.js && npx cap sync android && cd android && gradlew.bat assembleDebug",
+    "build:all": "npm run build && npm run build:tauri",
     "rebuild": "electron-rebuild -f -w",
     "clean": "rimraf dist release"
   },

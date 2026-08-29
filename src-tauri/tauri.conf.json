@@ -1,0 +1,37 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "猫步互联 Pro",
+  "version": "1.6.0",
+  "identifier": "com.landisk.desktop",
+  "build": {
+    "frontendDist": "../mobile-dist",
+    "beforeBuildCommand": "node scripts/build-mobile-web.js"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "猫步互联 Pro",
+        "width": 1020,
+        "height": 740,
+        "minWidth": 800,
+        "minHeight": 600,
+        "center": true,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "nsis",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ]
+  }
+}
