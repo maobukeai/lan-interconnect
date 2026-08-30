@@ -294,7 +294,52 @@ body.ap-fullscreen-active #main-dock {
     box-shadow: 0 0 6px #5ac8fa;
 }
 
-/* 屏幕中央 HUD */
+/* 屏幕中央 Apple VisionOS 水晶光环加载器 */
+.ap-loading-spinner {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.9);
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: rgba(15, 18, 24, 0.65);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.2s;
+    z-index: 15;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.ap-loading-spinner.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(-50%, -50%) scale(1);
+}
+
+.ap-spinner-ring {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2.5px solid rgba(255, 255, 255, 0.18);
+    border-top-color: #38bdf8;
+    border-right-color: #38bdf8;
+    animation: ap-spin 0.7s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes ap-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* 屏幕中央 HUD (点按播放/暂停即时动态气泡) */
 .player-ctrl-center {
     position: absolute;
     top: 50%;
@@ -311,6 +356,7 @@ body.ap-fullscreen-active #main-dock {
     align-items: center;
     justify-content: center;
     color: #ffffff;
+    font-size: 20px;
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3);
     pointer-events: none;
     opacity: 0;
@@ -1401,59 +1447,61 @@ body.theme-light .player-range-pill.active {
 }
 
 /* ==========================================================================
-   9. 移动端/手机竖屏专属体验深度调优 (Mobile Player Master Experience)
+   9. 移动端与平板端通用沉浸体验 (Mobile & Tablet Common Modern Layout <= 1180px)
    ========================================================================== */
-@media (max-width: 680px) {
-    /* 1. 外层导航栏紧凑纯净 */
+@media (max-width: 1180px) {
+    /* 1. 移动与平板端彻底隐藏多余的外层导航栏，由视频内部顶部水晶栏统一承载返回与标题 */
+    #view-player {
+        padding-top: 0 !important;
+        margin-top: -6px !important;
+    }
+
     .player-nav-header {
-        margin-bottom: 8px !important;
-        gap: 8px !important;
-    }
-
-    #btn-player-back {
-        padding: 5px 10px !important;
-        font-size: 12.5px !important;
-        height: 32px !important;
-        flex-shrink: 0 !important;
-    }
-
-    .player-nav-title {
-        font-size: 13px !important;
-        font-weight: 600 !important;
-        text-align: left !important;
-        margin-left: 4px !important;
-    }
-
-    #btn-player-pip {
         display: none !important;
     }
 
-    /* 2. 视频视窗微圆角与阴影 */
+    /* 2. 视频视窗贴顶与自适应微圆角 */
     .player-stage-container {
-        margin-bottom: 10px !important;
+        margin-top: 0 !important;
+        margin-bottom: 12px !important;
     }
 
     .player-stage-box:not(.is-fullscreen) {
-        border-radius: 14px !important;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35) !important;
+        max-height: min(64vh, 64dvh, 580px);
+        margin: 0 auto;
     }
 
-    /* 3. 锁屏按钮：非全屏小窗状态下彻底隐藏，全屏观影时才展示 */
+    /* 3. 锁屏按钮：非全屏小窗状态下隐藏，全屏观影时才展示 */
     .player-stage-box:not(.is-fullscreen) .ap-lock-btn {
         display: none !important;
     }
 
-    /* 4. 视频内部顶部浮层精炼防溢出 */
+    .player-stage-box #ap-btn-top-back {
+        display: inline-flex !important;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        cursor: pointer;
+    }
+}
+
+/* ==========================================================================
+   10. 手机端竖屏专属微调 (Phone < 680px)
+   ========================================================================== */
+@media (max-width: 680px) {
+    .player-stage-box:not(.is-fullscreen) {
+        border-radius: 12px !important;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35) !important;
+    }
+
     .player-controls-overlay {
-        padding: 10px 12px !important;
+        padding: 6px 10px !important;
     }
 
     .player-ctrl-top {
         gap: 6px !important;
-    }
-
-    .player-stage-box:not(.is-fullscreen) #ap-btn-top-back {
-        display: none !important; /* 小窗下外层已有大返回按钮，避免重复 */
+        padding-top: 0 !important;
+        margin-top: 0 !important;
     }
 
     .player-ctrl-title {
@@ -1471,7 +1519,6 @@ body.theme-light .player-range-pill.active {
         height: 30px !important;
     }
 
-    /* 5. 视频底部控制栏极致舒展排布 */
     .player-ctrl-bottom {
         gap: 5px !important;
     }
@@ -1485,11 +1532,7 @@ body.theme-light .player-range-pill.active {
         gap: 6px !important;
     }
 
-    .player-ctrl-left {
-        gap: 6px !important;
-    }
-
-    .player-ctrl-right {
+    .player-ctrl-left, .player-ctrl-right {
         gap: 6px !important;
     }
 
@@ -1520,7 +1563,6 @@ body.theme-light .player-range-pill.active {
         padding: 0 9px !important;
     }
 
-    /* 6. 下方详情卡片与选集卡片体验 */
     .player-info-section {
         gap: 10px !important;
     }
@@ -1548,5 +1590,109 @@ body.theme-light .player-range-pill.active {
     .player-range-pill {
         padding: 3px 10px !important;
         font-size: 11px !important;
+    }
+}
+
+/* ==========================================================================
+   11. 平板端/iPad/折叠屏大屏专属深度调优 (Tablet & iPad Experience 681px ~ 1180px)
+   ========================================================================== */
+@media (min-width: 681px) and (max-width: 1180px) {
+    #view-player {
+        max-width: 1020px;
+        margin: 0 auto;
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+
+    .player-stage-box:not(.is-fullscreen) {
+        border-radius: 16px !important;
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.42) !important;
+        max-height: min(58vh, 58dvh, 520px) !important;
+    }
+
+    .player-controls-overlay {
+        padding: 10px 16px !important;
+    }
+
+    .player-ctrl-top {
+        gap: 10px !important;
+    }
+
+    .player-ctrl-title {
+        font-size: 14.5px !important;
+        max-width: 52vw !important;
+    }
+
+    .player-top-icon-btn {
+        width: 36px !important;
+        height: 36px !important;
+    }
+
+    .player-stage-box #ap-btn-top-back {
+        width: 36px !important;
+        height: 36px !important;
+    }
+
+    .player-ctrl-bottom {
+        gap: 8px !important;
+    }
+
+    .ap-progress-wrap {
+        height: 32px !important;
+        margin: -2px 0 !important;
+    }
+
+    .player-ctrl-row {
+        gap: 10px !important;
+    }
+
+    .player-ctrl-left, .player-ctrl-right {
+        gap: 8px !important;
+    }
+
+    .player-btn-icon {
+        width: 36px !important;
+        height: 36px !important;
+    }
+
+    .player-main-play-btn {
+        width: 38px !important;
+        height: 38px !important;
+    }
+
+    .player-time-display {
+        font-size: 11.5px !important;
+        padding: 4px 8px !important;
+        border-radius: 7px !important;
+    }
+
+    .player-btn-pill {
+        height: 30px !important;
+        padding: 0 11px !important;
+        font-size: 12px !important;
+    }
+
+    .player-episode-card {
+        width: 128px !important;
+        padding: 10px 12px !important;
+        border-radius: 12px !important;
+    }
+
+    .player-ep-idx {
+        font-size: 11px !important;
+        margin-bottom: 3px !important;
+    }
+
+    .player-ep-name {
+        font-size: 12.5px !important;
+    }
+
+    .player-range-pill {
+        padding: 4px 12px !important;
+        font-size: 12px !important;
+    }
+
+    .ap-fs-drawer {
+        width: min(380px, 40vw) !important;
     }
 }

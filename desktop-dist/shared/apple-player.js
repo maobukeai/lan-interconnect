@@ -65,6 +65,7 @@ class AppleCinemaPlayerEngine {
             view: document.getElementById('view-player'),
             btnBack: document.getElementById('btn-player-back'),
             btnTopBack: document.getElementById('ap-btn-top-back'),
+            btnExternalApp: document.getElementById('ap-btn-external-app'),
             btnSnapshot: document.getElementById('ap-btn-snapshot'),
             btnPip: document.getElementById('ap-btn-pip'),
             btnTopEpisodes: document.getElementById('ap-btn-top-episodes'),
@@ -80,6 +81,7 @@ class AppleCinemaPlayerEngine {
             controlsOverlay: document.getElementById('player-controls-overlay'),
             videoTitle: document.getElementById('ap-video-title'),
             videoBadge: document.getElementById('ap-video-badge'),
+            loadingSpinner: document.getElementById('ap-loading-spinner'),
             centerBadge: document.getElementById('ap-center-badge'),
             lockBtn: document.getElementById('ap-lock-btn'),
             iconUnlock: document.getElementById('ap-icon-unlock'),
@@ -134,6 +136,9 @@ class AppleCinemaPlayerEngine {
             fsSubSizeGrid: document.getElementById('ap-fs-sub-size-grid'),
             fsSubDelayGrid: document.getElementById('ap-fs-sub-delay-grid'),
             fsInputCustomSub: document.getElementById('ap-fs-input-custom-sub'),
+            fsBtnOpenIntent: document.getElementById('ap-fs-btn-open-intent'),
+            fsBtnOpenVlc: document.getElementById('ap-fs-btn-open-vlc'),
+            fsBtnCopyStream: document.getElementById('ap-fs-btn-copy-stream'),
             // 下部大面板
             cardTitle: document.getElementById('player-card-title'),
             cardSub: document.getElementById('player-card-sub'),
@@ -160,23 +165,33 @@ class AppleCinemaPlayerEngine {
 
         media.addEventListener('timeupdate', () => this.onTimeUpdate());
         media.addEventListener('progress', () => this.onProgress());
+        media.addEventListener('loadstart', () => this.setLoading(true));
+        media.addEventListener('waiting', () => this.setLoading(true));
+        media.addEventListener('seeking', () => this.setLoading(true));
+        media.addEventListener('seeked', () => this.setLoading(false));
+        media.addEventListener('canplay', () => this.setLoading(false));
+        media.addEventListener('playing', () => { this.setLoading(false); this.onPlayStateChange(true); });
         media.addEventListener('play', () => this.onPlayStateChange(true));
         media.addEventListener('pause', () => this.onPlayStateChange(false));
         media.addEventListener('ended', () => this.onEnded());
-        media.addEventListener('loadedmetadata', () => this.onLoadedMetadata());
+        media.addEventListener('loadedmetadata', () => { this.setLoading(false); this.onLoadedMetadata(); });
 
         btnPlay?.addEventListener('click', (e) => { e.stopPropagation(); this.togglePlay(); });
         btnPrev?.addEventListener('click', (e) => { e.stopPropagation(); this.prev(); });
         btnNext?.addEventListener('click', (e) => { e.stopPropagation(); this.next(); });
-        btnBack?.addEventListener('click', () => this.close());
-        btnTopBack?.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (document.fullscreenElement || document.webkitFullscreenElement) {
-                this.toggleFullscreen();
-            } else {
-                this.close();
+        
+        const handleBack = (e) => {
+            if (e) {
+                e.preventDefault();
+                e.stopPropagation();
             }
-        });
+            this.close();
+        };
+
+        btnBack?.addEventListener('click', handleBack);
+        btnBack?.addEventListener('touchend', handleBack);
+        btnTopBack?.addEventListener('click', handleBack);
+        btnTopBack?.addEventListener('touchend', handleBack);
 
         btnSnapshot?.addEventListener('click', (e) => { e.stopPropagation(); this.takeSnapshot(); });
         btnPip?.addEventListener('click', (e) => { e.stopPropagation(); this.togglePiP(); });
@@ -188,6 +203,24 @@ class AppleCinemaPlayerEngine {
         btnTopSettings?.addEventListener('click', (e) => { e.stopPropagation(); this.toggleDrawer('settings'); });
         drawerEpisodesClose?.addEventListener('click', (e) => { e.stopPropagation(); this.closeDrawers(); });
         drawerSettingsClose?.addEventListener('click', (e) => { e.stopPropagation(); this.closeDrawers(); });
+
+        // 外部专业播放器 App 联动
+        this.dom.btnExternalApp?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const options = [
+                { label: '🌟 唤起手机/系统播放器 (MX Player / 系统相册)', value: 'intent' },
+                { label: '🎬 在 VLC 播放器中打开', value: 'vlc' },
+                { label: '📱 在 nPlayer 播放器中打开', value: 'nplayer' },
+                { label: '📋 复制局域网直连播放地址 (可粘贴至 Infuse/PotPlayer)', value: 'copy' }
+            ];
+            this.openMenuPopover(this.dom.btnExternalApp, '🚀 调用外部专业播放器 App', options, null, (val) => {
+                this.openInExternalApp(val);
+            });
+        });
+
+        this.dom.fsBtnOpenIntent?.addEventListener('click', (e) => { e.stopPropagation(); this.openInExternalApp('intent'); });
+        this.dom.fsBtnOpenVlc?.addEventListener('click', (e) => { e.stopPropagation(); this.openInExternalApp('vlc'); });
+        this.dom.fsBtnCopyStream?.addEventListener('click', (e) => { e.stopPropagation(); this.openInExternalApp('copy'); });
 
         // 快捷倍速选择菜单 (Apple Popover Menu)
         btnSpeed?.addEventListener('click', (e) => {
@@ -388,7 +421,7 @@ class AppleCinemaPlayerEngine {
         document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
         if (this.dom.view) this.dom.view.classList.add('active');
 
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        window.scrollTo(0, 0);
     }
 
     close() {
@@ -396,12 +429,22 @@ class AppleCinemaPlayerEngine {
             this.dom.media.pause();
         }
         this.closeDrawers();
+        this.closeMenuPopover();
         if (this.dom.stageBox) {
             this.dom.stageBox.scrollLeft = 0;
             this.dom.stageBox.scrollTop = 0;
+            this.dom.stageBox.classList.remove('is-fullscreen');
         }
+        document.body.classList.remove('ap-fullscreen-active');
+        if (this.dom.fsBtnLabel) this.dom.fsBtnLabel.textContent = '全屏';
+        this._lockLandscape(false);
+        this._restoreStageParent();
+
         if (document.fullscreenElement || document.webkitFullscreenElement) {
-            if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+            try {
+                if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+                else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+            } catch (e) {}
         }
 
         const targetView = this.previousView || 'files';
@@ -413,6 +456,65 @@ class AppleCinemaPlayerEngine {
             const fallback = document.getElementById('view-' + targetView) || document.getElementById('view-files');
             if (fallback) fallback.classList.add('active');
         }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    _authQueryString() {
+        if (window.LanDiskAuth && typeof window.LanDiskAuth.authQuery === 'function') {
+            const q = window.LanDiskAuth.authQuery();
+            if (q) return q.replace(/^\?/, '&');
+        }
+        const pin = localStorage.getItem('lan_disk_pin') || localStorage.getItem('landisk_pin') || '';
+        const token = localStorage.getItem('lan_disk_qr_token') || '';
+        let out = '';
+        if (pin) out += '&pin=' + encodeURIComponent(pin);
+        if (token) out += '&token=' + encodeURIComponent(token);
+        return out;
+    }
+
+    _apiUrl(ep) {
+        if (window.LanDiskAuth && typeof window.LanDiskAuth.api === 'function') {
+            return window.LanDiskAuth.api(ep);
+        }
+        if (window.api) {
+            return window.api(ep);
+        }
+        return ep;
+    }
+
+    getStreamUrl(item) {
+        if (!item) return '';
+        if (item.url) return item.url;
+        return this._apiUrl('/api/stream') + '?path=' + encodeURIComponent(item.path) + this._authQueryString();
+    }
+
+    // 加载期间用作 video.poster 的缩略图地址（与海报墙同一张缓存图，几乎零成本）
+    getThumbUrl(item) {
+        if (!item || !item.path) return '';
+        return this._apiUrl('/api/thumbnail') + '?path=' + encodeURIComponent(item.path) + this._authQueryString();
+    }
+
+    prefetchMedia(url) {
+        if (!url) return;
+        try {
+            // Range 与浏览器首个媒体请求（bytes=0-）完全一致 → SW 缓存 key 相同，
+            // 预取完成后再播放将从缓存秒发首块；此前用 0-524287 会导致 key 不匹配、预取全部浪费
+            fetch(url, {
+                headers: { 'Range': 'bytes=0-' },
+                cache: 'force-cache'
+            }).catch(() => {});
+        } catch (e) {}
+    }
+
+    prefetchNextMedia() {
+        if (this._prefetchTimer) clearTimeout(this._prefetchTimer);
+        this._prefetchTimer = setTimeout(() => {
+            if (!this.playlist || this.playlist.length <= 1) return;
+            const nextIdx = this.currentIndex + 1;
+            if (nextIdx < this.playlist.length) {
+                this.prefetchMedia(this.getStreamUrl(this.playlist[nextIdx]));
+            }
+        }, 4000);
     }
 
     loadCurrentMedia() {
@@ -425,26 +527,11 @@ class AppleCinemaPlayerEngine {
         this.currentMedia = item;
 
         const isAudio = item.type === 'audio' || /\.(mp3|wav|flac|aac|ogg|m4a)$/i.test(item.name);
-        
-        let streamUrl = item.url;
-        if (!streamUrl) {
-            let authQ = '';
-            if (window.LanDiskAuth && typeof window.LanDiskAuth.authQuery === 'function') {
-                const q = window.LanDiskAuth.authQuery();
-                if (q) authQ = q.replace(/^\?/, '&');
-            } else {
-                const pin = localStorage.getItem('lan_disk_pin') || localStorage.getItem('landisk_pin') || '';
-                const token = localStorage.getItem('lan_disk_qr_token') || '';
-                if (pin) authQ += '&pin=' + encodeURIComponent(pin);
-                if (token) authQ += '&token=' + encodeURIComponent(token);
-            }
-            streamUrl = '/api/stream?path=' + encodeURIComponent(item.path) + authQ;
-        }
+        const streamUrl = this.getStreamUrl(item);
 
         if (this.dom.videoTitle) this.dom.videoTitle.textContent = item.name;
         if (this.dom.navTitle) this.dom.navTitle.textContent = item.name;
         if (this.dom.cardTitle) this.dom.cardTitle.textContent = item.name;
-        // 先渲染占位文案，元数据就绪后在 onLoadedMetadata 里替换为真实分辨率
         if (this.dom.cardSub) this.dom.cardSub.textContent = isAudio ? 'Apple Music 高保真无损音频 · 局域网直连' : '读取视频信息… · 局域网直连';
         this._pendingVideoMetaText = !isAudio;
         if (this.dom.videoBadge) this.dom.videoBadge.innerHTML = `<span class="ap-status-dot"></span>${isAudio ? '无损音频' : '视频'}`;
@@ -456,15 +543,51 @@ class AppleCinemaPlayerEngine {
             this.dom.audioLayer.style.display = 'none';
         }
 
-        this.dom.media.src = streamUrl;
-        this.dom.media.load();
-        this.dom.media.play().catch(() => {});
+        // 直接流式直通挂载新媒体，配合 loadingSpinner 指示，避免双重 load() 与画面撕裂
+        if (this.dom.media) {
+            // 加载期把服务端缩略图挂为视频海报（与海报墙同一张图、已被缓存）：
+            // 点开即见画面，消除首帧等待的那一秒"白屏/转圈"感；音频则不设海报
+            if (!isAudio) {
+                const posterUrl = this.getThumbUrl(item);
+                if (posterUrl) {
+                    this.dom.media.poster = posterUrl;
+                }
+            } else if (this.dom.media.hasAttribute('poster')) {
+                this.dom.media.removeAttribute('poster');
+            }
 
-        this.renderEpisodes();
+            this.setLoading(true);
+            this.dom.media.playsInline = true;
+            this.dom.media.preload = 'auto';
+            if (this.dom.media.src !== streamUrl) {
+                this.dom.media.src = streamUrl;
+            }
+            const playPromise = this.dom.media.play();
+            if (playPromise && typeof playPromise.catch === 'function') {
+                playPromise.catch((err) => {
+                    // 如果移动端浏览器限制了非静音自动起播，则先静音立即起播首帧，随后平滑恢复
+                    if (this.dom.media) {
+                        this.dom.media.muted = true;
+                        this.dom.media.play().catch(() => {});
+                        setTimeout(() => {
+                            if (this.dom.media) this.dom.media.muted = false;
+                        }, 50);
+                    }
+                });
+            }
+        }
+
         this.resetTransform();
-        this.detectSubtitles(item);
-        this.checkResumeHistory(item);
         this.showControls();
+
+        // 将非关键 DOM 渲染与网络探测异步延迟执行，绝不阻塞主线程音视频解码管道
+        const deferFn = window.requestIdleCallback || ((fn) => setTimeout(fn, 16));
+        deferFn(() => {
+            this.renderEpisodes();
+            this.detectSubtitles(item);
+            this.checkResumeHistory(item);
+            this.prefetchNextMedia();
+        });
     }
 
     renderEpisodes() {
@@ -625,6 +748,15 @@ class AppleCinemaPlayerEngine {
                 }
             }
         }
+    }
+
+    isDrawerOpen() {
+        return !!((this.dom.drawerEpisodes && this.dom.drawerEpisodes.classList.contains('open')) ||
+                  (this.dom.drawerSettings && this.dom.drawerSettings.classList.contains('open')));
+    }
+
+    isMenuOpen() {
+        return !!(this.dom.menuPopover && this.dom.menuPopover.classList.contains('open'));
     }
 
     closeDrawers() {
@@ -1093,6 +1225,20 @@ class AppleCinemaPlayerEngine {
             }
         };
 
+        let rafSeekId = null;
+        let pendingSeekSec = null;
+
+        const executeFastSeek = (sec) => {
+            if (!this.dom.media || isNaN(sec)) return;
+            try {
+                if (typeof this.dom.media.fastSeek === 'function') {
+                    this.dom.media.fastSeek(sec);
+                } else {
+                    this.dom.media.currentTime = sec;
+                }
+            } catch (e) {}
+        };
+
         const startDrag = (e) => {
             if (!this.dom.media || !this.dom.media.duration) return;
             isDragging = true;
@@ -1102,6 +1248,9 @@ class AppleCinemaPlayerEngine {
 
             const pos = getPosFromEvent(e);
             updateVisuals(pos);
+            const targetSec = pos * this.dom.media.duration;
+            executeFastSeek(targetSec);
+
             if (window.LanDiskUI && window.LanDiskUI.Haptic) {
                 window.LanDiskUI.Haptic.selection();
             }
@@ -1114,6 +1263,19 @@ class AppleCinemaPlayerEngine {
 
             const pos = getPosFromEvent(e);
             updateVisuals(pos);
+
+            // 拖拽移动时使用 requestAnimationFrame + fastSeek 实时平滑刷新关键帧画面
+            if (this.dom.media && this.dom.media.duration) {
+                pendingSeekSec = pos * this.dom.media.duration;
+                if (!rafSeekId) {
+                    rafSeekId = requestAnimationFrame(() => {
+                        rafSeekId = null;
+                        if (pendingSeekSec !== null) {
+                            executeFastSeek(pendingSeekSec);
+                        }
+                    });
+                }
+            }
         };
 
         const endDrag = (e) => {
@@ -1122,19 +1284,26 @@ class AppleCinemaPlayerEngine {
             wrap.classList.remove('is-dragging');
             if (e.stopPropagation) e.stopPropagation();
 
+            if (rafSeekId) {
+                cancelAnimationFrame(rafSeekId);
+                rafSeekId = null;
+            }
+
             const pos = getPosFromEvent(e);
             if (this.dom.media && this.dom.media.duration) {
                 const targetSec = pos * this.dom.media.duration;
-                this.dom.media.currentTime = targetSec;
+                try {
+                    this.dom.media.currentTime = targetSec;
+                } catch (e) {}
                 if (window.LanDiskUI && window.LanDiskUI.Haptic) {
                     window.LanDiskUI.Haptic.light();
                 }
             }
 
-            // 延迟 150ms 退出拖拽状态，恢复 timeupdate 自动同步
+            // 延迟 120ms 退出拖拽状态，恢复 timeupdate 自动同步
             setTimeout(() => {
                 this.isProgressDragging = false;
-            }, 150);
+            }, 120);
         };
 
         // 鼠标事件
@@ -1341,11 +1510,98 @@ class AppleCinemaPlayerEngine {
         }, 800);
     }
 
+    setLoading(loading) {
+        if (!this.dom.loadingSpinner) return;
+        if (loading) {
+            this.dom.loadingSpinner.classList.add('show');
+            if (this.dom.centerBadge) this.dom.centerBadge.classList.remove('show');
+        } else {
+            this.dom.loadingSpinner.classList.remove('show');
+        }
+    }
+
     showCenterBadge(text) {
         if (!this.dom.centerBadge) return;
+        if (this.dom.loadingSpinner && this.dom.loadingSpinner.classList.contains('show')) return;
         this.dom.centerBadge.textContent = text;
         this.dom.centerBadge.classList.add('show');
-        setTimeout(() => this.dom.centerBadge && this.dom.centerBadge.classList.remove('show'), 350);
+        if (this._centerBadgeTimer) clearTimeout(this._centerBadgeTimer);
+        this._centerBadgeTimer = setTimeout(() => {
+            if (this.dom.centerBadge) this.dom.centerBadge.classList.remove('show');
+        }, 320);
+    }
+
+    openInExternalApp(protocol = 'intent') {
+        if (!this.currentMedia) return;
+        const streamUrl = this.getStreamUrl(this.currentMedia);
+        if (!streamUrl) return;
+
+        let absoluteUrl = streamUrl;
+        if (absoluteUrl.startsWith('/')) {
+            if (window.LanDiskAuth && typeof window.LanDiskAuth.api === 'function') {
+                absoluteUrl = window.LanDiskAuth.api(streamUrl);
+            } else {
+                const baseUrl = window.currentServerUrl || window.location.origin;
+                absoluteUrl = baseUrl.replace(/\/$/, '') + streamUrl;
+            }
+        }
+
+        if (protocol === 'copy') {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(absoluteUrl).then(() => {
+                    if (window.LanDiskUI && window.LanDiskUI.showToast) {
+                        window.LanDiskUI.showToast('✅ 局域网直连串流地址已复制，可在 Infuse / VLC / PotPlayer 中粘贴播放');
+                    } else {
+                        alert('已复制串流地址: ' + absoluteUrl);
+                    }
+                }).catch(() => {
+                    prompt('请手动复制局域网串流地址：', absoluteUrl);
+                });
+            } else {
+                prompt('请手动复制局域网串流地址：', absoluteUrl);
+            }
+            return;
+        }
+
+        if (protocol === 'vlc') {
+            const vlcUrl = `vlc://${absoluteUrl.replace(/^https?:\/\//, 'http://')}`;
+            window.location.href = vlcUrl;
+            if (window.LanDiskUI && window.LanDiskUI.showToast) {
+                window.LanDiskUI.showToast('正在尝试唤起 VLC 播放器...');
+            }
+            return;
+        }
+
+        if (protocol === 'nplayer') {
+            const nplayerUrl = `nplayer-${absoluteUrl}`;
+            window.location.href = nplayerUrl;
+            if (window.LanDiskUI && window.LanDiskUI.showToast) {
+                window.LanDiskUI.showToast('正在尝试唤起 nPlayer 播放器...');
+            }
+            return;
+        }
+
+        if (protocol === 'potplayer') {
+            const potUrl = `potplayer://${absoluteUrl}`;
+            window.location.href = potUrl;
+            return;
+        }
+
+        // 默认: 唤起移动端系统播放器选择器 (MX Player, 系统相册, VLC 等)
+        const isAndroid = /android/i.test(navigator.userAgent);
+        if (isAndroid) {
+            const cleanHttp = absoluteUrl.replace(/^https?:\/\//, '');
+            const intentUrl = `intent://${cleanHttp}#Intent;scheme=http;type=video/*;action=android.intent.action.VIEW;end`;
+            window.location.href = intentUrl;
+            if (window.LanDiskUI && window.LanDiskUI.showToast) {
+                window.LanDiskUI.showToast('正在调起系统与外部播放器 App...');
+            }
+        } else {
+            const choice = confirm(`是否使用外部播放器打开？\n\n点击【确定】复制局域网直连播放地址（可在 Infuse / PotPlayer / VLC / IINA / VidHub 中直接粘贴秒开），点击【取消】留在网页播放。`);
+            if (choice) {
+                this.openInExternalApp('copy');
+            }
+        }
     }
 
     savePlayHistory(current, duration) {
@@ -1406,7 +1662,8 @@ class AppleCinemaPlayerEngine {
                 const q = window.LanDiskAuth.authQuery();
                 if (q) authQ = q.replace(/^\?/, '&');
             }
-            const res = await fetch(`/api/media/progress?path=${encodeURIComponent(item.path)}${authQ}`);
+            const endpoint = (window.LanDiskAuth && window.LanDiskAuth.api) ? window.LanDiskAuth.api('/api/media/progress') : (window.api ? window.api('/api/media/progress') : '/api/media/progress');
+            const res = await fetch(`${endpoint}?path=${encodeURIComponent(item.path)}${authQ}`);
             if (res.ok) {
                 const data = await res.json();
                 if (data.success && data.progress && data.progress.time > 8) {
@@ -1547,7 +1804,8 @@ class AppleCinemaPlayerEngine {
                 const q = window.LanDiskAuth.authQuery();
                 if (q) authQ = q.replace(/^\?/, '&');
             }
-            const res = await fetch(`/api/media/subtitles?path=${encodeURIComponent(item.path)}${authQ}`);
+            const endpoint = (window.LanDiskAuth && window.LanDiskAuth.api) ? window.LanDiskAuth.api('/api/media/subtitles') : (window.api ? window.api('/api/media/subtitles') : '/api/media/subtitles');
+            const res = await fetch(`${endpoint}?path=${encodeURIComponent(item.path)}${authQ}`);
             if (res.ok) {
                 const data = await res.json();
                 if (data.success && Array.isArray(data.subtitles) && data.subtitles.length > 0) {

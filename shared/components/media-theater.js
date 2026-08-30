@@ -44,6 +44,45 @@
             return (global.LanDiskAuth && global.LanDiskAuth.authQuery) ? global.LanDiskAuth.authQuery() : '';
         }
 
+        // grid 内卡片统一事件委托：grid 节点不会随 innerHTML 重建而替换，
+        // 委托只在首次挂一次，渲染重建不会丢绑定（逐卡 querySelectorAll 绑定在
+        // 重建/主线程繁忙时会让新卡片的点击丢失）
+        _bindGridActions() {
+            if (!this.grid || this._gridActionsBound) return;
+            this._gridActionsBound = true;
+            this.grid.addEventListener('click', (e) => {
+                const folderCard = e.target.closest('.media-folder-item');
+                if (folderCard) {
+                    if (global.LanDiskUI && global.LanDiskUI.Haptic) global.LanDiskUI.Haptic.light();
+                    const fp = folderCard.getAttribute('data-folder-path');
+                    if (fp) this.openPath(fp);
+                    return;
+                }
+                const poster = e.target.closest('.poster-card');
+                if (poster) {
+                    if (global.LanDiskUI && global.LanDiskUI.Haptic) global.LanDiskUI.Haptic.light();
+                    this.playAt(parseInt(poster.getAttribute('data-idx'), 10));
+                }
+            });
+        }
+
+        // 海报墙就绪即预取第一个视频的首块：Range 用 bytes=0-（与浏览器首个媒体请求
+        // 完全一致，SW 缓存 key 相同），用户点开海报时首帧直接从缓存响出；
+        // 每个目录只预取一次，>1GB 不预取（无谓占用缓存）
+        _prewarmFirstVideo() {
+            const items = this.currentMediaItems || [];
+            const firstVideo = items.find(m => m && !m.isDirectory && !m.isDir &&
+                /\.(mp4|mkv|webm|mov|avi|flv|wmv|ts|m4v|3gp|rmvb)$/i.test(m.name || ''));
+            if (!firstVideo) return;
+            if (firstVideo.size && firstVideo.size > 1024 * 1024 * 1024) return;
+            if (this._prewarmKey === firstVideo.path) return;
+            this._prewarmKey = firstVideo.path;
+            try {
+                const url = this.getApiUrl(`/api/stream?path=${encodeURIComponent(firstVideo.path)}`) + this._authQuery().replace(/^\?/, '&');
+                fetch(url, { headers: { 'Range': 'bytes=0-' }, cache: 'force-cache' }).catch(() => {});
+            } catch (e) {}
+        }
+
         // 从本地存储还原已保存的多媒体目录与视图偏好，并与服务端资料库合并
         // （服务端为共享主库：换设备/重装 App/桌面端添加的目录都能看到）
         restoreFolders() {
@@ -357,13 +396,7 @@
                     </div>
                 `;
                 this.grid.innerHTML = html;
-
-                this.grid.querySelectorAll('.media-folder-item').forEach(card => {
-                    card.addEventListener('click', () => {
-                        if (global.LanDiskUI && global.LanDiskUI.Haptic) global.LanDiskUI.Haptic.light();
-                        this.openPath(card.getAttribute('data-folder-path'));
-                    });
-                });
+                this._bindGridActions();
             }
         }
 
@@ -385,6 +418,7 @@
                 const mediaFiles = allFiles.filter(f => !f.isDirectory && MEDIA_RE.test(f.name));
 
                 this.currentMediaItems = mediaFiles;
+                this._prewarmFirstVideo();
                 this._renderBreadcrumbsFromPath(folderPath);
                 await this._fetchProgress();
 
@@ -469,22 +503,7 @@
 
                 if (this.grid) {
                     this.grid.innerHTML = html;
-
-                    // 绑定文件夹点击进入
-                    this.grid.querySelectorAll('.media-folder-item').forEach(card => {
-                        card.addEventListener('click', () => {
-                            if (global.LanDiskUI && global.LanDiskUI.Haptic) global.LanDiskUI.Haptic.light();
-                            this.openPath(card.getAttribute('data-folder-path'));
-                        });
-                    });
-
-                    // 绑定媒体卡片播放
-                    this.grid.querySelectorAll('.poster-card').forEach(card => {
-                        card.addEventListener('click', () => {
-                            if (global.LanDiskUI && global.LanDiskUI.Haptic) global.LanDiskUI.Haptic.light();
-                            this.playAt(parseInt(card.getAttribute('data-idx'), 10));
-                        });
-                    });
+                    this._bindGridActions();
                 }
 
             } catch (err) {
@@ -641,6 +660,7 @@
             }
 
             this.currentMediaItems = found;
+            this._prewarmFirstVideo();
             this.isScanning = false;
 
             if (!this.grid) return;
@@ -659,45 +679,41 @@
             await this._fetchProgress();
 
             const q = this._authQuery().replace(/^\?/, '&');
-            this.grid.innerHTML = found.map((f, i) => {
-                const isAudio = AUDIO_RE.test(f.name);
-                const prog = this.progressMap[f.path];
-                const percentage = prog ? (prog.percentage || 0) : 0;
-                const thumbUrl = this.getApiUrl(`/api/thumbnail?path=${encodeURIComponent(f.path)}`) + q;
 
-                return `
-                    <div class="poster-card" data-idx="${i}" title="${escapeHtml(f.name)}">
-                        <span data-ph="1">${I(isAudio ? 'music' : 'video', 30)}</span>
-                        ${!isAudio ? `
-                            <img alt="" 
-                                 class="poster-img"
-                                 src="${thumbUrl}" 
-                                 loading="lazy" 
-                                 onload="this.classList.add('loaded'); const ph = this.parentElement.querySelector('[data-ph]'); if (ph) ph.style.display='none';" 
-                                 onerror="this.style.display='none';">
-                        ` : ''}
-                        <span class="poster-badge">${isAudio ? I('music', 11) + '音频' : I('video', 11) + '视频'}</span>
-                        ${percentage > 0 ? `<span class="poster-watched-badge">已看 ${percentage}%</span>` : ''}
-                        <span class="poster-play">${I('playCircle', 34)}</span>
-                        <span class="poster-name">${escapeHtml(f.name)}</span>
-                        ${percentage > 0 ? `
-                            <div class="poster-progress-bar">
-                                <div class="poster-progress-fill" style="width: ${percentage}%"></div>
-                            </div>
-                        ` : ''}
-                    </div>
-                `;
-            }).join('');
+            if (this.grid) {
+                this.grid.innerHTML = found.map((f, i) => {
+                    const isAudio = AUDIO_RE.test(f.name);
+                    const prog = this.progressMap[f.path];
+                    const percentage = prog ? (prog.percentage || 0) : 0;
+                    const thumbUrl = this.getApiUrl(`/api/thumbnail?path=${encodeURIComponent(f.path)}`) + q;
 
-            this.grid.querySelectorAll('.poster-card').forEach(card => {
-                card.addEventListener('click', () => {
-                    if (global.LanDiskUI && global.LanDiskUI.Haptic) global.LanDiskUI.Haptic.light();
-                    this.playAt(parseInt(card.getAttribute('data-idx'), 10));
-                });
-            });
+                    return `
+                        <div class="poster-card" data-idx="${i}" title="${escapeHtml(f.name)}">
+                            <span data-ph="1">${I(isAudio ? 'music' : 'video', 30)}</span>
+                            ${!isAudio ? `
+                                <img alt="" 
+                                     class="poster-img"
+                                     src="${thumbUrl}" 
+                                     loading="lazy" 
+                                     onload="this.classList.add('loaded'); const ph = this.parentElement.querySelector('[data-ph]'); if (ph) ph.style.display='none';" 
+                                     onerror="this.style.display='none';">
+                            ` : ''}
+                            <span class="poster-badge">${isAudio ? I('music', 11) + '音频' : I('video', 11) + '视频'}</span>
+                            ${percentage > 0 ? `<span class="poster-watched-badge">已看 ${percentage}%</span>` : ''}
+                            <span class="poster-play">${I('playCircle', 34)}</span>
+                            <span class="poster-name">${escapeHtml(f.name)}</span>
+                            ${percentage > 0 ? `
+                                <div class="poster-progress-bar">
+                                    <div class="poster-progress-fill" style="width: ${percentage}%"></div>
+                                </div>
+                            ` : ''}
+                        </div>
+                    `;
+                }).join('');
+                this._bindGridActions();
+            }
         }
 
-        // 目录选择入口（支持原生桌面与 Web 模态浏览）
         // 目录选择入口（支持原生桌面与 Web 模态浏览）
         async pickFolder() {
             const ui = global.LanDiskUI;

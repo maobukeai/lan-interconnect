@@ -459,26 +459,51 @@ class AppleCinemaPlayerEngine {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
+    _authQueryString() {
+        if (window.LanDiskAuth && typeof window.LanDiskAuth.authQuery === 'function') {
+            const q = window.LanDiskAuth.authQuery();
+            if (q) return q.replace(/^\?/, '&');
+        }
+        const pin = localStorage.getItem('lan_disk_pin') || localStorage.getItem('landisk_pin') || '';
+        const token = localStorage.getItem('lan_disk_qr_token') || '';
+        let out = '';
+        if (pin) out += '&pin=' + encodeURIComponent(pin);
+        if (token) out += '&token=' + encodeURIComponent(token);
+        return out;
+    }
+
+    _apiUrl(ep) {
+        if (window.LanDiskAuth && typeof window.LanDiskAuth.api === 'function') {
+            return window.LanDiskAuth.api(ep);
+        }
+        if (window.api) {
+            return window.api(ep);
+        }
+        return ep;
+    }
+
     getStreamUrl(item) {
         if (!item) return '';
         if (item.url) return item.url;
-        let authQ = '';
-        if (window.LanDiskAuth && typeof window.LanDiskAuth.authQuery === 'function') {
-            const q = window.LanDiskAuth.authQuery();
-            if (q) authQ = q.replace(/^\?/, '&');
-        } else {
-            const pin = localStorage.getItem('lan_disk_pin') || localStorage.getItem('landisk_pin') || '';
-            const token = localStorage.getItem('lan_disk_qr_token') || '';
-            if (pin) authQ += '&pin=' + encodeURIComponent(pin);
-            if (token) authQ += '&token=' + encodeURIComponent(token);
-        }
-        let baseUrl = '/api/stream';
-        if (window.LanDiskAuth && typeof window.LanDiskAuth.api === 'function') {
-            baseUrl = window.LanDiskAuth.api('/api/stream');
-        } else if (window.api) {
-            baseUrl = window.api('/api/stream');
-        }
-        return baseUrl + '?path=' + encodeURIComponent(item.path) + authQ;
+        return this._apiUrl('/api/stream') + '?path=' + encodeURIComponent(item.path) + this._authQueryString();
+    }
+
+    // 加载期间用作 video.poster 的缩略图地址（与海报墙同一张缓存图，几乎零成本）
+    getThumbUrl(item) {
+        if (!item || !item.path) return '';
+        return this._apiUrl('/api/thumbnail') + '?path=' + encodeURIComponent(item.path) + this._authQueryString();
+    }
+
+    prefetchMedia(url) {
+        if (!url) return;
+        try {
+            // Range 与浏览器首个媒体请求（bytes=0-）完全一致 → SW 缓存 key 相同，
+            // 预取完成后再播放将从缓存秒发首块；此前用 0-524287 会导致 key 不匹配、预取全部浪费
+            fetch(url, {
+                headers: { 'Range': 'bytes=0-' },
+                cache: 'force-cache'
+            }).catch(() => {});
+        } catch (e) {}
     }
 
     prefetchNextMedia() {
@@ -487,16 +512,7 @@ class AppleCinemaPlayerEngine {
             if (!this.playlist || this.playlist.length <= 1) return;
             const nextIdx = this.currentIndex + 1;
             if (nextIdx < this.playlist.length) {
-                const nextItem = this.playlist[nextIdx];
-                const nextUrl = this.getStreamUrl(nextItem);
-                if (nextUrl) {
-                    try {
-                        fetch(nextUrl, {
-                            headers: { 'Range': 'bytes=0-524287' },
-                            cache: 'force-cache'
-                        }).catch(() => {});
-                    } catch (e) {}
-                }
+                this.prefetchMedia(this.getStreamUrl(this.playlist[nextIdx]));
             }
         }, 4000);
     }
@@ -529,6 +545,17 @@ class AppleCinemaPlayerEngine {
 
         // 直接流式直通挂载新媒体，配合 loadingSpinner 指示，避免双重 load() 与画面撕裂
         if (this.dom.media) {
+            // 加载期把服务端缩略图挂为视频海报（与海报墙同一张图、已被缓存）：
+            // 点开即见画面，消除首帧等待的那一秒"白屏/转圈"感；音频则不设海报
+            if (!isAudio) {
+                const posterUrl = this.getThumbUrl(item);
+                if (posterUrl) {
+                    this.dom.media.poster = posterUrl;
+                }
+            } else if (this.dom.media.hasAttribute('poster')) {
+                this.dom.media.removeAttribute('poster');
+            }
+
             this.setLoading(true);
             this.dom.media.playsInline = true;
             this.dom.media.preload = 'auto';

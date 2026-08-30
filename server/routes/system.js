@@ -104,7 +104,7 @@ router.get('/ping', (req, res) => {
     const osName = osType === 'Windows_NT' ? 'Windows' : (osType === 'Darwin' ? 'macOS' : (osType === 'Linux' ? 'Linux' : osType));
     res.json({
         app: '猫步互联 Pro',
-        version: '1.6.0',
+        version: '1.7.0',
         hostname: os.hostname(),
         os: osName,
         requiresPin: !!state.currentConfig.pin,

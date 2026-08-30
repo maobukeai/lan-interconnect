@@ -716,7 +716,10 @@
                     }
                     const authQ = () => (window.LanDiskAuth && LanDiskAuth.authQuery()) ? LanDiskAuth.authQuery().replace(/^\?/, '&') : `&pin=${encodeURIComponent(localStorage.getItem('lan_disk_pin') || '')}`;
                     const getUrl = (p) => {
-                        if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
+                        if (window.LanDiskAuth && typeof window.LanDiskAuth.api === 'function') {
+                            return window.LanDiskAuth.api(p);
+                        }
+                        if (typeof window !== 'undefined' && (window.location.protocol === 'file:' || window.location.protocol === 'capacitor:')) {
                             const baseUrl = window.currentServerUrl || 'http://localhost:3000';
                             return baseUrl.replace(/\/$/, '') + p;
                         }
