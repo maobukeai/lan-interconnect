@@ -1353,25 +1353,21 @@ class AppleCinemaPlayerEngine {
             document.body.classList.add('ap-fullscreen-active');
             if (this.dom.fsBtnLabel) this.dom.fsBtnLabel.textContent = '还原';
 
-            // 无论手机端还是桌面端，进入全屏时都请求原生全屏 (HTML5 Fullscreen API)
-            // 在移动端浏览器中，只有调用 requestFullscreen({ navigationUI: 'hide' }) 才能隐藏顶部地址栏、底部导航栏和手机状态栏！
-            try {
-                const reqFs = stageBox.requestFullscreen ||
-                              stageBox.webkitRequestFullscreen ||
-                              stageBox.mozRequestFullScreen ||
-                              stageBox.msRequestFullscreen ||
-                              document.documentElement.requestFullscreen ||
-                              document.documentElement.webkitRequestFullscreen;
-                if (reqFs) {
-                    const p = reqFs.call(stageBox, { navigationUI: 'hide' });
-                    if (p && p.catch) p.catch(() => {});
-                } else if (this.dom.media && this.dom.media.webkitEnterFullscreen) {
-                    // iOS Safari (iPhone 仅支持 video 元素调用 webkitEnterFullscreen)
-                    this.dom.media.webkitEnterFullscreen();
-                }
-            } catch (e) {}
+            // 桌面端浏览器调用 HTML5 原生全屏；移动端走纯 CSS 沉浸全屏（彻底消除 Chrome/浏览器「如需退出全屏模式」系统提示横幅）
+            if (!isMobile) {
+                try {
+                    const reqFs = stageBox.requestFullscreen ||
+                                  stageBox.webkitRequestFullscreen ||
+                                  stageBox.mozRequestFullScreen ||
+                                  stageBox.msRequestFullscreen;
+                    if (reqFs) {
+                        const p = reqFs.call(stageBox);
+                        if (p && p.catch) p.catch(() => {});
+                    }
+                } catch (e) {}
+            }
 
-            // 原生容器内隐藏系统状态栏/导航栏（sticky 沉浸式），解决「全屏后状态栏一直在」的问题
+            // 原生 Android App 容器内隐藏系统状态栏/导航栏（sticky 沉浸式，无任何浏览器提示弹窗）
             this._setNativeImmersive(true);
 
             if (lockOrientation) this._lockLandscape(true);
@@ -1379,6 +1375,8 @@ class AppleCinemaPlayerEngine {
             // 退出全屏
             stageBox.classList.remove('is-fullscreen');
             stageBox.classList.remove('is-css-landscape');
+            stageBox.classList.remove('is-locked');
+            if (this.isLocked) this.toggleLock();
             document.body.classList.remove('ap-fullscreen-active');
             if (this.dom.fsBtnLabel) this.dom.fsBtnLabel.textContent = '全屏';
 
@@ -1661,6 +1659,7 @@ class AppleCinemaPlayerEngine {
 
     toggleLock() {
         this.isLocked = !this.isLocked;
+        if (this.dom.stageBox) this.dom.stageBox.classList.toggle('is-locked', this.isLocked);
         if (this.dom.lockBtn) this.dom.lockBtn.classList.toggle('locked', this.isLocked);
         if (this.dom.iconUnlock) this.dom.iconUnlock.style.display = this.isLocked ? 'none' : 'block';
         if (this.dom.iconLock) this.dom.iconLock.style.display = this.isLocked ? 'block' : 'none';

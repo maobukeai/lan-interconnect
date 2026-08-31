@@ -390,33 +390,49 @@ body.ap-fullscreen-active #main-dock {
     transform: translate(-50%, -50%) scale(1);
 }
 
-/* 锁屏按钮 */
+/* 锁屏按钮 (Apple 悬浮水晶气泡) */
 .ap-lock-btn {
     position: absolute;
-    left: 14px;
+    left: calc(18px + env(safe-area-inset-left, 0px));
     top: 50%;
     transform: translateY(-50%);
-    width: 36px;
-    height: 36px;
+    width: 40px;
+    height: 40px;
     border-radius: 50%;
-    background: rgba(18, 24, 38, 0.6);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    border: 1px solid rgba(255, 255, 255, 0.22);
+    background: rgba(18, 24, 38, 0.65);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.25);
     color: #ffffff;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    z-index: 25;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
-    transition: background 0.16s, border-color 0.16s, transform 0.1s;
+    z-index: 35;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    transition: background 0.16s, border-color 0.16s, transform 0.16s, opacity 0.2s;
 }
 
 .ap-lock-btn.locked {
-    background: rgba(239, 68, 68, 0.45);
-    border-color: rgba(239, 68, 68, 0.75);
-    color: #ef4444;
+    background: rgba(239, 68, 68, 0.55);
+    border-color: rgba(239, 68, 68, 0.85);
+    color: #ffffff;
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+/* 锁定状态下控制层联动 */
+.player-stage-box.is-locked .player-ctrl-top,
+.player-stage-box.is-locked .player-ctrl-bottom,
+.player-stage-box.is-locked .ap-hud,
+.player-stage-box.is-locked .ap-fs-drawer {
+    display: none !important;
+}
+
+.player-stage-box.is-locked .ap-lock-btn {
+    display: flex !important;
+    opacity: 0.92 !important;
+    pointer-events: auto !important;
+    z-index: 99 !important;
 }
 
 /* 2.0X 极速长按胶囊 */
@@ -623,8 +639,8 @@ body.ap-fullscreen-active #main-dock {
     transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
-.ap-hud.left { left: 14px; }
-.ap-hud.right { right: 14px; }
+.ap-hud.left { left: calc(72px + env(safe-area-inset-left, 0px)); }
+.ap-hud.right { right: calc(24px + env(safe-area-inset-right, 0px)); }
 
 .ap-hud.show {
     opacity: 1;
