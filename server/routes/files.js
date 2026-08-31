@@ -66,6 +66,9 @@ router.get('/drives', (req, res) => {
 // 获取文件列表（异步 fs.promises，大目录不阻塞事件循环；并发 stat + 短 TTL 缓存）
 router.get('/files', async (req, res) => {
     let targetPath = req.query.path || (state.currentConfig.mode === 'shared' ? state.sharedDir : 'C:\\');
+    if (/^[a-zA-Z]:$/.test(targetPath)) {
+        targetPath += '\\';
+    }
 
     if (!isSafePath(targetPath)) {
         return res.status(403).json({ error: 'Forbidden' });

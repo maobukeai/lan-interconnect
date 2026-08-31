@@ -61,6 +61,8 @@
                 }
             });
 
+            this._renderToken = 0;
+            this._lastRendered = [];
             this._bindEvents();
             this._bindDragAndDrop();
             setTimeout(() => this.loadBookmarks(), 100);
@@ -689,8 +691,10 @@
 
             const CHUNK = 150;
             const total = validFiles.length;
-            const renderToken = ++this._renderToken;
+            this._renderToken = (this._renderToken || 0) + 1;
+            const renderToken = this._renderToken;
             let cursor = 0;
+
             const appendChunk = () => {
                 if (renderToken !== this._renderToken) return;
                 const end = Math.min(cursor + CHUNK, total);
