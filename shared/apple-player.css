@@ -392,10 +392,10 @@ body.ap-fullscreen-active #main-dock {
 
 /* 锁屏按钮 (Apple 悬浮水晶气泡) */
 .ap-lock-btn {
-    position: absolute;
-    left: calc(18px + env(safe-area-inset-left, 0px));
-    top: 50%;
-    transform: translateY(-50%);
+    position: absolute !important;
+    left: calc(20px + env(safe-area-inset-left, 0px)) !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
     width: 40px;
     height: 40px;
     border-radius: 50%;
@@ -1808,11 +1808,11 @@ body.theme-light .player-range-pill.active {
     }
 
     .ap-hud.left {
-        left: calc(14px + env(safe-area-inset-left, 0px)) !important;
+        left: calc(72px + env(safe-area-inset-left, 0px)) !important;
     }
 
     .ap-hud.right {
-        right: calc(14px + env(safe-area-inset-right, 0px)) !important;
+        right: calc(20px + env(safe-area-inset-right, 0px)) !important;
     }
 }
 /* ==========================================================================
@@ -1828,7 +1828,6 @@ body.theme-light .player-range-pill.active {
     .player-top-icon-btn,
     .player-btn-icon,
     .player-btn-pill,
-    .ap-lock-btn,
     .ap-fs-drawer-close {
         position: relative;
     }
