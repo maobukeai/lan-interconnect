@@ -1353,16 +1353,23 @@ class AppleCinemaPlayerEngine {
             document.body.classList.add('ap-fullscreen-active');
             if (this.dom.fsBtnLabel) this.dom.fsBtnLabel.textContent = '还原';
 
-            // 仅在桌面宽屏环境下才可选调用原生全屏
-            if (!isMobile) {
-                try {
-                    if (stageBox.requestFullscreen) {
-                        stageBox.requestFullscreen().catch(() => {});
-                    } else if (stageBox.webkitRequestFullscreen) {
-                        stageBox.webkitRequestFullscreen();
-                    }
-                } catch (e) {}
-            }
+            // 无论手机端还是桌面端，进入全屏时都请求原生全屏 (HTML5 Fullscreen API)
+            // 在移动端浏览器中，只有调用 requestFullscreen({ navigationUI: 'hide' }) 才能隐藏顶部地址栏、底部导航栏和手机状态栏！
+            try {
+                const reqFs = stageBox.requestFullscreen ||
+                              stageBox.webkitRequestFullscreen ||
+                              stageBox.mozRequestFullScreen ||
+                              stageBox.msRequestFullscreen ||
+                              document.documentElement.requestFullscreen ||
+                              document.documentElement.webkitRequestFullscreen;
+                if (reqFs) {
+                    const p = reqFs.call(stageBox, { navigationUI: 'hide' });
+                    if (p && p.catch) p.catch(() => {});
+                } else if (this.dom.media && this.dom.media.webkitEnterFullscreen) {
+                    // iOS Safari (iPhone 仅支持 video 元素调用 webkitEnterFullscreen)
+                    this.dom.media.webkitEnterFullscreen();
+                }
+            } catch (e) {}
 
             // 原生容器内隐藏系统状态栏/导航栏（sticky 沉浸式），解决「全屏后状态栏一直在」的问题
             this._setNativeImmersive(true);
@@ -1376,12 +1383,13 @@ class AppleCinemaPlayerEngine {
             if (this.dom.fsBtnLabel) this.dom.fsBtnLabel.textContent = '全屏';
 
             try {
-                if (document.fullscreenElement || document.webkitFullscreenElement) {
-                    if (document.exitFullscreen) {
-                        document.exitFullscreen().catch(() => {});
-                    } else if (document.webkitExitFullscreen) {
-                        document.webkitExitFullscreen();
-                    }
+                const exitFs = document.exitFullscreen ||
+                               document.webkitExitFullscreen ||
+                               document.mozCancelFullScreen ||
+                               document.msExitFullscreen;
+                if (exitFs && (document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement)) {
+                    const p = exitFs.call(document);
+                    if (p && p.catch) p.catch(() => {});
                 }
             } catch (e) {}
 
@@ -1494,15 +1502,14 @@ class AppleCinemaPlayerEngine {
 
     onFullscreenChange() {
         this.closeMenuPopover();
-        const isNativeFull = !!(document.fullscreenElement || document.webkitFullscreenElement);
+        const isNativeFull = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
         if (this.dom.stageBox) {
             if (isNativeFull) {
                 this.dom.stageBox.classList.add('is-fullscreen');
                 document.body.classList.add('ap-fullscreen-active');
-            } else if (!isNativeFull && !this.dom.stageBox.classList.contains('is-fullscreen')) {
-                document.body.classList.remove('ap-fullscreen-active');
-                // Esc 等途径退出原生全屏时，同样把舞台归位
-                this._restoreStageParent();
+            } else if (!isNativeFull && this.dom.stageBox.classList.contains('is-fullscreen')) {
+                // 原生全屏已退出（例如按了 ESC、系统返回键或手势下滑），同步退出网页全屏与横屏锁定
+                this._setFullscreen(false);
             }
         }
         if (this.dom.fsBtnLabel) {

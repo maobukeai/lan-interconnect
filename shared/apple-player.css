@@ -87,9 +87,9 @@
     width: 100dvh !important;
     height: 100vw !important;
     height: 100dvw !important;
-    transform: rotate(90deg) translateY(-100vw) !important;
-    transform-origin: top left !important;
-    z-index: 99999 !important;
+    transform: rotate(90deg) translateY(-100%) !important;
+    transform-origin: 0 0 !important;
+    z-index: 999999 !important;
     border-radius: 0 !important;
     border: none !important;
     box-shadow: none !important;

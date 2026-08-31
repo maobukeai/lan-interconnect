@@ -10,6 +10,12 @@ import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
 
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
+
 import androidx.core.content.ContextCompat;
 
 import com.getcapacitor.JSObject;
@@ -66,8 +72,26 @@ public class NativeMediaPlugin extends Plugin {
             public void run() {
                 try {
                     Window window = activity.getWindow();
+                    if (window == null) {
+                        call.resolve();
+                        return;
+                    }
                     View decor = window.getDecorView();
+
+                    // 1. AndroidX WindowCompat / WindowInsetsControllerCompat 现代统一控制
+                    WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(window, decor);
+                    if (controller != null) {
+                        if (on) {
+                            controller.hide(WindowInsetsCompat.Type.systemBars());
+                            controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                        } else {
+                            controller.show(WindowInsetsCompat.Type.systemBars());
+                        }
+                    }
+
+                    // 2. 传统兼容层补丁 (针对 Android 10 及以下与各类定制 ROM)
                     if (on) {
+                        window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
                         decor.setSystemUiVisibility(
                                 View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
                                         | View.SYSTEM_UI_FLAG_FULLSCREEN
@@ -82,7 +106,14 @@ public class NativeMediaPlugin extends Plugin {
                             window.setAttributes(lp);
                         }
                     } else {
+                        window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
                         decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                            WindowManager.LayoutParams lp = window.getAttributes();
+                            lp.layoutInDisplayCutoutMode =
+                                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT;
+                            window.setAttributes(lp);
+                        }
                     }
                 } catch (Exception ignored) {
                 }
