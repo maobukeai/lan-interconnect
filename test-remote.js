@@ -127,6 +127,71 @@ async function runTests() {
         assert('POST /api/remote/mouse/click 返回 200', mouseRes.statusCode === 200);
         assert('POST /api/remote/mouse/click 返回 success: true', mouseRes.json?.success === true);
 
+        // 7. 鼠标移动 / 按下 / 抬起（拖拽链路，角落空白处避免误点）
+        console.log('\n--- 7. 测试鼠标移动与按下抬起（拖拽）接口 ---');
+        const moveRes = await request({
+            hostname: '127.0.0.1', port,
+            path: '/api/remote/mouse/move', method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        }, { x: 400, y: 300 });
+        assert('POST /api/remote/mouse/move 返回 200', moveRes.statusCode === 200);
+        assert('POST /api/remote/mouse/move 返回 success: true', moveRes.json?.success === true);
+
+        const downRes = await request({
+            hostname: '127.0.0.1', port,
+            path: '/api/remote/mouse/down', method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        }, { x: 5, y: 5, button: 'left' });
+        assert('POST /api/remote/mouse/down 返回 200', downRes.statusCode === 200);
+
+        const upRes = await request({
+            hostname: '127.0.0.1', port,
+            path: '/api/remote/mouse/up', method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        }, { x: 5, y: 5, button: 'left' });
+        assert('POST /api/remote/mouse/up 返回 200', upRes.statusCode === 200);
+
+        // 8. 滚轮测试
+        console.log('\n--- 8. 测试滚轮接口 ---');
+        const scrollRes = await request({
+            hostname: '127.0.0.1', port,
+            path: '/api/remote/scroll', method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        }, { x: 500, y: 400, delta: 1 });
+        assert('POST /api/remote/scroll 返回 200', scrollRes.statusCode === 200);
+        assert('POST /api/remote/scroll 返回 success: true', scrollRes.json?.success === true);
+
+        const scrollBadRes = await request({
+            hostname: '127.0.0.1', port,
+            path: '/api/remote/scroll', method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        }, { delta: 0 });
+        assert('POST /api/remote/scroll delta=0 返回 400', scrollBadRes.statusCode === 400);
+
+        // 9. 键盘接口（key 仅校验参数与执行返回；text 只测参数校验，避免向真实焦点窗口注入文字）
+        console.log('\n--- 9. 测试键盘接口 ---');
+        const keyRes = await request({
+            hostname: '127.0.0.1', port,
+            path: '/api/remote/key', method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        }, { key: 'f15', modifiers: '' });
+        assert('POST /api/remote/key f15 返回 200', keyRes.statusCode === 200);
+        assert('POST /api/remote/key 返回 success: true', keyRes.json?.success === true);
+
+        const keyBadRes = await request({
+            hostname: '127.0.0.1', port,
+            path: '/api/remote/key', method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        }, { key: '<script>' });
+        assert('POST /api/remote/key 非法键名返回 400', keyBadRes.statusCode === 400);
+
+        const textEmptyRes = await request({
+            hostname: '127.0.0.1', port,
+            path: '/api/remote/text', method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        }, { text: '' });
+        assert('POST /api/remote/text 空文本返回 400', textEmptyRes.statusCode === 400);
+
         console.log(`\n========================================`);
         console.log(`🎯 测试结果: ${passedCount}/${totalCount} 用例全部通过！`);
         console.log(`========================================\n`);

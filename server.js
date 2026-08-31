@@ -165,6 +165,10 @@ function startServer(config) {
         app.use('/api/tools/clean-links', checkSensitive);
         app.use('/api/remote/power', checkSensitive);
         app.use('/api/remote/mouse', checkSensitive);
+        // 键盘/文本/滚轮同样是远程输入能力，纳入敏感接口二道门
+        app.use('/api/remote/scroll', checkSensitive);
+        app.use('/api/remote/key', checkSensitive);
+        app.use('/api/remote/text', checkSensitive);
         // 音量与屏幕截屏同属敏感控制：截屏涉及隐私，免密模式下不应向局域网访客开放
         app.use('/api/remote/volume', checkSensitive);
         app.use('/api/remote/screen', checkSensitive);
@@ -242,7 +246,12 @@ function startServer(config) {
         function tryListen() {
             const server = http.createServer(app);
             state.server = server;
-            
+
+            // 远程桌面 WebSocket 实时通道（/api/remote/ws）
+            const realtime = require('./server/realtime');
+            if (state.realtime) { try { state.realtime.close(); } catch (e) {} }
+            state.realtime = realtime.attachRealtime(server);
+
             server.on('connection', (socket) => {
                 state.activeSockets.add(socket);
                 socket.on('close', () => {
@@ -320,6 +329,12 @@ function stopServer() {
             try { client.res.end(); } catch (e) {}
         });
         state.sseClients = [];
+
+        // 关闭远程桌面 WebSocket 通道与常驻截屏进程
+        if (state.realtime) {
+            try { state.realtime.close(); } catch (e) {}
+            state.realtime = null;
+        }
 
         if (state.server) {
             for (const socket of state.activeSockets) {

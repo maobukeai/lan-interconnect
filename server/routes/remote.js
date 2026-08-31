@@ -199,6 +199,127 @@ router.post('/remote/mouse/click', async (req, res) => {
     }
 });
 
+// 5a. 鼠标移动（不点击）
+router.post('/remote/mouse/move', async (req, res) => {
+    try {
+        const { x, y } = req.body;
+        if (typeof x !== 'number' || typeof y !== 'number') {
+            return res.status(400).json({ error: 'Coordinates x and y are required' });
+        }
+        await runPsControl([
+            '-Action', 'move',
+            '-MouseX', String(Math.round(x)),
+            '-MouseY', String(Math.round(y))
+        ]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 5b. 鼠标按下 / 抬起（拖拽用）
+router.post('/remote/mouse/down', async (req, res) => {
+    try {
+        const { x, y, button } = req.body;
+        if (typeof x !== 'number' || typeof y !== 'number') {
+            return res.status(400).json({ error: 'Coordinates x and y are required' });
+        }
+        const safeBtn = (button === 'right' || button === 'middle') ? button : 'left';
+        await runPsControl([
+            '-Action', 'mousedown',
+            '-MouseX', String(Math.round(x)),
+            '-MouseY', String(Math.round(y)),
+            '-MouseButton', safeBtn
+        ]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.post('/remote/mouse/up', async (req, res) => {
+    try {
+        const { x, y, button } = req.body;
+        if (typeof x !== 'number' || typeof y !== 'number') {
+            return res.status(400).json({ error: 'Coordinates x and y are required' });
+        }
+        const safeBtn = (button === 'right' || button === 'middle') ? button : 'left';
+        await runPsControl([
+            '-Action', 'mouseup',
+            '-MouseX', String(Math.round(x)),
+            '-MouseY', String(Math.round(y)),
+            '-MouseButton', safeBtn
+        ]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 5c. 滚轮（一格 = 120 WHEEL_DELTA，正数向上）
+router.post('/remote/scroll', async (req, res) => {
+    try {
+        const { x, y, delta } = req.body;
+        if (typeof delta !== 'number' || !delta) {
+            return res.status(400).json({ error: 'Non-zero delta is required' });
+        }
+        const safeDelta = Math.max(-50, Math.min(50, Math.round(delta)));
+        const args = ['-Action', 'scroll', '-Delta', String(safeDelta)];
+        if (typeof x === 'number' && typeof y === 'number') {
+            args.push('-MouseX', String(Math.round(x)), '-MouseY', String(Math.round(y)));
+        }
+        await runPsControl(args);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 5d. 组合键 / 单键（key 名 + ctrl,alt,shift,win 修饰）
+router.post('/remote/key', async (req, res) => {
+    try {
+        if (process.platform !== 'win32') {
+            return res.status(501).json({ error: 'Keyboard control only supported on Windows' });
+        }
+        const { key, modifiers } = req.body || {};
+        if (typeof key !== 'string' || !key.trim()) {
+            return res.status(400).json({ error: 'Key name is required (e.g. enter/esc/a/f5)' });
+        }
+        if (!/^[a-zA-Z0-9]{1,12}$/.test(key.trim())) {
+            return res.status(400).json({ error: 'Unsupported key name' });
+        }
+        let mods = '';
+        if (typeof modifiers === 'string' && modifiers) {
+            const parsed = modifiers.split(',').map(m => m.trim().toLowerCase()).filter(m => ['ctrl', 'alt', 'shift', 'win'].includes(m));
+            mods = parsed.join(',');
+        }
+        await runPsControl(['-Action', 'key', '-KeyName', key.trim(), '-Modifiers', mods]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 5e. 文本输入（Unicode，支持中文）
+router.post('/remote/text', async (req, res) => {
+    try {
+        if (process.platform !== 'win32') {
+            return res.status(501).json({ error: 'Keyboard control only supported on Windows' });
+        }
+        const { text } = req.body || {};
+        if (typeof text !== 'string' || !text) {
+            return res.status(400).json({ error: 'Text is required' });
+        }
+        if (text.length > 2000) {
+            return res.status(400).json({ error: 'Text too long (max 2000 chars)' });
+        }
+        await runPsControl(['-Action', 'text', '-Text', text]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // 6. 系统电源总控
 router.post('/remote/power', (req, res) => {
     if (state.currentConfig.mode === 'shared') {
