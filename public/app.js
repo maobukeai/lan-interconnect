@@ -896,8 +896,18 @@
         });
 
         const connectToServer = async (url) => {
-            let fullUrl = url.trim();
+            let fullUrl = (url || '').trim();
+            if (!fullUrl) return;
+            // 替换全角中文冒号与异常空格
+            fullUrl = fullUrl.replace(/：/g, ':').replace(/\s+/g, '');
             if (!/^https?:\/\//i.test(fullUrl)) fullUrl = 'http://' + fullUrl;
+            // 如果仅输入了 IP 而未提供端口，智能补齐常用 3000 端口
+            try {
+                const u = new URL(fullUrl);
+                if (!u.port && !/:\d+$/.test(fullUrl)) {
+                    fullUrl = `${u.protocol}//${u.hostname}:3000`;
+                }
+            } catch (e) {}
             fullUrl = fullUrl.replace(/\/$/, '');
 
             if (btnManual) {
@@ -909,13 +919,15 @@
             let reachable = false;
             let requiresPin = false;
             let serverInfo = null;
+            const isTailscale = /^http:\/\/100\./i.test(fullUrl) || /100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(fullUrl);
+            const timeoutMs = isTailscale ? 6000 : 2500;
 
             try {
                 // 1. 优先探测免鉴权轻量发现接口
                 const pingRes = await fetch(`${fullUrl}/api/ping`, {
                     method: 'GET',
                     headers: { 'Accept': 'application/json' },
-                    signal: AbortSignal.timeout(2500)
+                    signal: AbortSignal.timeout(timeoutMs)
                 });
                 if (pingRes.ok) {
                     serverInfo = await pingRes.json().catch(() => ({}));
@@ -930,7 +942,7 @@
                     const vRes = await fetch(`${fullUrl}/api/verify`, {
                         method: 'GET',
                         headers: (auth() ? auth().authHeaders() : {}),
-                        signal: AbortSignal.timeout(2500)
+                        signal: AbortSignal.timeout(timeoutMs)
                     });
                     if (vRes.ok || vRes.status === 401) {
                         reachable = true;
@@ -946,7 +958,7 @@
 
             if (!reachable) {
                 if (statusEl) statusEl.textContent = `❌ 无法连通 ${fullUrl}`;
-                LanDiskUI.toast(`连接失败：无法连通 ${fullUrl}，请检查 IP 端口与 Wi-Fi`, 'error', 4500);
+                LanDiskUI.toast(`连接失败：无法连通 ${fullUrl}，请检查 IP 端口、Tailscale 状态或 Wi-Fi`, 'error', 4500);
                 return;
             }
 
@@ -1051,6 +1063,62 @@
             }
         });
 
+        // 绑定输入框回车直连
+        ipInput && ipInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const val = ipInput.value.trim();
+                if (val) connectToServer(val);
+            }
+        });
+
+        // 绑定从剪贴板一键粘贴并直连
+        const btnPaste = $('#btn-paste-connect');
+        if (btnPaste) {
+            btnPaste.addEventListener('click', async () => {
+                try {
+                    let text = '';
+                    if (navigator.clipboard && navigator.clipboard.readText) {
+                        text = await navigator.clipboard.readText().catch(() => '');
+                    }
+                    if (!text && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Clipboard) {
+                        const capClip = await window.Capacitor.Plugins.Clipboard.read().catch(() => ({}));
+                        text = capClip.value || '';
+                    }
+                    if (text) {
+                        text = text.trim();
+                        if (ipInput) ipInput.value = text;
+                        LanDiskUI.toast('已从剪贴板填入', 'info', 1500);
+                        connectToServer(text);
+                    } else {
+                        LanDiskUI.toast('剪贴板无文本，请在输入框直接输入', 'info');
+                    }
+                } catch (e) {
+                    LanDiskUI.toast('请直接在输入框输入或长按粘贴', 'info');
+                }
+            });
+        }
+
+        // 绑定快捷前缀与后缀填充
+        document.querySelectorAll('[data-fill-prefix]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const p = btn.getAttribute('data-fill-prefix');
+                if (ipInput) {
+                    ipInput.value = p;
+                    ipInput.focus();
+                }
+            });
+        });
+        document.querySelectorAll('[data-fill-suffix]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const s = btn.getAttribute('data-fill-suffix');
+                if (ipInput) {
+                    if (!ipInput.value.includes(':')) ipInput.value += s;
+                    ipInput.focus();
+                }
+            });
+        });
+
         btnManual && btnManual.addEventListener('click', () => {
             const val = ipInput ? ipInput.value.trim() : '';
             if (!val) return LanDiskUI.toast('请输入电脑 IP 地址 (如 192.168.0.104:3000)', 'error');
@@ -1151,6 +1219,15 @@
                 });
             }
 
+            let renderTimer = null;
+            function scheduleRender() {
+                if (renderTimer) return;
+                renderTimer = setTimeout(() => {
+                    renderTimer = null;
+                    renderFoundCards();
+                }, 120);
+            }
+
             async function probeUrl(targetUrl) {
                 let parsedHost = '';
                 try { parsedHost = new URL(targetUrl).hostname; } catch (e) {}
@@ -1181,7 +1258,7 @@
                                 isLoopback: isTargetLoopback,
                                 hostname: data.hostname
                             });
-                            renderFoundCards();
+                            scheduleRender();
                             if (statusEl) statusEl.textContent = `🎯 已发现 ${foundMap.size} 台在线电脑！`;
                         }
                         return;
@@ -1203,7 +1280,7 @@
                                 requiresPin: (r2.status === 401),
                                 isLoopback: isTargetLoopback
                             });
-                            renderFoundCards();
+                            scheduleRender();
                             if (statusEl) statusEl.textContent = `🎯 已发现 ${foundMap.size} 台在线电脑！`;
                         }
                     }

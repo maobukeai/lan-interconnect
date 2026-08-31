@@ -280,9 +280,18 @@
         </div>
 
         <div style="margin-bottom:12px;">
-            <div class="row" style="gap:8px;">
-                <input type="text" id="manual-server-ip" class="apple-input" placeholder="输入电脑 IP (如 192.168.0.104:3000)" style="flex:1; font-size:13.5px; padding:10px 12px; border-radius:12px;">
-                <button class="apple-btn apple-btn-primary" id="btn-manual-connect" style="padding:10px 18px; font-size:13.5px; border-radius:12px; flex-shrink:0; font-weight:600;">直连</button>
+            <div style="display:flex; gap:6px; margin-bottom:6px;">
+                <input type="text" id="manual-server-ip" class="apple-input" placeholder="输入电脑 IP 或 Tailscale 远程地址 (如 100.x.x.x:3000)" 
+                       style="flex:1; font-size:13px; padding:10px 12px; border-radius:12px;"
+                       autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="url">
+                <button class="apple-btn apple-btn-secondary" id="btn-paste-connect" style="padding:0 10px; font-size:12px; border-radius:12px; flex-shrink:0;" title="从剪贴板粘贴">📋 粘贴</button>
+                <button class="apple-btn apple-btn-primary" id="btn-manual-connect" style="padding:10px 16px; font-size:13.5px; border-radius:12px; flex-shrink:0; font-weight:600;">直连</button>
+            </div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap; font-size:11px; color:var(--apple-text-muted);">
+                <span>快捷填入:</span>
+                <button type="button" class="apple-badge" style="cursor:pointer; background:var(--mat-thick); border:1px solid var(--apple-border);" data-fill-prefix="192.168.0.">192.168.0.*</button>
+                <button type="button" class="apple-badge" style="cursor:pointer; background:var(--mat-thick); border:1px solid var(--apple-border);" data-fill-prefix="100.">🌐 Tailscale (100.*)</button>
+                <button type="button" class="apple-badge" style="cursor:pointer; background:var(--mat-thick); border:1px solid var(--apple-border);" data-fill-suffix=":3000">:3000</button>
             </div>
         </div>
 

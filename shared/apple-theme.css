@@ -206,6 +206,16 @@ body {
     filter: blur(110px);
 }
 
+@media (max-width: 768px), (pointer: coarse) {
+    .apple-orb {
+        animation: none !important;
+        filter: blur(40px) !important;
+        opacity: 0.12 !important;
+        transform: none !important;
+        will-change: auto !important;
+    }
+}
+
 /* 通用布局原语 */
 .row { display: flex; align-items: center; gap: 8px; }
 .row-between { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
