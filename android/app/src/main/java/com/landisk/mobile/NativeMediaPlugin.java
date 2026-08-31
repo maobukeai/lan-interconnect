@@ -91,6 +91,33 @@ public class NativeMediaPlugin extends Plugin {
         });
     }
 
+    /** 屏幕方向控制：横屏/竖屏/自动跟随传感器 */
+    @PluginMethod
+    public void setOrientation(PluginCall call) {
+        final Activity activity = bridge.getActivity();
+        if (activity == null || activity.isFinishing()) {
+            call.resolve();
+            return;
+        }
+        final String orientation = call.getString("orientation", "unspecified");
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if ("landscape".equalsIgnoreCase(orientation) || "sensor_landscape".equalsIgnoreCase(orientation)) {
+                        activity.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+                    } else if ("portrait".equalsIgnoreCase(orientation)) {
+                        activity.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+                    } else {
+                        activity.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+                    }
+                } catch (Exception ignored) {
+                }
+                call.resolve();
+            }
+        });
+    }
+
     /** 启动前台服务：进程在后台保活，WebView 音频得以继续，通知栏出现播控 */
     @PluginMethod
     public void enableBackgroundAudio(PluginCall call) {

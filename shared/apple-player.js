@@ -1371,6 +1371,7 @@ class AppleCinemaPlayerEngine {
         } else {
             // 退出全屏
             stageBox.classList.remove('is-fullscreen');
+            stageBox.classList.remove('is-css-landscape');
             document.body.classList.remove('ap-fullscreen-active');
             if (this.dom.fsBtnLabel) this.dom.fsBtnLabel.textContent = '全屏';
 
@@ -1396,24 +1397,45 @@ class AppleCinemaPlayerEngine {
         }
     }
 
-    // 横屏锁定：App 内优先走 Capacitor 插件（WebView 下不依赖原生全屏态即可生效），
-    // 浏览器环境回退标准 screen.orientation API
+    // 横屏锁定：App 内优先走 NativeMediaPlugin 原生系统级旋转（100% 极速物理横屏），
+    // 其次 Capacitor ScreenOrientation 插件，浏览器回退 screen.orientation 与 CSS 伪横屏
     _lockLandscape(lock) {
         // 程序化锁定/解锁自身会触发一次 orientationchange，
         // 打开抑制窗口，避免它回头再触发一次自动进/退全屏
-        this._orientationSuppressUntil = Date.now() + 1200;
+        this._orientationSuppressUntil = Date.now() + 1400;
         try {
+            // 1. 优先调用 NativeMediaPlugin 原生 Activity.setRequestedOrientation (Android App 内 100% 生效)
+            const nativeMedia = (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeMedia) || null;
+            if (nativeMedia && typeof nativeMedia.setOrientation === 'function') {
+                nativeMedia.setOrientation({ orientation: lock ? 'landscape' : 'unspecified' }).catch(() => {});
+            }
+            // 2. Capacitor 官方 ScreenOrientation 插件
             const capPlugin = (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.ScreenOrientation) || null;
             if (capPlugin) {
                 if (lock) capPlugin.lock({ orientation: 'landscape' }).catch(() => {});
                 else capPlugin.unlock().catch(() => {});
-                return;
             }
+            // 3. Web 标准 screen.orientation
             if (screen.orientation && screen.orientation.lock) {
                 if (lock) screen.orientation.lock('landscape').catch(() => {});
                 else if (screen.orientation.unlock) screen.orientation.unlock();
             }
         } catch (e) {}
+
+        // 4. Web 浏览器端伪横屏降级兜底 (CSS Landscape Fallback)
+        const stageBox = this.dom.stageBox;
+        if (stageBox) {
+            if (lock && this._isPhoneClass() && window.innerHeight > window.innerWidth) {
+                // 如果是手机竖屏且处于 Web 浏览器（非原生 App），在未成功物理旋转时 300ms 后做 CSS 伪横屏适配
+                setTimeout(() => {
+                    if (this._isFullscreenActive() && window.innerHeight > window.innerWidth) {
+                        stageBox.classList.add('is-css-landscape');
+                    }
+                }, 350);
+            } else {
+                stageBox.classList.remove('is-css-landscape');
+            }
+        }
     }
 
     // 手机类设备：最短边 <= 500px 或 UA 命中手机。平板不参与旋转自动全屏，

@@ -78,6 +78,26 @@
     margin: 0 !important;
 }
 
+/* 移动端浏览器在不支持/受限原生旋转时的纯 CSS 强制全屏横屏兜底 */
+.player-stage-box.is-css-landscape {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vh !important;
+    width: 100dvh !important;
+    height: 100vw !important;
+    height: 100dvw !important;
+    transform: rotate(90deg) translateY(-100vw) !important;
+    transform-origin: top left !important;
+    z-index: 99999 !important;
+    border-radius: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    max-width: none !important;
+    max-height: none !important;
+    margin: 0 !important;
+}
+
 body.ap-fullscreen-active {
     overflow: hidden !important;
 }
@@ -805,32 +825,49 @@ body.ap-fullscreen-active #main-dock {
     }
     .player-ctrl-row {
         gap: 6px !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        overflow: hidden !important;
     }
     .player-ctrl-left {
         gap: 6px !important;
+        flex-shrink: 1 !important;
+        min-width: 0 !important;
     }
     .player-ctrl-right {
         gap: 6px !important;
+        flex-shrink: 0 !important;
+        justify-content: flex-end !important;
     }
     .player-time-display {
         font-size: 10px !important;
         padding: 2px 5px !important;
         border-radius: 6px !important;
         letter-spacing: -0.2px !important;
+        flex-shrink: 1 !important;
+        min-width: 0 !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
     }
     .player-btn-icon {
         width: 34px !important;
         height: 34px !important;
     }
     .player-main-play-btn {
-        width: 40px !important;
-        height: 40px !important;
+        width: 38px !important;
+        height: 38px !important;
+        flex-shrink: 0 !important;
     }
     .player-btn-pill {
         height: 32px !important;
         padding: 0 9px !important;
         font-size: 10.5px !important;
         gap: 3px !important;
+        flex-shrink: 0 !important;
+    }
+    .player-btn-fullscreen {
+        flex-shrink: 0 !important;
+        min-width: 34px !important;
     }
     .player-btn-pill svg {
         width: 12px !important;
@@ -862,8 +899,12 @@ body.ap-fullscreen-active #main-dock {
     }
 }
 
-/* 手机竖屏 (<= 520px): 针对嵌入式/非全屏小视窗精细图标化，彻底消除溢出截断 */
-@media (max-width: 520px) {
+/* 手机竖屏 (<= 560px): 针对嵌入式/非全屏小视窗精细图标化，彻底消除溢出截断 */
+@media (max-width: 560px) {
+    .player-stage-box:not(.is-fullscreen) #ap-btn-fit-toggle,
+    .player-stage-box:not(.is-fullscreen) #ap-btn-filter-toggle {
+        display: none !important;
+    }
     .player-stage-box:not(.is-fullscreen) .player-btn-pill .ap-btn-label {
         display: none !important;
     }
