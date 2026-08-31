@@ -1353,21 +1353,25 @@ class AppleCinemaPlayerEngine {
             document.body.classList.add('ap-fullscreen-active');
             if (this.dom.fsBtnLabel) this.dom.fsBtnLabel.textContent = '还原';
 
-            // 桌面端浏览器调用 HTML5 原生全屏；移动端走纯 CSS 沉浸全屏（彻底消除 Chrome/浏览器「如需退出全屏模式」系统提示横幅）
-            if (!isMobile) {
-                try {
-                    const reqFs = stageBox.requestFullscreen ||
-                                  stageBox.webkitRequestFullscreen ||
-                                  stageBox.mozRequestFullScreen ||
-                                  stageBox.msRequestFullscreen;
-                    if (reqFs) {
-                        const p = reqFs.call(stageBox);
-                        if (p && p.catch) p.catch(() => {});
-                    }
-                } catch (e) {}
-            }
+            // 请求原生全屏 (HTML5 Fullscreen API)
+            // 在移动端和桌面端浏览器中，必须调用 requestFullscreen({ navigationUI: 'hide' }) 才能彻底隐藏顶部网址栏、底部导航栏和手机系统状态栏！
+            try {
+                const reqFs = stageBox.requestFullscreen ||
+                              stageBox.webkitRequestFullscreen ||
+                              stageBox.mozRequestFullScreen ||
+                              stageBox.msRequestFullscreen ||
+                              document.documentElement.requestFullscreen ||
+                              document.documentElement.webkitRequestFullscreen;
+                if (reqFs) {
+                    const p = reqFs.call(stageBox, { navigationUI: 'hide' });
+                    if (p && p.catch) p.catch(() => {});
+                } else if (this.dom.media && this.dom.media.webkitEnterFullscreen) {
+                    // iOS Safari (iPhone 专属原生全屏通道)
+                    this.dom.media.webkitEnterFullscreen();
+                }
+            } catch (e) {}
 
-            // 原生 Android App 容器内隐藏系统状态栏/导航栏（sticky 沉浸式，无任何浏览器提示弹窗）
+            // 原生 Android App 容器内隐藏系统状态栏/导航栏（sticky 沉浸式）
             this._setNativeImmersive(true);
 
             if (lockOrientation) this._lockLandscape(true);
