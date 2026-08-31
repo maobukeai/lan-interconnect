@@ -154,11 +154,11 @@
 
         getFileIcon(name, isDir) {
             if (isDir) return { icon: 'folder', cls: 'dir' };
-            if (/\.(mp4|mkv|webm|mov|avi)$/i.test(name)) return { icon: 'video', cls: 'media' };
-            if (/\.(mp3|wav|flac|aac|m4a)$/i.test(name)) return { icon: 'music', cls: 'media' };
-            if (/\.(jpg|png|gif|webp|svg|bmp|ico)$/i.test(name)) return { icon: 'image', cls: 'image' };
-            if (/\.(zip|rar|7z|tar|gz)$/i.test(name)) return { icon: 'package', cls: 'zip' };
-            if (/\.(txt|md|json|js|css|html|py|c|cpp|h|log|ini|conf|yaml|yml)$/i.test(name)) return { icon: 'fileText', cls: 'text' };
+            if (/\.(mp4|mkv|webm|mov|avi|m4v|flv|ts|wmv|rmvb|3gp)$/i.test(name)) return { icon: 'video', cls: 'media' };
+            if (/\.(mp3|wav|flac|aac|m4a|ogg|opus|wma)$/i.test(name)) return { icon: 'music', cls: 'media' };
+            if (/\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|heic|heif)$/i.test(name)) return { icon: 'image', cls: 'image' };
+            if (/\.(zip|rar|7z|tar|gz|bz2|iso|xz|tgz|tbz2|txz|z|cab|dmg|pkg|deb|rpm|apk|ipa|jar|war|xapk|apks|wim|7zip)$/i.test(name)) return { icon: 'package', cls: 'zip' };
+            if (/\.(txt|md|json|js|css|html|py|c|cpp|h|log|ini|conf|yaml|yml|pdf|doc|docx|xls|xlsx|ppt|pptx)$/i.test(name)) return { icon: 'fileText', cls: 'text' };
             return { icon: 'fileText', cls: '' };
         }
 
@@ -483,11 +483,11 @@
             // 1. 分类过滤
             if (this.activeCategory !== 'all') {
                 const catMap = {
-                    video: /\.(mp4|mkv|webm|mov|avi|flv|wmv)$/i,
-                    audio: /\.(mp3|wav|flac|aac|ogg|m4a)$/i,
-                    image: /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico)$/i,
-                    doc: /\.(txt|md|pdf|doc|docx|xls|xlsx|ppt|pptx|json|js|html|css|py|c|cpp|h)$/i,
-                    archive: /\.(zip|rar|7z|tar|gz|bz2|iso)$/i
+                    video: /\.(mp4|mkv|webm|mov|avi|m4v|flv|ts|m2ts|wmv|3gp|3g2|mpg|mpeg|ogv|rm|rmvb)$/i,
+                    audio: /\.(mp3|wav|flac|aac|ogg|oga|m4a|opus|wma)$/i,
+                    image: /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|heic|heif)$/i,
+                    doc: /\.(txt|md|pdf|doc|docx|xls|xlsx|ppt|pptx|json|js|html|css|py|c|cpp|h|log|ini|conf|yaml|yml)$/i,
+                    archive: /\.(zip|rar|7z|tar|gz|bz2|iso|xz|tgz|tbz2|txz|z|cab|dmg|pkg|deb|rpm|apk|ipa|jar|war|xapk|apks|wim|7zip)$/i
                 };
                 const reg = catMap[this.activeCategory];
                 if (reg) {

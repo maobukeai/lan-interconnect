@@ -1192,6 +1192,36 @@
         $('#btn-explorer-refresh').addEventListener('click', () => FileExplorerComponent.refresh());
         $('#btn-add-bookmark').addEventListener('click', () => FileExplorerComponent.addBookmark());
 
+        // 分类筛选药丸
+        document.querySelectorAll('#file-category-pills .file-pill').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const cat = btn.getAttribute('data-cat');
+                document.querySelectorAll('#file-category-pills .file-pill').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                if (window.FileExplorerComponent && typeof window.FileExplorerComponent.setCategory === 'function') {
+                    window.FileExplorerComponent.setCategory(cat);
+                }
+            });
+        });
+
+        // 排序按钮
+        const btnSort = document.getElementById('btn-file-sort');
+        const sortLabel = document.getElementById('file-sort-label');
+        if (btnSort) {
+            const sortModes = ['name', 'size', 'time'];
+            let currentSortIdx = 0;
+            const sortNames = { name: '名称', size: '大小', time: '时间' };
+
+            btnSort.addEventListener('click', () => {
+                currentSortIdx = (currentSortIdx + 1) % sortModes.length;
+                const mode = sortModes[currentSortIdx];
+                if (window.FileExplorerComponent && typeof window.FileExplorerComponent.setSort === 'function') {
+                    const info = window.FileExplorerComponent.setSort(mode);
+                    if (sortLabel) sortLabel.textContent = sortNames[mode] + (info.sortOrder === 'asc' ? ' ↑' : ' ↓');
+                }
+            });
+        }
+
         // 影音页
         $('#btn-media-scan').addEventListener('click', () => {
             if (!IPC.state.running) { UI.toast('请先启动服务', 'info'); return; }
