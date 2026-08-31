@@ -211,6 +211,45 @@ function getLocalIpAddress() {
     return bestIp || backupIp;
 }
 
+// 枚举全部可用服务地址并按网络类型分类，供 PC 端展示远程连接入口 (如 Tailscale)
+function getAddressCatalog() {
+    const interfaces = os.networkInterfaces();
+    const result = { lan: [], tailscale: [], other: [] };
+    const seen = new Set();
+
+    for (const name of Object.keys(interfaces)) {
+        const lowerName = name.toLowerCase();
+        if (lowerName.includes('vethernet') ||
+            lowerName.includes('vmware') ||
+            lowerName.includes('virtual') ||
+            lowerName.includes('wsl') ||
+            lowerName.includes('bluetooth') ||
+            lowerName.includes('loopback')) {
+            // Tailscale 属合法远程通道，其网卡名不受虚拟网卡过滤影响
+            if (!lowerName.includes('tailscale')) continue;
+        }
+
+        for (const iface of interfaces[name]) {
+            if (iface.family !== 'IPv4' || iface.internal) continue;
+            const ip = iface.address;
+            if (seen.has(ip)) continue;
+            seen.add(ip);
+
+            // CGNAT 段 100.64.0.0/10 是 Tailscale 的默认地址池
+            const secondOctet = parseInt(ip.split('.')[1], 10);
+            const isTailscale = lowerName.includes('tailscale') || (ip.startsWith('100.') && secondOctet >= 64 && secondOctet <= 127);
+            if (isTailscale) {
+                result.tailscale.push(ip);
+            } else if (ip.startsWith('192.168.') || ip.startsWith('10.') || (ip.startsWith('172.') && secondOctet >= 16 && secondOctet <= 31)) {
+                result.lan.push(ip);
+            } else {
+                result.other.push(ip);
+            }
+        }
+    }
+    return result;
+}
+
 function shouldCompress(req, res) {
     if (req.headers['x-no-compression']) {
         return false;
@@ -246,5 +285,6 @@ module.exports = {
     isSafePath,
     sanitizeFileName,
     getLocalIpAddress,
+    getAddressCatalog,
     shouldCompress
 };

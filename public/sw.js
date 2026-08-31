@@ -1,5 +1,5 @@
-const STATIC_CACHE_NAME = 'lan-disk-static-v2';
-const VIDEO_CACHE_NAME = 'lan-disk-video-cache-v1';
+const STATIC_CACHE_NAME = 'lan-disk-static-v3';
+const VIDEO_CACHE_NAME = 'lan-disk-video-cache-v3';
 
 const PRECACHE_ASSETS = [
     '/',
@@ -86,6 +86,8 @@ self.addEventListener('fetch', (event) => {
 });
 
 const MAX_VIDEO_CACHE_ITEMS = 60;
+// 单个切片超过该字节数不入缓存：防止整部大视频/超大 Range 响应把磁盘缓存撑爆
+const MAX_VIDEO_CACHE_BYTES = 8 * 1024 * 1024;
 
 async function trimVideoCache(cache) {
     try {
@@ -119,10 +121,13 @@ async function handleVideoRangeRequest(request, event) {
     try {
         const networkResponse = await fetch(request);
         if (networkResponse.status === 206) {
-            const responseToCache = networkResponse.clone();
-            event.waitUntil(
-                cache.put(cacheKey, responseToCache).then(() => trimVideoCache(cache))
-            );
+            const contentLength = parseInt(networkResponse.headers.get('content-length') || '0', 10);
+            if (contentLength > 0 && contentLength <= MAX_VIDEO_CACHE_BYTES) {
+                const responseToCache = networkResponse.clone();
+                event.waitUntil(
+                    cache.put(cacheKey, responseToCache).then(() => trimVideoCache(cache))
+                );
+            }
         }
         return networkResponse;
     } catch (error) {

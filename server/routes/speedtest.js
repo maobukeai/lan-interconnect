@@ -76,10 +76,10 @@ router.post('/speedtest/upload', (req, res) => {
 });
 
 // 4. 一键清理临时上传切片与回收站过期文件
-router.post('/tools/clean-storage', (req, res) => {
+router.post('/tools/clean-storage', async (req, res) => {
     try {
         const chunkCount = cleanupTempChunks ? cleanupTempChunks() : 0;
-        const trashCleaned = trashService && trashService.cleanupExpired ? trashService.cleanupExpired() : 0;
+        const trashCleaned = trashService && trashService.cleanupExpired ? await trashService.cleanupExpired() : 0;
         res.json({
             success: true,
             message: '清理完成',

@@ -116,18 +116,22 @@ function isLocalRequest(req) {
 // 私有网段（跨设备网页互访与局域网雷达）。互联网公网来源返回 false。
 function isAllowedApiOrigin(req) {
     const origin = req.headers.origin;
-    if (!origin || origin === 'null') return true; // 无 Origin（curl/原生客户端）或 file:// 桌面端
+    if (!origin) return true; // 无 Origin（curl / 原生客户端 / 媒体播放器）
+    if (origin === 'null') return true; // file:// 桌面端 (Electron 壳)
     try {
         const o = new URL(origin);
+        // 打包壳内协商方案（Capacitor iOS/Tauri 等），均为应用自己持有的受限上下文
         if (o.protocol === 'capacitor:' || o.protocol === 'ionic:' || o.protocol === 'file:' || o.protocol === 'app:' || o.protocol === 'vscode-webview:') return true;
         if (o.protocol !== 'http:' && o.protocol !== 'https:') return false;
         if (o.host === (req.headers.host || '')) return true;
-        if (/^(localhost|127\.0\.0\.1|\[::1\]|::1|.*\.local)(:\d+)?$/i.test(o.host)) return true;
-        if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.|169\.254\.)/.test(o.hostname)) return true;
-        // 局域网互联工具全面放行所有内网跨端访问
-        return true;
+        const hostname = o.hostname.replace(/^\[|\]$/g, '');
+        if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || /\.local$/i.test(hostname)) return true;
+        if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.|169\.254\.)/.test(hostname)) return true;
+        // IPv6 唯一本地地址 (fc00::/7) 与链路本地地址 (fe80::/10)
+        if (/^f[cd][0-9a-f]{2}:/.test(hostname) || /^fe[89ab]:/.test(hostname)) return true;
+        return false;
     } catch (e) {
-        return true;
+        return false;
     }
 }
 

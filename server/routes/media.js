@@ -28,14 +28,31 @@ try {
 }
 
 let saveTimer = null;
+// 进度条目上限：超过时按更新时间修剪，防止 progressStore 随播放路径无限膨胀
+const MAX_PROGRESS_ENTRIES = 4000;
+const PRUNE_TO_ENTRIES = 2000;
+
+function pruneProgressStore() {
+    const keys = Object.keys(progressStore);
+    if (keys.length <= MAX_PROGRESS_ENTRIES) return;
+    keys.sort((a, b) => (progressStore[a].updatedAt || 0) - (progressStore[b].updatedAt || 0));
+    while (keys.length > PRUNE_TO_ENTRIES) {
+        delete progressStore[keys.shift()];
+    }
+}
+
 function debouncedSaveProgress() {
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
         try {
+            pruneProgressStore();
             if (!fs.existsSync(DATA_DIR)) {
                 fs.mkdirSync(DATA_DIR, { recursive: true });
             }
-            fs.writeFileSync(PROGRESS_FILE, JSON.stringify(progressStore, null, 2), 'utf8');
+            // 先写临时文件再原子重命名，避免写盘被中断时进度文件损坏
+            const tmpFile = PROGRESS_FILE + '.tmp';
+            fs.writeFileSync(tmpFile, JSON.stringify(progressStore, null, 2), 'utf8');
+            fs.renameSync(tmpFile, PROGRESS_FILE);
         } catch (e) {
             console.error('[Media] Failed to save media progress:', e.message);
         }
@@ -179,6 +196,60 @@ router.get('/media/subtitles', (req, res) => {
 
 // 4. 读取字幕文件内容并提供标准 UTF-8 编码流
 // GET /api/subtitle?path=...
+// 编码探测链：BOM → 严格 UTF-8 → GB18030 与 Big5 双解码打分 → 宽松 UTF-8 兜底。
+// 难点：GBK 与 Big5 的双字节区间高度重叠，"你好字幕" 的 GBK 字节同样是合法 Big5，
+// 固定顺序必然坑掉一边。用「常用简体字 / 常用繁体字」命中率打分选优。
+// 此前裸 buffer.toString('utf8') 会把 GBK 字幕解成乱码
+const SIMP_INDICATORS = '的一是了我不人在他有这上们来到时大地为子中你说生国年着就那和要她出也得里后自以会家可下过天去能对小多然于心学种之美好幕视频播放文件名声音字幕翻译校制作组';
+const TRAD_INDICATORS = '們來過時對說後東灣島聲學體劇風雲飛馬烏龍臺灣國書門開關長鳥齊廣張讓證應該當點為與裡間題聽覺藝術總經雙優勢獨戰備註釋';
+
+function scoreChineseText(text) {
+    let simp = 0;
+    let trad = 0;
+    for (const ch of text) {
+        if (SIMP_INDICATORS.includes(ch)) simp++;
+        if (TRAD_INDICATORS.includes(ch)) trad++;
+    }
+    return { simp, trad };
+}
+
+function decodeSubtitleBuffer(buffer) {
+    // BOM 直接判定
+    if (buffer.length >= 3 && buffer[0] === 0xEF && buffer[1] === 0xBB && buffer[2] === 0xBF) {
+        return { text: buffer.toString('utf8').replace(/^\uFEFF/, ''), encoding: 'utf-8-sig' };
+    }
+    if (buffer.length >= 2 && buffer[0] === 0xFF && buffer[1] === 0xFE) {
+        return { text: buffer.toString('utf16le').replace(/^\uFEFF/, ''), encoding: 'utf-16le' };
+    }
+
+    // 严格 UTF-8：纯 ASCII/标准 UTF-8 字幕在这里直接命中，零误判
+    try {
+        return { text: new TextDecoder('utf-8', { fatal: true }).decode(buffer).replace(/^\uFEFF/, ''), encoding: 'utf-8' };
+    } catch (e) {}
+
+    // GB18030 与 Big5 都严格解一遍，解不出来的一方直接淘汰
+    const candidates = [];
+    for (const enc of ['gb18030', 'big5']) {
+        try {
+            candidates.push({ enc, text: new TextDecoder(enc, { fatal: true }).decode(buffer) });
+        } catch (e) {}
+    }
+    if (candidates.length === 1) {
+        return { text: candidates[0].text, encoding: candidates[0].enc };
+    }
+    if (candidates.length === 2) {
+        // 双双合法：按简繁常用字命中率选优
+        const a = scoreChineseText(candidates[0].text);
+        const b = scoreChineseText(candidates[1].text);
+        const pick = (a.simp >= b.trad && a.simp > 0 && a.simp >= a.trad)
+            ? candidates[0]
+            : (b.trad > a.simp ? candidates[1] : candidates[0]);
+        return { text: pick.text, encoding: pick.enc };
+    }
+    // 兜底：宽松解码，宁可出个别乱码也不 500
+    return { text: buffer.toString('utf8'), encoding: 'utf-8-lenient' };
+}
+
 router.get('/subtitle', (req, res) => {
     const targetPath = req.query.path;
     if (!targetPath || !fs.existsSync(targetPath)) {
@@ -190,10 +261,11 @@ router.get('/subtitle', (req, res) => {
 
     try {
         const buffer = fs.readFileSync(targetPath);
-        const content = buffer.toString('utf8');
+        const { text, encoding } = decodeSubtitleBuffer(buffer);
         res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.setHeader('X-Subtitle-Encoding', encoding);
         res.setHeader('Cache-Control', 'no-cache');
-        res.send(content);
+        res.send(text);
     } catch (err) {
         res.status(500).send(err.message);
     }
@@ -210,10 +282,12 @@ if (!fs.existsSync(THUMB_CACHE_DIR)) {
     try { fs.mkdirSync(THUMB_CACHE_DIR, { recursive: true }); } catch (e) {}
 }
 
-const VIDEO_EXT_RE = /\.(mp4|mkv|webm|mov|avi|flv|wmv|ts|m4v|3gp|rmvb)$/i;
+// 与 shared/media-types.js 同源的统一白名单（UMD 模块可直接 require）
+const MediaTypes = require('../../shared/media-types');
+const VIDEO_EXT_RE = MediaTypes.VIDEO_RE;
 const IMAGE_EXT_RE = /\.(jpg|jpeg|png|webp|bmp|gif|svg)$/i;
 
-const sendThumb = (filePath, res) => {
+const sendThumb = (filePath, req, res) => {
     try {
         res.setHeader('Content-Type', 'image/jpeg');
         res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
@@ -221,13 +295,67 @@ const sendThumb = (filePath, res) => {
         stream.on('error', (err) => {
             if (!res.headersSent) res.status(500).send('Error reading thumbnail');
         });
+        // 客户端断开时销毁读取流，避免 fd 泄漏
+        req.on('close', () => stream.destroy());
         stream.pipe(res);
     } catch (e) {
         if (!res.headersSent) res.status(500).send(e.message);
     }
 };
 
-const handleThumbnail = (req, res) => {
+// 生成缩略图：先写 .part 再原子改名；第 3 秒失败回退第 0 秒；每个尝试 8s 超时
+function generateThumb(targetPath, thumbFile) {
+    return new Promise((resolve) => {
+        const partFile = thumbFile + '.part';
+        const rmPart = () => { try { fs.unlinkSync(partFile); } catch (e) {} };
+        const run = (ss) => new Promise((r) => {
+            const proc = spawn('ffmpeg', [
+                '-ss', ss,
+                '-i', targetPath,
+                '-vframes', '1',
+                '-filter:v', 'scale=360:-1',
+                '-q:v', '3',
+                partFile,
+                '-y'
+            ], { windowsHide: true });
+            let timedOut = false;
+            const timer = setTimeout(() => {
+                timedOut = true;
+                try { proc.kill(); } catch (e) {}
+            }, 8000);
+            proc.on('close', (code) => {
+                clearTimeout(timer);
+                r(timedOut ? 'timeout' : (code === 0 ? 'ok' : 'fail'));
+            });
+            proc.on('error', () => {
+                clearTimeout(timer);
+                r('error');
+            });
+        });
+
+        (async () => {
+            try { fs.unlinkSync(partFile); } catch (e) {}
+            let result = await run('00:00:03');
+            if (result !== 'ok') {
+                rmPart();
+                // 视频不足 3 秒时从第 0 秒回退重试
+                result = await run('00:00:00.1');
+            }
+            if (result === 'ok' && fs.existsSync(partFile) && fs.statSync(partFile).size > 0) {
+                fs.renameSync(partFile, thumbFile);
+                resolve(true);
+            } else {
+                rmPart();
+                resolve(false);
+            }
+        })();
+    });
+}
+
+// 同视频并发请求复用同一个 ffmpeg 任务，避免海报墙瞬间 spawn 十几个进程
+const thumbJobs = new Map(); // thumbFile -> Promise<boolean>
+
+const handleThumbnail = async (req, res) => {
     const targetPath = req.query.path;
     if (!targetPath || !fs.existsSync(targetPath)) {
         return res.status(404).send('File not found');
@@ -246,6 +374,7 @@ const handleThumbnail = (req, res) => {
         if (IMAGE_EXT_RE.test(targetPath)) {
             res.setHeader('Cache-Control', 'public, max-age=604800');
             const stream = fs.createReadStream(targetPath);
+            req.on('close', () => stream.destroy());
             return stream.pipe(res);
         }
 
@@ -260,69 +389,119 @@ const handleThumbnail = (req, res) => {
 
         // 1. 若磁盘已有生成好的缓存，秒级直接返回
         if (fs.existsSync(thumbFile) && fs.statSync(thumbFile).size > 0) {
-            return sendThumb(thumbFile, res);
+            return sendThumb(thumbFile, req, res);
         }
 
-        // 2. 服务端调用 ffmpeg 截取视频关键帧（高质量并限制分辨率 360px 宽度以提速）
-        const ffmpegArgs = [
-            '-ss', '00:00:03',
-            '-i', targetPath,
-            '-vframes', '1',
-            '-filter:v', 'scale=360:-1',
-            '-q:v', '3',
-            thumbFile,
-            '-y'
-        ];
-
-        const proc = spawn('ffmpeg', ffmpegArgs, { windowsHide: true });
-        let timedOut = false;
-        const timer = setTimeout(() => {
-            timedOut = true;
-            try { proc.kill(); } catch (e) {}
-        }, 8000);
-
-        proc.on('close', (code) => {
-            clearTimeout(timer);
-            if (timedOut) {
-                return res.status(504).send('Thumbnail generation timed out');
-            }
-            if (code === 0 && fs.existsSync(thumbFile) && fs.statSync(thumbFile).size > 0) {
-                return sendThumb(thumbFile, res);
-            }
-
-            // 如果从第 3 秒截图失败（比如视频不足 3 秒），尝试从第 0 秒重试
-            const retryArgs = [
-                '-ss', '00:00:00.1',
-                '-i', targetPath,
-                '-vframes', '1',
-                '-filter:v', 'scale=360:-1',
-                '-q:v', '3',
-                thumbFile,
-                '-y'
-            ];
-            const procRetry = spawn('ffmpeg', retryArgs, { windowsHide: true });
-            procRetry.on('close', (retryCode) => {
-                if (retryCode === 0 && fs.existsSync(thumbFile) && fs.statSync(thumbFile).size > 0) {
-                    return sendThumb(thumbFile, res);
-                }
-                res.status(500).send('Failed to generate thumbnail');
-            });
-            procRetry.on('error', () => {
-                res.status(500).send('ffmpeg not available');
-            });
-        });
-
-        proc.on('error', (err) => {
-            clearTimeout(timer);
-            res.status(500).send('ffmpeg execution error: ' + err.message);
-        });
-
+        // 2. 服务端 ffmpeg 截取视频关键帧（高质量并限制分辨率 360px 宽度以提速）
+        let job = thumbJobs.get(thumbFile);
+        if (!job) {
+            job = generateThumb(targetPath, thumbFile);
+            thumbJobs.set(thumbFile, job);
+            job.finally(() => thumbJobs.delete(thumbFile)).catch(() => {});
+        }
+        const ok = await job;
+        if (ok) {
+            return sendThumb(thumbFile, req, res);
+        }
+        res.status(500).send('Failed to generate thumbnail');
     } catch (err) {
-        res.status(500).send(err.message);
+        if (!res.headersSent) res.status(500).send(err.message);
     }
 };
 
 router.get('/thumbnail', handleThumbnail);
 router.get('/media/thumbnail', handleThumbnail);
+
+// 6. 进度条悬停/拖拽缩略图预览
+// GET /api/media/preview?path=...&t=125.4
+// 与海报缩略图同一套 ffmpeg 管线，只是时间点由请求指定。时间按 5 秒分桶，
+// 让同一段反复悬停命中同一张磁盘缓存；尺寸压到 192px 宽，单张几 KB
+const PREVIEW_CACHE_DIR = path.resolve(DATA_DIR, 'previews');
+if (!fs.existsSync(PREVIEW_CACHE_DIR)) {
+    try { fs.mkdirSync(PREVIEW_CACHE_DIR, { recursive: true }); } catch (e) {}
+}
+
+const previewJobs = new Map(); // previewFile -> Promise<boolean>
+
+function generatePreview(targetPath, previewFile, ssSeconds) {
+    return new Promise((resolve) => {
+        const partFile = previewFile + '.part';
+        const rmPart = () => { try { fs.unlinkSync(partFile); } catch (e) {} };
+        // -ss 放在 -i 之前走关键帧快照，秒级定位；时间格式 s.mmm
+        const proc = spawn('ffmpeg', [
+            '-ss', ssSeconds.toFixed(3),
+            '-i', targetPath,
+            '-vframes', '1',
+            '-filter:v', 'scale=192:-1',
+            '-q:v', '5',
+            partFile,
+            '-y'
+        ], { windowsHide: true });
+        let timedOut = false;
+        const timer = setTimeout(() => {
+            timedOut = true;
+            try { proc.kill(); } catch (e) {}
+        }, 5000);
+        proc.on('close', (code) => {
+            clearTimeout(timer);
+            if (!timedOut && code === 0 && fs.existsSync(partFile) && fs.statSync(partFile).size > 0) {
+                try { fs.renameSync(partFile, previewFile); resolve(true); return; } catch (e) {}
+            }
+            rmPart();
+            resolve(false);
+        });
+        proc.on('error', () => {
+            clearTimeout(timer);
+            rmPart();
+            resolve(false);
+        });
+    });
+}
+
+const handlePreview = async (req, res) => {
+    const targetPath = req.query.path;
+    const t = parseFloat(req.query.t);
+    if (!targetPath || !fs.existsSync(targetPath)) {
+        return res.status(404).send('File not found');
+    }
+    if (!isSafePath(targetPath)) {
+        return res.status(403).send('Forbidden');
+    }
+    if (isNaN(t) || t < 0 || t > 86400) {
+        return res.status(400).send('Invalid time');
+    }
+
+    try {
+        const stat = fs.statSync(targetPath);
+        if (stat.isDirectory() || !VIDEO_EXT_RE.test(targetPath)) {
+            return res.status(415).send('Unsupported media type for preview');
+        }
+
+        const hash = crypto.createHash('md5').update(`${targetPath}_${stat.mtimeMs}`).digest('hex');
+        const bucket = Math.floor(t / 5) * 5;
+        const previewFile = path.resolve(PREVIEW_CACHE_DIR, `${hash}_${bucket}.jpg`);
+
+        if (fs.existsSync(previewFile) && fs.statSync(previewFile).size > 0) {
+            return sendThumb(previewFile, req, res);
+        }
+
+        let job = previewJobs.get(previewFile);
+        if (!job) {
+            job = generatePreview(targetPath, previewFile, bucket);
+            previewJobs.set(previewFile, job);
+            job.finally(() => previewJobs.delete(previewFile)).catch(() => {});
+        }
+        const ok = await job;
+        if (ok) {
+            return sendThumb(previewFile, req, res);
+        }
+        res.status(500).send('Failed to generate preview');
+    } catch (err) {
+        if (!res.headersSent) res.status(500).send(err.message);
+    }
+};
+
+router.get('/media/preview', handlePreview);
+router.get('/preview', handlePreview);
 
 module.exports = router;

@@ -214,6 +214,7 @@
                     <span class="mono ellipsis" id="qr-modal-url" style="font-size:12.5px; flex:1; min-width:0; color:var(--apple-text-main)">${escapeHtml(targetUrl)}</span>
                     <button class="apple-btn apple-btn-glass apple-btn-sm" data-act="copy">${I('copy', 13)} 复制</button>
                 </div>
+                <div id="qr-remote-section" style="display:none; margin:-8px 0 16px"></div>
                 <div class="modal-actions">
                     <button class="apple-btn apple-btn-glass" data-act="close">关闭</button>
                     <button class="apple-btn apple-btn-primary" data-act="open">${I('external', 15)} 在浏览器打开</button>
@@ -244,18 +245,65 @@
             } catch (e) {}
         });
 
+        // 渲染 Tailscale 远程连接区：展示跨网络直连地址，支持复制与切换远程二维码
+        const renderRemoteSection = (tsIps, port) => {
+            const section = modal.el.querySelector('#qr-remote-section');
+            if (!section) return;
+            const remoteRows = tsIps.map(ip => `http://${ip}:${port}`);
+            section.style.display = 'block';
+            section.innerHTML = `
+                <div style="display:flex; align-items:center; gap:6px; margin:0 0 8px 2px; font-size:12px; font-weight:600; color:var(--apple-text-secondary)">
+                    ${I('globe', 13)} Tailscale 远程连接（跨网络可用，地址永久固定）
+                </div>
+                ${remoteRows.map((rUrl, i) => `
+                <div class="row-between" style="background:var(--mat-thin); border:1px solid var(--apple-border); border-radius:12px; padding:8px 14px; margin-bottom:8px">
+                    <span class="mono ellipsis" style="font-size:12.5px; flex:1; min-width:0; color:var(--apple-text-main)">${escapeHtml(rUrl)}</span>
+                    <button class="apple-btn apple-btn-glass apple-btn-sm" data-remote-copy="${i}">${I('copy', 12)} 复制</button>
+                    <button class="apple-btn apple-btn-glass apple-btn-sm" data-remote-qr="${i}">${I('qr', 12)} 二维码</button>
+                </div>`).join('')}
+            `;
+            remoteRows.forEach((rUrl, i) => {
+                const copyBtn = section.querySelector(`[data-remote-copy="${i}"]`);
+                if (copyBtn) copyBtn.addEventListener('click', async () => {
+                    try {
+                        await navigator.clipboard.writeText(rUrl);
+                        if (ui.toast) ui.toast('远程地址已复制到剪贴板', 'success');
+                    } catch (e) {}
+                });
+                const qrBtn = section.querySelector(`[data-remote-qr="${i}"]`);
+                if (qrBtn) qrBtn.addEventListener('click', async () => {
+                    if (!(window.api && window.api.generateQrCode)) {
+                        if (ui.toast) ui.toast('当前环境不支持生成远程二维码，请复制地址使用', 'info');
+                        return;
+                    }
+                    try {
+                        const remoteQr = await window.api.generateQrCode(rUrl);
+                        if (remoteQr && isQrModalOpen) {
+                            const box = modal.el.querySelector('#qr-modal-box');
+                            const urlEl = modal.el.querySelector('#qr-modal-url');
+                            if (box) box.innerHTML = `<img src="${remoteQr}" alt="QR" style="width:200px; height:200px; display:block;">`;
+                            if (urlEl) urlEl.textContent = rUrl;
+                        }
+                    } catch (e) {}
+                });
+            });
+        };
+
         // 异步在后台拉取或本地生成高保真二维码并替换
         (async () => {
             try {
-                if (!qrImg) {
-                    const probeUrl = targetUrl.startsWith('http') ? targetUrl : `http://127.0.0.1:${st.port || 3000}`;
-                    const headers = (window.LanDiskAuth && window.LanDiskAuth.authHeaders) ? window.LanDiskAuth.authHeaders() : {};
-                    const res = await fetch(probeUrl.replace(/\/$/, '') + '/api/control/status', { headers }).then(r => r.json()).catch(() => ({}));
-                    if (res && res.qrDataUrl) {
-                        qrImg = res.qrDataUrl;
-                        st.qrDataUrl = qrImg;
-                        if (res.url) targetUrl = res.qrUrl || res.url;
-                    }
+                // 始终拉取 status：既补齐二维码，也获取服务端识别的 Tailscale 远程地址
+                const probeUrl = targetUrl.startsWith('http') ? targetUrl : `http://127.0.0.1:${st.port || 3000}`;
+                const headers = (window.LanDiskAuth && window.LanDiskAuth.authHeaders) ? window.LanDiskAuth.authHeaders() : {};
+                const res = await fetch(probeUrl.replace(/\/$/, '') + '/api/control/status', { headers }).then(r => r.json()).catch(() => ({}));
+                if (res && res.qrDataUrl && !qrImg) {
+                    qrImg = res.qrDataUrl;
+                    st.qrDataUrl = qrImg;
+                    if (res.url) targetUrl = res.qrUrl || res.url;
+                }
+                // 服务端识别到 Tailscale 网卡时，展示跨网络远程连接区
+                if (res && res.addresses && Array.isArray(res.addresses.tailscale) && res.addresses.tailscale.length) {
+                    renderRemoteSection(res.addresses.tailscale, res.port || st.port || 3000);
                 }
             } catch (e) {}
 

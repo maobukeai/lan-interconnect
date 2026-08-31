@@ -171,6 +171,18 @@
         const target = $('#view-' + view);
         if (target) target.classList.add('active');
 
+        // 迷你悬浮窗：离开播放器视图但仍在播放时，舞台自动摘挂成小窗；
+        // 回到播放器视图时把舞台放回原位。isMiniActive 判空防止 dock 重入循环
+        if (window.AppleMediaPlayer && typeof window.AppleMediaPlayer.enterMiniPlayer === 'function') {
+            const p = window.AppleMediaPlayer;
+            const isPlayingMedia = !!(p.currentMedia && (p.isPlaying || (p.dom.media && !p.dom.media.paused)));
+            if (view === 'player') {
+                if (p.isMiniActive()) p.exitMiniPlayer(true);
+            } else if (isPlayingMedia && typeof p.isMiniActive === 'function' && !p.isMiniActive()) {
+                p.enterMiniPlayer();
+            }
+        }
+
         if (pushState && history.pushState) history.pushState({ type: 'tab', tab: view }, '', '#tab=' + view);
 
         if (view === 'dashboard') { loadDashboard(); loadHistoryFeed(); }
@@ -204,17 +216,17 @@
     window.addEventListener('resize', () => updateDockGlider(null, false));
     setTimeout(() => updateDockGlider(null, false), 60);
 
-    // 手机返回键：关弹窗 → 回退目录 → 切 tab
+    // 手机返回键 / 浏览器后退：全站唯一的 popstate 入口。
+    // 此前这里和下方原生返回键那段各注册了一个 popstate，每次后退两段都会跑，
+    // 路由互相抢（这里会直接 close() 播放器，跳过「先收抽屉」那一级）
     window.addEventListener('popstate', (e) => {
-        const playerView = document.getElementById('view-player');
-        if (playerView && playerView.classList.contains('active')) {
-            if (window.AppleMediaPlayer) window.AppleMediaPlayer.close();
-            return;
+        // 优先交给统一的逐级返回阶梯（弹窗 → 播放器抽屉 → 播放器 → 上级目录 → 主视图）
+        if (typeof window.__landiskGlobalBack === 'function') {
+            if (window.__landiskGlobalBack()) {
+                history.pushState(null, '', window.location.href);
+                return;
+            }
         }
-        const imgModal = $('#image-modal');
-        if (imgModal && imgModal.style.display === 'flex') { imgModal.style.display = 'none'; return; }
-        const txtModal = $('#text-modal');
-        if (txtModal && txtModal.style.display === 'flex') { txtModal.style.display = 'none'; return; }
 
         if (e.state && e.state.type === 'dir' && e.state.path) {
             FileExplorerComponent.loadPath(e.state.path, false);
@@ -811,6 +823,30 @@
         }, { passive: true });
     }
 
+    /* ---------- 常用服务器收藏 (跨 Wi-Fi 与 Tailscale 远程地址统一管理) ---------- */
+    const SAVED_SERVERS_KEY = 'landisk_saved_servers';
+
+    function getSavedServers() {
+        try {
+            const list = JSON.parse(localStorage.getItem(SAVED_SERVERS_KEY) || '[]');
+            return Array.isArray(list) ? list.filter(s => s && s.url) : [];
+        } catch (e) { return []; }
+    }
+
+    function addSavedServer(url, name) {
+        if (!url) return;
+        const cleanUrl = String(url).replace(/\/$/, '');
+        const list = getSavedServers().filter(s => s.url !== cleanUrl);
+        list.unshift({ url: cleanUrl, name: name || cleanUrl.replace(/^https?:\/\//, ''), ts: Date.now() });
+        try { localStorage.setItem(SAVED_SERVERS_KEY, JSON.stringify(list.slice(0, 8))); } catch (e) {}
+    }
+
+    function removeSavedServer(url) {
+        try {
+            localStorage.setItem(SAVED_SERVERS_KEY, JSON.stringify(getSavedServers().filter(s => s.url !== url)));
+        } catch (e) {}
+    }
+
     /* ---------- 局域网高速雷达与连接器 (Mobile & Web Radar Engine) ---------- */
     function initRadar() {
         const modal = $('#radar-modal');
@@ -847,6 +883,7 @@
         btnOpen && btnOpen.addEventListener('click', () => {
             modal.style.display = 'flex';
             if (ipInput && savedServer) ipInput.value = savedServer.replace(/^https?:\/\//, '');
+            renderSavedServers();
             hydrateIcons();
         });
 
@@ -921,6 +958,9 @@
                 window.currentServerUrl = fullUrl;
             }
 
+            // 成功连接即收藏为常用服务器 (局域网地址与 Tailscale 远程地址都长期保留)
+            addSavedServer(fullUrl, (serverInfo && serverInfo.hostname) || '');
+
             const displayHost = fullUrl.replace(/^https?:\/\//, '');
             if (labelEl) labelEl.textContent = `当前已绑定: ${displayHost}`;
             if (btnLabel) btnLabel.textContent = displayHost.length > 18 ? displayHost.substring(0, 16) + '…' : displayHost;
@@ -953,6 +993,63 @@
                 LanDiskUI.toast(`已连通电脑，请输入电脑端设置的 PIN 密码`, 'info', 4000);
             }
         };
+
+        // 渲染常用服务器收藏列表 (局域网与 Tailscale 远程地址一键直连)
+        function renderSavedServers() {
+            const wrap = $('#radar-saved-wrap');
+            const savedListEl = $('#radar-saved-list');
+            if (!wrap || !savedListEl) return;
+            const saved = getSavedServers();
+            wrap.style.display = saved.length ? 'block' : 'none';
+            if (!saved.length) {
+                savedListEl.innerHTML = '';
+                return;
+            }
+            savedListEl.innerHTML = saved.map((s, i) => {
+                const isRemote = /^100\./.test(s.url.replace(/^https?:\/\//, ''));
+                const icon = isRemote ? '🌐' : '💻';
+                return `
+                    <div class="row" style="justify-content:space-between; align-items:center; padding:10px 12px; background:var(--mat-thick); border:1px solid var(--apple-border); border-radius:12px; cursor:pointer; transition:all 0.2s;" data-saved-url="${s.url}">
+                        <div style="min-width:0; flex:1;">
+                            <div style="font-size:13px; font-weight:600; color:var(--apple-text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${icon} ${s.name}</div>
+                            <div style="font-size:11px; color:var(--apple-text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${s.url.replace(/^https?:\/\//, '')}</div>
+                        </div>
+                        <button class="apple-btn-icon" data-saved-del="${i}" style="width:26px; height:26px; font-size:12px; flex-shrink:0;">✕</button>
+                    </div>
+                `;
+            }).join('');
+            savedListEl.querySelectorAll('[data-saved-url]').forEach(card => {
+                card.addEventListener('click', (e) => {
+                    if (e.target.closest('[data-saved-del]')) return;
+                    connectToServer(card.getAttribute('data-saved-url'));
+                });
+            });
+            savedListEl.querySelectorAll('[data-saved-del]').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const idx = parseInt(btn.getAttribute('data-saved-del'), 10);
+                    const item = getSavedServers()[idx];
+                    if (item && confirm(`删除常用服务器「${item.name || item.url}」？`)) {
+                        removeSavedServer(item.url);
+                        renderSavedServers();
+                    }
+                });
+            });
+        }
+
+        // 暴露给启动流程：收藏竞速切换时复用完整连接原语
+        window.appConnectToServer = connectToServer;
+
+        // 识别 Tailscale 远程地址输入，给予即时引导
+        ipInput && ipInput.addEventListener('input', () => {
+            if (!statusEl) return;
+            const v = (ipInput.value || '').trim();
+            if (/^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(v)) {
+                statusEl.textContent = '🌐 已识别 Tailscale 远程地址，跨网络也可直连';
+            } else if (statusEl.textContent.startsWith('🌐')) {
+                statusEl.textContent = '';
+            }
+        });
 
         btnManual && btnManual.addEventListener('click', () => {
             const val = ipInput ? ipInput.value.trim() : '';
@@ -1145,6 +1242,7 @@
 
         window.triggerAppRadar = () => {
             modal.style.display = 'flex';
+            renderSavedServers();
             triggerRadarScan(true);
         };
     }
@@ -1184,6 +1282,28 @@
             return;
         }
 
+        // 收藏竞速切换：已绑定地址失联时（如出门后局域网 IP 不可达），并行探测常用服务器
+        //（含 Tailscale 远程地址），总耗时约等于单次探测超时，先通者自动接管
+        const failoverToFavorite = async (excludeUrl) => {
+            const norm = (u) => String(u || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
+            const favorites = getSavedServers().filter(s => norm(s.url) !== norm(excludeUrl));
+            if (!favorites.length) return false;
+            const probes = await Promise.all(favorites.map(s =>
+                fetch(`${s.url}/api/ping`, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' },
+                    signal: AbortSignal.timeout(3000)
+                }).then(r => (r.ok ? s.url : null)).catch(() => null)
+            ));
+            const winner = probes.find(Boolean);
+            if (winner && window.appConnectToServer) {
+                if (window.LanDiskUI && LanDiskUI.toast) LanDiskUI.toast('原地址失联，已自动切换至可用服务器', 'info', 3000);
+                window.appConnectToServer(winner);
+                return true;
+            }
+            return false;
+        };
+
         // 静默校验登录态（优先探测免鉴权 ping，再核验免密/PIN）
         try {
             const pingRes = await fetch(api('/api/ping'), {
@@ -1215,14 +1335,16 @@
                 $('#pin-input').focus();
             } else {
                 if (isAppContainer) {
-                    if (window.triggerAppRadar) window.triggerAppRadar();
+                    const switched = await failoverToFavorite(currentServer);
+                    if (!switched && window.triggerAppRadar) window.triggerAppRadar();
                 } else {
                     $('#login-overlay').style.display = 'flex';
                 }
             }
         } catch (e) {
             if (isAppContainer) {
-                if (window.triggerAppRadar) window.triggerAppRadar();
+                const switched = await failoverToFavorite(currentServer);
+                if (!switched && window.triggerAppRadar) window.triggerAppRadar();
             } else {
                 $('#login-overlay').style.display = 'flex';
             }
@@ -1272,13 +1394,17 @@
             }
 
             // 4. 关闭播放器内部抽屉或菜单
-            if (window.ApplePlayerInstance) {
-                if (typeof window.ApplePlayerInstance.isDrawerOpen === 'function' && window.ApplePlayerInstance.isDrawerOpen()) {
-                    window.ApplePlayerInstance.closeDrawers();
+            // 全局单例名是 AppleMediaPlayer（shared/apple-player.js 末尾赋值）。
+            // 此前这里读的 ApplePlayerInstance 全仓库从未被赋值过，整段都是死代码，
+            // 导致物理返回键永远跳过「先收抽屉/关菜单」这两级
+            const player = window.AppleMediaPlayer;
+            if (player) {
+                if (typeof player.isDrawerOpen === 'function' && player.isDrawerOpen()) {
+                    player.closeDrawers();
                     return true;
                 }
-                if (typeof window.ApplePlayerInstance.isMenuOpen === 'function' && window.ApplePlayerInstance.isMenuOpen()) {
-                    window.ApplePlayerInstance.closeMenuPopover();
+                if (typeof player.isMenuOpen === 'function' && player.isMenuOpen()) {
+                    player.closeMenuPopover();
                     return true;
                 }
                 // 如果处于全屏播放态或在播放器视图中，退出播放器返回文件列表
@@ -1286,20 +1412,38 @@
                 const stageBox = $('#player-stage-box');
                 const isPlayerActive = (playerView && playerView.classList.contains('active')) || (stageBox && stageBox.classList.contains('is-fullscreen'));
                 if (isPlayerActive) {
-                    window.ApplePlayerInstance.close();
+                    player.close();
                     return true;
                 }
             }
 
-            // 5. 文件浏览器子目录返回上一级
-            if (window.FileExplorerComponent && !window.FileExplorerComponent.isRoot) {
+            // 4.5 迷你悬浮窗：返回键优先放回播放器大视图，再按一次才退出播放器
+            if (player && typeof player.isMiniActive === 'function' && player.isMiniActive()) {
+                player.exitMiniPlayer(true);
+                return true;
+            }
+
+            // 5. 媒体剧场：目录层级逐级返回（返回上一级文件夹，而不是直接退出视图）。
+            // goUp 返回 false 表示已到剧场顶层，才允许落到第 6/7 级
+            const activeViewEl = document.querySelector('.view-section.active');
+            if (activeViewEl && activeViewEl.id === 'view-media' &&
+                window.MediaTheaterComponent && typeof window.MediaTheaterComponent.goUp === 'function') {
+                if (window.MediaTheaterComponent.goUp()) return true;
+            }
+
+            // 6. 文件浏览器子目录返回上一级
+            // isRoot 是实例字段，静态面上没有它：此前读到的永远是 undefined，
+            // !undefined 恒为真，于是每次返回都无条件 goUp()，抢掉了「回到主视图」那一级
+            const explorer = (window.FileExplorerComponent && typeof window.FileExplorerComponent.getInstance === 'function')
+                ? window.FileExplorerComponent.getInstance()
+                : null;
+            if (explorer && !explorer.isRoot) {
                 window.FileExplorerComponent.goUp();
                 return true;
             }
 
-            // 6. 如果在非主文件视图（如聊天、屏幕监控、大盘、工具等），返回主文件视图
-            const activeView = document.querySelector('.view-section.active');
-            if (activeView && activeView.id !== 'view-files') {
+            // 7. 如果在非主文件视图（如聊天、屏幕监控、大盘、工具等），返回主文件视图
+            if (activeViewEl && activeViewEl.id !== 'view-files') {
                 const filesDock = document.querySelector('.dock-item[data-view="files"]');
                 if (filesDock) {
                     filesDock.click();
@@ -1307,7 +1451,7 @@
                 }
             }
 
-            // 7. 已经在主界面根目录且无弹窗：双击防误触退出 App
+            // 8. 已经在主界面根目录且无弹窗：双击防误触退出 App
             const now = Date.now();
             if (now - lastBackPressTime < 2000) {
                 if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
@@ -1325,6 +1469,9 @@
 
         // 注册 Capacitor 原生物理返回键事件
         if (typeof window !== 'undefined') {
+            // 暴露给上方唯一的 popstate 监听器复用，避免两处各写一套返回阶梯
+            window.__landiskGlobalBack = handleGlobalBack;
+
             const registerBack = () => {
                 if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
                     window.Capacitor.Plugins.App.addListener('backButton', () => {
@@ -1335,13 +1482,8 @@
             registerBack();
             document.addEventListener('deviceready', registerBack);
 
-            // 浏览器环境/PWA 历史后退拦截
-            window.addEventListener('popstate', () => {
-                const handled = handleGlobalBack();
-                if (handled) {
-                    history.pushState(null, '', window.location.href);
-                }
-            });
+            // 浏览器/PWA 的历史后退拦截统一由上方那个 popstate 监听器处理，
+            // 这里只压入一条哨兵历史记录，让首次后退有东西可拦
             history.pushState(null, '', window.location.href);
         }
     }

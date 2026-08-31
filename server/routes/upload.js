@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { state, isSafePath, sanitizeFileName, getCleanIp, DATA_DIR } = require('../config');
 const historyService = require('../services/history');
+const { dirCacheInvalidateParent } = require('../services/dir-cache');
 
 // 分片 hash 只允许字母数字与横线，长度 6-64，防止用 fileHash 拼出任意目录
 function isValidFileHash(hash) {
@@ -81,8 +82,10 @@ router.post('/upload/raw', (req, res) => {
         const fullPath = path.join(targetPath, fileName);
         const writeStream = fs.createWriteStream(fullPath);
         let finished = false;
+        let reqEnded = false;
 
         const cleanupHalfFile = () => {
+            if (finished) return;
             writeStream.destroy();
             if (fs.existsSync(fullPath)) {
                 try { fs.unlinkSync(fullPath); } catch(e) {}
@@ -107,19 +110,27 @@ router.post('/upload/raw', (req, res) => {
         req.pipe(writeStream);
 
         req.on('end', () => {
+            reqEnded = true;
             // 等写入流真正落盘后再响应，避免客户端立刻读取到不完整文件
             writeStream.end(() => {
                 if (!finished) {
                     finished = true;
+                    dirCacheInvalidateParent(fullPath);
                     historyService.recordTransfer('upload', {
                         name: fileName,
                         size: receivedBytes,
                         path: fullPath,
                         ip: getCleanIp(req.ip || req.socket?.remoteAddress)
                     });
-                    res.json({ message: 'File uploaded successfully', filename: fileName });
+                    if (!res.headersSent) res.json({ message: 'File uploaded successfully', filename: fileName });
                 }
             });
+        });
+
+        // 客户端中途断开：req 只触发 close/aborted，不触发 error/end，
+        // 必须在此清理停止写入并移除半截文件，否则句柄驻留且文件残留
+        req.on('close', () => {
+            if (!reqEnded) cleanupHalfFile();
         });
 
         req.on('error', (err) => {
@@ -249,6 +260,14 @@ router.post('/upload/merge', async (req, res) => {
     mergingHashes.add(fileHash);
     try {
         const writeStream = fs.createWriteStream(targetFilePath);
+        // 注册 writeStream 错误监听：合并中途写入失败时 destroy 当前 rs，
+        // 否则 rs 读向已关闭的流会触发未捕获异常
+        let streamFailed = false;
+        let currentRs = null;
+        writeStream.on('error', (err) => {
+            streamFailed = true;
+            if (currentRs) currentRs.destroy();
+        });
 
         // 逐片流式写入并处理背压，避免大文件合并时内存暴涨
         for (let i = 0; i < chunkCount; i++) {
@@ -259,15 +278,25 @@ router.post('/upload/merge', async (req, res) => {
                 return res.status(400).json({ error: `缺少分片 ${i}` });
             }
             await new Promise((resolve, reject) => {
+                if (streamFailed) return reject(new Error('写入流已失败'));
                 const rs = fs.createReadStream(chunkPath);
+                currentRs = rs;
                 rs.on('data', (chunk) => {
+                    if (streamFailed) {
+                        rs.destroy();
+                        reject(new Error('写入流已失败'));
+                        return;
+                    }
                     if (!writeStream.write(chunk)) {
                         rs.pause();
                         writeStream.once('drain', () => rs.resume());
                     }
                 });
-                rs.on('end', resolve);
-                rs.on('error', reject);
+                rs.on('end', () => { currentRs = null; resolve(); });
+                rs.on('error', (err) => {
+                    rs.destroy();
+                    reject(err);
+                });
             });
         }
 
@@ -282,6 +311,7 @@ router.post('/upload/merge', async (req, res) => {
         } catch(e) {}
         let mergedSize = 0;
         try { mergedSize = fs.statSync(targetFilePath).size; } catch (e) {}
+        dirCacheInvalidateParent(targetFilePath);
         historyService.recordTransfer('upload', {
             name: safeName,
             size: mergedSize,

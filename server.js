@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const { state, generateQrToken, cleanupExpiredTokens, shouldCompress, getLocalIpAddress } = require('./server/config');
+const { state, generateQrToken, cleanupExpiredTokens, shouldCompress, getLocalIpAddress, getAddressCatalog } = require('./server/config');
 const { checkAuth, checkSensitive, isLocalRequest, isAllowedApiOrigin } = require('./server/middleware/auth');
 const mdnsResponder = require('./server/services/mdns');
 const trashService = require('./server/services/trash');
@@ -99,7 +99,7 @@ function startServer(config) {
             }
             cleanupExpiredTokens();
             cleanupTempChunks();
-            trashService.cleanupExpired();
+            trashService.cleanupExpired().catch(() => {});
         }, 60000);
 
         // 流量统计中间件
@@ -212,7 +212,8 @@ function startServer(config) {
                 qrUrl,
                 qrDataUrl,
                 ip,
-                port
+                port,
+                addresses: getAddressCatalog()
             });
         });
 
@@ -280,6 +281,11 @@ function startServer(config) {
 
                 // 启动局域网 mDNS 本地域名广播 (landisk.local)
                 mdnsResponder.start(ip);
+
+                // 免密 + 全网监听时提醒（不改变默认行为，仅提示设置 PIN 收紧访问面）
+                if (!state.currentConfig.pin && bindHost === '0.0.0.0') {
+                    console.warn('[安全提示] 当前未设置 PIN 访问密码且监听所有网卡，局域网内任意设备均可访问全部内容。建议在设置中配置 PIN 密码。');
+                }
 
                 console.log(`[Node Server] 服务已在 http://${ip}:${currentPort} 成功启动 (绑定: ${bindHost})`);
                 resolve({

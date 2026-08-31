@@ -55,6 +55,11 @@ router.post('/download/batch', (req, res) => {
 
     archive.pipe(res);
 
+    // 客户端中途断开时中止打包，避免 archiver 继续读完全部文件写向已销毁的 socket
+    req.on('close', () => {
+        try { archive.abort(); } catch (e) {}
+    });
+
     for (const file of files) {
         if (!isSafePath(file)) continue;
         if (fs.existsSync(file)) {
@@ -71,7 +76,7 @@ router.post('/download/batch', (req, res) => {
     archive.finalize();
 });
 
-// 媒体 MIME 类型映射字典
+// 媒体 MIME 类型映射字典（与 shared/media-types.js 的白名单保持同一覆盖面）
 const MEDIA_MIME_TYPES = {
     '.mp4': 'video/mp4',
     '.m4v': 'video/mp4',
@@ -81,12 +86,24 @@ const MEDIA_MIME_TYPES = {
     '.avi': 'video/x-msvideo',
     '.flv': 'video/x-flv',
     '.ts': 'video/mp2t',
+    '.m2ts': 'video/mp2t',
+    '.wmv': 'video/x-ms-wmv',
+    '.3gp': 'video/3gpp',
+    '.3g2': 'video/3gpp2',
+    '.mpg': 'video/mpeg',
+    '.mpeg': 'video/mpeg',
+    '.ogv': 'video/ogg',
+    '.rm': 'application/vnd.rn-realmedia',
+    '.rmvb': 'application/vnd.rn-realmedia-vbr',
     '.mp3': 'audio/mpeg',
     '.wav': 'audio/wav',
     '.flac': 'audio/flac',
     '.aac': 'audio/aac',
     '.ogg': 'audio/ogg',
-    '.m4a': 'audio/mp4'
+    '.oga': 'audio/ogg',
+    '.m4a': 'audio/mp4',
+    '.opus': 'audio/opus',
+    '.wma': 'audio/x-ms-wma'
 };
 
 // 局域网极致秒开流式传输引擎 (Zero-latency LAN Media Streamer)
@@ -130,16 +147,28 @@ const handleStream = (req, res, isHead = false) => {
 
     if (range) {
         // 解析 Range: bytes=start-end
-        const parts = range.replace(/bytes=/, "").split("-");
-        const start = parseInt(parts[0], 10);
-        let end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+        let parts = range.replace(/bytes=/, "").split("-");
+        let start = parseInt(parts[0], 10);
+        let end = parts[1] !== undefined ? parseInt(parts[1], 10) : NaN;
+
+        // 后缀 Range (bytes=-500)：请求最后 500 字节
+        if (isNaN(start) && !isNaN(end) && parts[0].trim() === '') {
+            start = Math.max(0, fileSize - end);
+            end = fileSize - 1;
+        }
 
         if (isNaN(start) || start >= fileSize) {
             res.setHeader('Content-Range', `bytes */${fileSize}`);
             return res.status(416).end();
         }
 
-        if (isNaN(end) || end >= fileSize) {
+        // 开放式 Range (如 Range: bytes=0-) 限制每次响应最大 2MB~4MB 切片：
+        // 客户端 15ms~25ms 即收齐首批关键帧瞬间起播，同时避免预取/拖拽把整部视频
+        // 写进 Service Worker 缓存（cache key 只按 Range 头区分，不截断等于全量下载）
+        if (isNaN(end) || parts[1].trim() === '') {
+            const maxChunk = start === 0 ? 2 * 1024 * 1024 : 4 * 1024 * 1024;
+            end = Math.min(fileSize - 1, start + maxChunk - 1);
+        } else if (end >= fileSize) {
             end = fileSize - 1;
         }
 

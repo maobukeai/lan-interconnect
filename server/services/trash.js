@@ -1,4 +1,5 @@
 const fs = require('fs');
+const fsp = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
 const { TRASH_DIR } = require('../config');
@@ -38,43 +39,55 @@ function saveMeta() {
     } catch (e) {}
 }
 
-function getSize(p) {
+// 异步计算目录大小：删除/恢复大目录时不再冻结事件循环拖垮正在播放的流
+async function getSize(p) {
     try {
-        const st = fs.statSync(p);
+        const st = await fsp.stat(p);
         if (st.isFile()) return st.size;
         let total = 0;
-        const walk = (dir) => {
-            for (const name of fs.readdirSync(dir)) {
-                const full = path.join(dir, name);
-                try {
-                    const s = fs.statSync(full);
-                    if (s.isDirectory()) walk(full); else total += s.size;
-                } catch (e) {}
+        const walk = async (dir) => {
+            let items;
+            try {
+                items = await fsp.readdir(dir, { withFileTypes: true });
+            } catch (e) {
+                return;
+            }
+            const subDirs = [];
+            const fileStats = [];
+            for (const item of items) {
+                const full = path.join(dir, item.name);
+                if (item.isDirectory()) subDirs.push(full);
+                else fileStats.push(fsp.stat(full).then(s => { total += s.size; }).catch(() => {}));
+            }
+            await Promise.all(fileStats);
+            for (const sub of subDirs) {
+                await walk(sub);
             }
         };
-        walk(p);
+        await walk(p);
         return total;
     } catch (e) { return 0; }
 }
 
-function moveSafe(src, dest) {
+// 同盘 rename 秒完成；跨盘时降级为异步递归复制 + 删除，避免同步复制大目录阻塞事件循环
+async function moveSafe(src, dest) {
     try {
         fs.renameSync(src, dest);
         return true;
     } catch (e) {
         try {
-            fs.cpSync(src, dest, { recursive: true });
-            fs.rmSync(src, { recursive: true, force: true });
+            await fsp.cp(src, dest, { recursive: true });
+            await fsp.rm(src, { recursive: true, force: true });
             return true;
         } catch (e2) {
-            try { fs.rmSync(dest, { recursive: true, force: true }); } catch (e3) {}
+            try { await fsp.rm(dest, { recursive: true, force: true }); } catch (e3) {}
             return false;
         }
     }
 }
 
 // 移入回收站，返回条目；失败抛错
-function trashItem(originPath) {
+async function trashItem(originPath) {
     if (!fs.existsSync(originPath)) throw new Error('文件不存在');
     ensureTrashDir();
 
@@ -82,14 +95,14 @@ function trashItem(originPath) {
     const name = path.basename(originPath);
     const trashPath = path.join(TRASH_DIR, `${id}__${name.replace(/[/\\?%*:|"<>\u0000-\u001f]/g, '-')}`);
 
-    if (!moveSafe(originPath, trashPath)) throw new Error('移动文件到回收站失败');
+    if (!(await moveSafe(originPath, trashPath))) throw new Error('移动文件到回收站失败');
 
     const item = {
         id,
         name,
         originPath: path.resolve(originPath),
         trashPath,
-        size: getSize(trashPath),
+        size: await getSize(trashPath),
         isDirectory: (() => { try { return fs.statSync(trashPath).isDirectory(); } catch (e) { return false; } })(),
         time: Date.now()
     };
@@ -103,7 +116,7 @@ function trashItem(originPath) {
     return item;
 }
 
-function restoreItem(id) {
+async function restoreItem(id) {
     const item = trashItems.find(t => t.id === id);
     if (!item) throw new Error('回收站中不存在该条目');
     if (!fs.existsSync(item.trashPath)) throw new Error('回收站实体文件已丢失');
@@ -125,7 +138,7 @@ function restoreItem(id) {
         }
     }
 
-    if (!moveSafe(item.trashPath, dest)) throw new Error('恢复失败：无法移动文件');
+    if (!(await moveSafe(item.trashPath, dest))) throw new Error('恢复失败：无法移动文件');
     trashItems = trashItems.filter(t => t.id !== id);
     saveMeta();
     return { restoredTo: dest };
@@ -139,10 +152,13 @@ function purgeItem(id) {
     saveMeta();
 }
 
-function purgeAll() {
+async function purgeAll() {
     let cleaned = 0;
     for (const item of trashItems) {
-        try { fs.rmSync(item.trashPath, { recursive: true, force: true }); cleaned++; } catch (e) {}
+        try {
+            await fsp.rm(item.trashPath, { recursive: true, force: true });
+            cleaned++;
+        } catch (e) {}
     }
     trashItems = [];
     saveMeta();
@@ -158,16 +174,17 @@ function list() {
     return trashItems.map(t => ({ id: t.id, name: t.name, originPath: t.originPath, size: t.size, isDirectory: t.isDirectory, time: t.time }));
 }
 
-// 清理回收站中滞留超过 30 天的条目
-function cleanupExpired() {
+// 清理回收站中滞留超过 30 天的条目（异步，避免清空大目录时阻塞）
+async function cleanupExpired() {
     const cutoff = Date.now() - 30 * 24 * 3600 * 1000;
     const expired = trashItems.filter(t => t.time < cutoff);
-    if (!expired.length) return;
-    expired.forEach(t => {
-        try { fs.rmSync(t.trashPath, { recursive: true, force: true }); } catch (e) {}
-    });
+    if (!expired.length) return 0;
+    for (const t of expired) {
+        try { await fsp.rm(t.trashPath, { recursive: true, force: true }); } catch (e) {}
+    }
     trashItems = trashItems.filter(t => t.time >= cutoff);
     saveMeta();
+    return expired.length;
 }
 
 loadMeta();

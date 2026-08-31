@@ -123,12 +123,14 @@
             const streamUrl = getUrl(`/api/stream?path=${encodeURIComponent(path)}${authQ()}`);
 
             if (type === 'video' || type === 'audio') {
+                // 统一白名单（shared/media-types.js）：本地旧正则漏掉 ts/m4v/flv/wmv/rmvb 等
+                const M = global.MediaTypes || null;
                 const playlist = (currentFiles || [])
-                    .filter(f => !f.isDirectory && /\.(mp4|mkv|webm|mov|avi|mp3|wav|flac|aac|m4a)$/i.test(f.name))
+                    .filter(f => !f.isDirectory && (M ? M.isMedia(f.name) : /\.(mp4|mkv|webm|mov|avi|mp3|wav|flac|aac|m4a)$/i.test(f.name)))
                     .map(f => ({
                         name: f.name,
                         path: f.path,
-                        type: /\.(mp3|wav|flac|aac|m4a)$/i.test(f.name) ? 'audio' : 'video',
+                        type: (M ? M.isAudio(f.name) : /\.(mp3|wav|flac|aac|m4a)$/i.test(f.name)) ? 'audio' : 'video',
                         url: getUrl(`/api/stream?path=${encodeURIComponent(f.path)}${authQ()}`)
                     }));
                 const currentItem = { name, path, type, url: streamUrl };

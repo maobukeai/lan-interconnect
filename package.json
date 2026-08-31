@@ -1,6 +1,6 @@
 {
   "name": "lan-disk",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "猫步互联 - 局域网文件共享与跨设备通信工具",
   "author": "Developer",
   "main": "main.js",
@@ -8,8 +8,9 @@
     "start": "electron .",
     "server": "node server.js",
     "build": "electron-builder --win --x64",
+    "build:desktop": "node scripts/build-desktop-web.js",
     "build:tauri": "tauri build",
-    "build:android": "node scripts/build-mobile-web.js && npx cap sync android && cd android && gradlew.bat assembleDebug",
+    "build:android": "node scripts/build-mobile-web.js && npx cap sync android && node scripts/patch-android-java17.js && cd android && gradlew.bat assembleDebug",
     "build:all": "npm run build && npm run build:tauri",
     "rebuild": "electron-rebuild -f -w",
     "clean": "rimraf dist release"

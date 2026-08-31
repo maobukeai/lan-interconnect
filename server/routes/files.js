@@ -6,12 +6,22 @@ const path = require('path');
 const { state, isSafePath, sanitizeFileName } = require('../config');
 const { checkSensitive } = require('../middleware/auth');
 const trashService = require('../services/trash');
+const { dirCacheGet, dirCacheSet, dirCacheInvalidate, dirCacheInvalidateParent } = require('../services/dir-cache');
+
+// 盘符列表缓存（探测 26 个盘符较贵，10s 内直接复用）
+const DRIVES_CACHE_TTL = 10000;
+let drivesCache = { ts: 0, data: null };
 
 // 获取驱动器列表
 router.get('/drives', (req, res) => {
     if (state.currentConfig.mode === 'shared') {
         return res.json([{ path: state.sharedDir, name: '共享文件夹 (互传目录)', free: 0, total: 0 }]);
     }
+    if (drivesCache.data && Date.now() - drivesCache.ts < DRIVES_CACHE_TTL) {
+        return res.json(drivesCache.data);
+    }
+
+    let drives = null;
     if (process.platform !== 'win32') {
         let free = 0, total = 0;
         if (fs.statfsSync) {
@@ -21,40 +31,39 @@ router.get('/drives', (req, res) => {
                 total = stats.bsize * stats.blocks;
             } catch (e) {}
         }
-        return res.json([{ path: '/', name: '根目录 (/)', free, total }]);
-    }
-
-    // Windows 盘符自动探测 (A: - Z:)
-    const drives = [];
-    for (let i = 65; i <= 90; i++) {
-        const letter = String.fromCharCode(i) + ':\\';
-        try {
-            if (fs.existsSync(letter)) {
-                let free = 0, total = 0;
-                if (fs.statfsSync) {
-                    try {
-                        const stats = fs.statfsSync(letter);
-                        free = stats.bsize * stats.bfree;
-                        total = stats.bsize * stats.blocks;
-                    } catch (stErr) {}
+        drives = [{ path: '/', name: '根目录 (/)', free, total }];
+    } else {
+        // Windows 盘符自动探测 (A: - Z:)
+        drives = [];
+        for (let i = 65; i <= 90; i++) {
+            const letter = String.fromCharCode(i) + ':\\';
+            try {
+                if (fs.existsSync(letter)) {
+                    let free = 0, total = 0;
+                    if (fs.statfsSync) {
+                        try {
+                            const stats = fs.statfsSync(letter);
+                            free = stats.bsize * stats.bfree;
+                            total = stats.bsize * stats.blocks;
+                        } catch (stErr) {}
+                    }
+                    drives.push({
+                        path: letter,
+                        name: `本地磁盘 (${String.fromCharCode(i)}:)`,
+                        free,
+                        total
+                    });
                 }
-                drives.push({
-                    path: letter,
-                    name: `本地磁盘 (${String.fromCharCode(i)}:)`,
-                    free,
-                    total
-                });
-            }
-        } catch (e) {}
+            } catch (e) {}
+        }
+        if (drives.length === 0) drives = [{ path: 'C:\\', name: '本地磁盘 (C:)', free: 0, total: 0 }];
     }
 
-    if (drives.length > 0) {
-        return res.json(drives);
-    }
-    return res.json([{ path: 'C:\\', name: '本地磁盘 (C:)', free: 0, total: 0 }]);
+    drivesCache = { ts: Date.now(), data: drives };
+    res.json(drives);
 });
 
-// 获取文件列表（异步 fs.promises，大目录不阻塞事件循环）
+// 获取文件列表（异步 fs.promises，大目录不阻塞事件循环；并发 stat + 短 TTL 缓存）
 router.get('/files', async (req, res) => {
     let targetPath = req.query.path || (state.currentConfig.mode === 'shared' ? state.sharedDir : 'C:\\');
 
@@ -63,25 +72,44 @@ router.get('/files', async (req, res) => {
     }
 
     try {
-        const stats = await fsp.stat(targetPath);
-        if (!stats.isDirectory()) {
+        const resolved = path.resolve(targetPath);
+        const dirStats = await fsp.stat(resolved);
+        if (!dirStats.isDirectory()) {
             return res.status(400).json({ error: 'Not a directory' });
         }
 
-        const names = await fsp.readdir(targetPath);
+        // 目录自身 mtime/size 做指纹：内容未变时命中缓存，大目录一扫即回
+        const fingerprint = `${dirStats.mtimeMs}:${dirStats.size}`;
+        const cached = dirCacheGet(resolved, fingerprint);
+        if (cached) return res.json(cached);
+
+        const names = await fsp.readdir(resolved, { withFileTypes: true });
         const LIMIT = 5000; // 单目录条目上限，防超长卡顿
         const fileList = [];
-        for (const file of names.slice(0, LIMIT)) {
-            try {
-                const fileStats = await fsp.stat(path.join(targetPath, file));
-                fileList.push({
-                    name: file,
-                    path: path.join(targetPath, file),
-                    size: fileStats.size,
-                    isDirectory: fileStats.isDirectory(),
-                    mtime: fileStats.mtime
-                });
-            } catch (e) {}
+
+        // 每批 32 路并发 stat，避免 5000 次串行线程池往返
+        const statBatch = async (batch) => {
+            const results = await Promise.all(batch.map(async (name) => {
+                try {
+                    const full = path.join(resolved, name);
+                    const fileStats = await fsp.stat(full);
+                    return {
+                        name,
+                        path: full,
+                        size: fileStats.size,
+                        isDirectory: fileStats.isDirectory(),
+                        mtime: fileStats.mtime
+                    };
+                } catch (e) {
+                    return null;
+                }
+            }));
+            for (const r of results) {
+                if (r) fileList.push(r);
+            }
+        };
+        for (let i = 0; i < names.length && i < LIMIT; i += 32) {
+            await statBatch(names.slice(i, i + 32).map((d) => d.name));
         }
 
         fileList.sort((a, b) => {
@@ -91,11 +119,13 @@ router.get('/files', async (req, res) => {
             return a.isDirectory ? -1 : 1;
         });
 
-        res.json({
+        const payload = {
             currentPath: targetPath,
             truncated: names.length > LIMIT,
             files: fileList
-        });
+        };
+        dirCacheSet(resolved, fingerprint, payload);
+        res.json(payload);
     } catch (err) {
         if (err.code === 'ENOENT') return res.status(404).json({ error: 'Path not found' });
         res.status(500).json({ error: 'Failed to list directory' });
@@ -113,6 +143,7 @@ router.post('/mkdir', checkSensitive, (req, res) => {
         const newPath = path.join(parentPath, safeName);
         if (fs.existsSync(newPath)) return res.status(409).json({ error: '同名文件或文件夹已存在' });
         fs.mkdirSync(newPath);
+        dirCacheInvalidate(parentPath);
         res.json({ success: true, path: newPath });
     } catch (err) {
         res.status(500).json({ error: '创建文件夹失败: ' + err.message });
@@ -136,6 +167,8 @@ router.post('/rename', checkSensitive, (req, res) => {
 
     try {
         fs.renameSync(targetPath, destPath);
+        dirCacheInvalidate(path.dirname(path.resolve(targetPath)));
+        dirCacheInvalidate(path.dirname(path.resolve(destPath)));
         res.json({ success: true, path: destPath });
     } catch (err) {
         res.status(500).json({ error: '重命名失败: ' + err.message });
@@ -143,14 +176,15 @@ router.post('/rename', checkSensitive, (req, res) => {
 });
 
 // 删除文件/文件夹 → 移入回收站
-router.delete('/files', checkSensitive, (req, res) => {
+router.delete('/files', checkSensitive, async (req, res) => {
     const targetPath = req.query.path;
     if (!targetPath) return res.status(400).json({ error: '缺少 path 参数' });
     if (!fs.existsSync(targetPath)) return res.status(404).json({ error: '文件不存在' });
     if (!isSafePath(targetPath, true)) return res.status(403).json({ error: 'Forbidden' });
 
     try {
-        const item = trashService.trashItem(path.resolve(targetPath));
+        const item = await trashService.trashItem(path.resolve(targetPath));
+        dirCacheInvalidateParent(targetPath);
         res.json({ success: true, message: `已移入回收站`, id: item.id, name: item.name });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -163,11 +197,12 @@ router.get('/trash', checkSensitive, (req, res) => {
 });
 
 // 从回收站恢复
-router.post('/trash/restore', checkSensitive, (req, res) => {
+router.post('/trash/restore', checkSensitive, async (req, res) => {
     const { id } = req.body || {};
     if (!id) return res.status(400).json({ error: '缺少 id 参数' });
     try {
-        const result = trashService.restoreItem(id);
+        const result = await trashService.restoreItem(id);
+        dirCacheInvalidateParent(result.restoredTo);
         res.json({ success: true, restoredTo: result.restoredTo });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -175,14 +210,14 @@ router.post('/trash/restore', checkSensitive, (req, res) => {
 });
 
 // 彻底删除回收站条目（id 为空则清空全部）
-router.post('/trash/purge', checkSensitive, (req, res) => {
+router.post('/trash/purge', checkSensitive, async (req, res) => {
     const { id } = req.body || {};
     try {
         if (id) {
             trashService.purgeItem(id);
             res.json({ success: true });
         } else {
-            const cleaned = trashService.purgeAll();
+            const cleaned = await trashService.purgeAll();
             res.json({ success: true, cleaned });
         }
     } catch (err) {

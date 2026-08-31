@@ -8,8 +8,10 @@
     'use strict';
 
     const I = (name, size) => (global.Icons ? global.Icons.render(name, size) : '');
-    const MEDIA_RE = /\.(mp4|mkv|webm|mov|avi|mp3|wav|flac|aac|m4a)$/i;
-    const AUDIO_RE = /\.(mp3|wav|flac|aac|m4a)$/i;
+    // 统一白名单：此前本地这份正则漏掉 ts/m4v/flv/wmv/rmvb 等，
+    // 这些文件能出缩略图、能流式播放，却进不了海报墙
+    const MEDIA_RE = (global.MediaTypes && global.MediaTypes.MEDIA_RE) || /\.(mp4|mkv|webm|mov|avi|mp3|wav|flac|aac|m4a)$/i;
+    const AUDIO_RE = (global.MediaTypes && global.MediaTypes.AUDIO_RE) || /\.(mp3|wav|flac|aac|m4a)$/i;
     const escapeHtml = global.escapeHtml || (s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'));
 
     class MediaTheater {
@@ -34,6 +36,7 @@
             this.currentMediaItems = []; // 当前目录或平铺下的媒体文件
             this.isScanning = false;
             this.progressMap = {};
+            this._navSeq = 0; // 导航序号：防止慢响应覆盖用户最新打开的目录
         }
 
         _authHeaders(extra) {
@@ -64,6 +67,33 @@
                     this.playAt(parseInt(poster.getAttribute('data-idx'), 10));
                 }
             });
+
+            // 海报缩略图 load/error 不冒泡，只能在捕获阶段委托处理：
+            // 替代逐卡内联 onload/onerror（内联 onerror 需把文件路径拼进 JS 字符串，
+            // 文件名含引号时可突破属性造成属性截断/注入）
+            this.grid.addEventListener('load', (e) => {
+                const img = e.target;
+                if (!img || !(img instanceof HTMLImageElement) || !img.classList.contains('poster-img')) return;
+                img.classList.add('loaded');
+                const ph = img.parentElement && img.parentElement.querySelector('[data-ph]');
+                if (ph) ph.style.display = 'none';
+            }, true);
+            this.grid.addEventListener('error', (e) => {
+                const img = e.target;
+                if (!img || !(img instanceof HTMLImageElement) || !img.classList.contains('poster-img')) return;
+                if (img.dataset.fb) {
+                    img.style.display = 'none';
+                    return;
+                }
+                img.dataset.fb = '1';
+                const card = img.closest('.poster-card');
+                const filePath = card && card.getAttribute('data-path');
+                if (filePath && global.MediaTheaterComponent && global.MediaTheaterComponent.fallbackThumb) {
+                    global.MediaTheaterComponent.fallbackThumb(img, filePath);
+                } else {
+                    img.style.display = 'none';
+                }
+            }, true);
         }
 
         // 海报墙就绪即预取第一个视频的首块：Range 用 bytes=0-（与浏览器首个媒体请求
@@ -400,8 +430,31 @@
             }
         }
 
+        // 物理返回键逐级回退入口：返回 true 表示已在剧场视图内完成一次「上一级」，
+        // 返回 false 表示已在最顶层，调用方（app.js 返回阶梯）继续往下处理
+        goUp() {
+            if (!this.currentPath) return false;
+            const normalize = (p) => String(p || '').replace(/\\/g, '/').replace(/\/+$/, '');
+            const cur = normalize(this.currentPath);
+            const isFolderRoot = (this.folders || []).some(f => normalize(f) === cur);
+            if (isFolderRoot) {
+                // 多个媒体源目录时回到目录卡片页；只有一个目录时没有更上层，交还视图级返回
+                if (this.folders.length > 1) {
+                    this.openRoot();
+                    return true;
+                }
+                return false;
+            }
+            const parts = cur.split('/').filter(Boolean);
+            if (parts.length <= 1) return false;
+            parts.pop();
+            this.openPath(parts.join('/'));
+            return true;
+        }
+
         // 打开指定目录层级 (Tree 视图)
         async openPath(folderPath) {
+            const seq = ++this._navSeq;
             this.currentPath = folderPath;
             if (this.grid) {
                 this.grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">${I('playCircle', 34)}正在读取文件夹内容…</div>`;
@@ -411,6 +464,8 @@
                 const res = await fetch(this.getApiUrl(`/api/files?path=${encodeURIComponent(folderPath)}`), { headers: this._authHeaders() });
                 if (!res.ok) throw new Error('读取目录失败');
                 const data = await res.json();
+                // 用户已切进别的目录：丢弃旧响应，防止覆盖新内容
+                if (seq !== this._navSeq) return;
                 const allFiles = data.files || [];
 
                 // 区分文件夹与媒体文件
@@ -474,18 +529,15 @@
                         const prog = this.progressMap[f.path];
                         const percentage = prog ? (prog.percentage || 0) : 0;
                         const thumbUrl = this.getApiUrl(`/api/thumbnail?path=${encodeURIComponent(f.path)}`) + q;
-                        const safePathAttr = f.path.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
                         return `
-                            <div class="poster-card" data-idx="${i}" title="${escapeHtml(f.name)}">
+                            <div class="poster-card" data-idx="${i}" data-path="${escapeHtml(f.path)}" title="${escapeHtml(f.name)}">
                                 <span data-ph="1">${I(isAudio ? 'music' : 'video', 30)}</span>
                                 ${!isAudio ? `
                                     <img alt="" 
                                          class="poster-img"
                                          src="${thumbUrl}" 
-                                         loading="lazy" 
-                                         onload="this.classList.add('loaded'); const ph = this.parentElement.querySelector('[data-ph]'); if (ph) ph.style.display='none';" 
-                                         onerror="if (!this.dataset.fb) { this.dataset.fb = '1'; window.MediaTheaterComponent && window.MediaTheaterComponent.fallbackThumb && window.MediaTheaterComponent.fallbackThumb(this, '${safePathAttr}'); } else { this.style.display='none'; }">
+                                         loading="lazy">
                                 ` : ''}
                                 <span class="poster-badge">${isAudio ? I('music', 11) + '音频' : I('video', 11) + '视频'}</span>
                                 ${percentage > 0 ? `<span class="poster-watched-badge">已看 ${percentage}%</span>` : ''}
@@ -621,6 +673,9 @@
 
             if (this.isScanning) return;
             this.isScanning = true;
+            const seq = ++this._navSeq;
+            // 平铺是跨目录聚合视图，清掉层级路径，物理返回键在这里应回落到视图级返回
+            this.currentPath = null;
 
             const bcContainer = this.breadcrumbContainer || document.getElementById('media-breadcrumb-container');
             if (bcContainer) bcContainer.style.display = 'none';
@@ -663,6 +718,9 @@
             this._prewarmFirstVideo();
             this.isScanning = false;
 
+            // 扫描期间用户可能已切进其他目录/视图：丢弃过期结果，不覆盖当前界面
+            if (seq !== this._navSeq) return;
+
             if (!this.grid) return;
 
             if (!found.length) {
@@ -680,7 +738,7 @@
 
             const q = this._authQuery().replace(/^\?/, '&');
 
-            if (this.grid) {          if (this.grid) {
+            if (this.grid) {
                 this.grid.innerHTML = found.map((f, i) => {
                     const isAudio = AUDIO_RE.test(f.name);
                     const prog = this.progressMap[f.path];
@@ -714,7 +772,6 @@
             }
         }
 
-        // 目录选择入口（支持原生桌面与 Web 模态浏览）
         // 目录选择入口（支持原生桌面与 Web 模态浏览）
         async pickFolder() {
             const ui = global.LanDiskUI;
@@ -984,6 +1041,7 @@
     MediaTheater.removeFolder = function (t) { if (instance) instance.removeFolder(t); };
     MediaTheater.openPath = function (p) { if (instance) instance.openPath(p); };
     MediaTheater.openRoot = function () { if (instance) instance.openRoot(); };
+    MediaTheater.goUp = function () { return instance ? instance.goUp() : false; };
     MediaTheater.fallbackThumb = function (img, filePath) { if (instance) instance._extractVideoThumbnail(img, filePath); };
 
     global.MediaTheaterComponent = MediaTheater;

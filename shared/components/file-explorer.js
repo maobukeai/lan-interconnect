@@ -102,9 +102,12 @@
 
         _bindEvents() {
             if (this.searchInput) {
+                // 搜索输入 180ms 防抖：大目录下避免每敲一个字全量重建列表
+                let searchTimer = null;
                 this.searchInput.addEventListener('input', (e) => {
                     this.searchQuery = e.target.value.toLowerCase().trim();
-                    this.filterFiles(this.searchQuery);
+                    if (searchTimer) clearTimeout(searchTimer);
+                    searchTimer = setTimeout(() => this.filterFiles(this.searchQuery), 180);
                 });
             }
 
@@ -515,10 +518,160 @@
             return result;
         }
 
+        // 生成单张卡片 HTML（data-idx 指向本次渲染列表的下标）
+        _fileCardHtml(file, idx, escapeHtml) {
+            const safePath = escapeHtml(file.path);
+            const safeName = escapeHtml(file.name);
+            const isDir = file.isDirectory;
+            const isChecked = this.batchManager.has(file.path);
+            const iconDef = this.getFileIcon(file.name, isDir);
+
+            let actionBtns = '';
+            if (isDir) {
+                actionBtns += `<button class="apple-btn apple-btn-glass apple-btn-sm btn-action-zip-folder" data-path="${safePath}" data-name="${safeName}" title="打包下载">${I('package', 14)}</button>`;
+            } else {
+                if (/\.(mp4|mkv|webm|mov|avi|mp3|wav|flac|aac|m4a)$/i.test(file.name)) {
+                    const mediaType = /\.(mp3|wav|flac|aac|m4a)$/i.test(file.name) ? 'audio' : 'video';
+                    actionBtns += `<button class="apple-btn apple-btn-glass apple-btn-sm btn-action-play" data-type="${mediaType}" data-path="${safePath}" data-name="${safeName}" title="播放">${I('play', 14)}</button>`;
+                } else if (/\.(jpg|png|gif|webp|svg)$/i.test(file.name)) {
+                    actionBtns += `<button class="apple-btn apple-btn-glass apple-btn-sm btn-action-play" data-type="image" data-path="${safePath}" data-name="${safeName}" title="预览">${I('eye', 14)}</button>`;
+                } else if (/\.(txt|md|js|json|html|css|py|c|cpp|h)$/i.test(file.name)) {
+                    actionBtns += `<button class="apple-btn apple-btn-glass apple-btn-sm btn-action-play" data-type="text" data-path="${safePath}" data-name="${safeName}" title="查看">${I('fileText', 14)}</button>`;
+                }
+                actionBtns += `<button class="apple-btn apple-btn-glass apple-btn-sm btn-action-download" data-path="${safePath}" title="下载">${I('download', 14)}</button>`;
+            }
+
+            return `
+                <div class="apple-file-card ${isChecked ? 'selected' : ''}" data-is-dir="${isDir}" data-path="${safePath}" data-idx="${idx}">
+                    <div class="file-card-main">
+                        <input type="checkbox" class="apple-checkbox cb-file-select" data-path="${safePath}" ${isChecked ? 'checked' : ''}>
+                        <div class="file-icon ${iconDef.cls}">${I(iconDef.icon, 19)}</div>
+                        <div style="flex:1; min-width:0;">
+                            <div class="file-name">${safeName}</div>
+                            <div class="file-meta">${isDir ? '文件夹' : this.formatBytes(file.size)} · ${new Date(file.mtime).toLocaleDateString('zh-CN')}</div>
+                        </div>
+                    </div>
+                    ${actionBtns ? `<div class="file-actions">${actionBtns}</div>` : ''}
+                </div>
+            `;
+        }
+
+        // 从已渲染卡片解析文件信息（data-path 已被浏览器还原为原始路径）
+        _cardInfo(card) {
+            const idx = parseInt(card.getAttribute('data-idx'), 10);
+            const fileObj = (this._lastRendered || [])[idx];
+            if (!fileObj) return null;
+            const path = fileObj.path;
+            return {
+                isDir: !!fileObj.isDirectory,
+                path,
+                name: fileObj.name,
+                items: this._fileMenuItems(card, !!fileObj.isDirectory, path, fileObj.name)
+            };
+        }
+
+        // 容器级事件委托：卡片点击/复选/动作按钮/右键/长按只挂一次监听，
+        // 5000 条目目录不再创建上万个监听器导致主线程卡顿
+        _bindFileEvents() {
+            if (this._fileEventsBound || !this.container) return;
+            this._fileEventsBound = true;
+            const container = this.container;
+
+            container.addEventListener('click', (e) => {
+                const zipBtn = e.target.closest('.btn-action-zip-folder');
+                if (zipBtn) {
+                    e.stopPropagation();
+                    this.batchManager.downloadZip(zipBtn.getAttribute('data-path'), zipBtn.getAttribute('data-name') || 'folder_download');
+                    return;
+                }
+                const playBtn = e.target.closest('.btn-action-play');
+                if (playBtn) {
+                    e.stopPropagation();
+                    if (this.onPlayMedia) {
+                        this.onPlayMedia(playBtn.getAttribute('data-type'), playBtn.getAttribute('data-path'), playBtn.getAttribute('data-name'), this.currentFiles);
+                    }
+                    return;
+                }
+                const dlBtn = e.target.closest('.btn-action-download');
+                if (dlBtn) {
+                    e.stopPropagation();
+                    this.handleSingleDownload(dlBtn.getAttribute('data-path'));
+                    return;
+                }
+
+                const card = e.target.closest('.apple-file-card');
+                if (!card) return;
+                if (e.target.closest('.apple-btn') || e.target.closest('.apple-checkbox')) return;
+                const path = card.getAttribute('data-path');
+                const info = this._cardInfo(card);
+                const rawName = info ? info.name : path;
+                if (card.getAttribute('data-is-dir') === 'true') {
+                    this.loadPath(path);
+                } else {
+                    this.openFile(path, rawName);
+                }
+            });
+
+            container.addEventListener('change', (e) => {
+                if (!e.target || !e.target.classList || !e.target.classList.contains('cb-file-select')) return;
+                const path = e.target.getAttribute('data-path');
+                if (e.target.checked) this.batchManager.add(path);
+                else this.batchManager.delete(path);
+            });
+
+            // 右键菜单（contextmenu 事件可冒泡，容器委托）
+            if (global.LanDiskUI && global.LanDiskUI.showContextMenu) {
+                container.addEventListener('contextmenu', (e) => {
+                    const card = e.target.closest('.apple-file-card');
+                    if (!card) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const info = this._cardInfo(card);
+                    if (info) global.LanDiskUI.showContextMenu(e.clientX, e.clientY, info.items);
+                });
+            }
+
+            // 长按菜单（触屏 550ms 长按开右键菜单，容器委托替代逐卡绑定）
+            let pressTimer = null;
+            let longPressed = false;
+            container.addEventListener('touchstart', (e) => {
+                const card = e.target.closest('.apple-file-card');
+                if (!card) return;
+                const t = e.touches[0];
+                longPressed = false;
+                if (pressTimer) clearTimeout(pressTimer);
+                pressTimer = setTimeout(() => {
+                    longPressed = true;
+                    if (navigator.vibrate) navigator.vibrate(12);
+                    const info = this._cardInfo(card);
+                    if (info && global.LanDiskUI && global.LanDiskUI.showContextMenu) {
+                        global.LanDiskUI.showContextMenu(t.clientX, t.clientY, info.items);
+                    }
+                }, 550);
+            }, { passive: true });
+            container.addEventListener('touchmove', () => {
+                if (pressTimer) {
+                    clearTimeout(pressTimer);
+                    pressTimer = null;
+                }
+            }, { passive: true });
+            container.addEventListener('touchend', (e) => {
+                if (pressTimer) {
+                    clearTimeout(pressTimer);
+                    pressTimer = null;
+                }
+                if (longPressed) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+            });
+        }
+
         renderFiles(files) {
             if (!this.container) return;
 
             const validFiles = this.applyFilterAndSort(files);
+            this._lastRendered = validFiles;
 
             if (!validFiles || validFiles.length === 0) {
                 this.container.innerHTML = this._emptyState('folder', '文件夹为空', '拖入文件即可上传到此处');
@@ -527,97 +680,32 @@
 
             const escapeHtml = global.escapeHtml || (str => typeof str === 'string' ? str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') : str);
 
-            this.container.innerHTML = `<div class="apple-file-grid">` + validFiles.map(file => {
-                const safePath = escapeHtml(file.path);
-                const safeName = escapeHtml(file.name);
-                const isDir = file.isDirectory;
-                const isChecked = this.batchManager.has(file.path);
-                const iconDef = this.getFileIcon(file.name, isDir);
+            // 分批渲染：每 150 张卡片一块，空闲时逐块插入，5000 条目大目录不再一次卡死主线程
+            const grid = document.createElement('div');
+            grid.className = 'apple-file-grid';
+            this.container.innerHTML = '';
+            this.container.appendChild(grid);
+            this._bindFileEvents();
 
-                let actionBtns = '';
-                if (isDir) {
-                    actionBtns += `<button class="apple-btn apple-btn-glass apple-btn-sm btn-action-zip-folder" data-path="${safePath}" data-name="${safeName}" title="打包下载">${I('package', 14)}</button>`;
-                } else {
-                    if (/\.(mp4|mkv|webm|mov|avi|mp3|wav|flac|aac|m4a)$/i.test(file.name)) {
-                        const mediaType = /\.(mp3|wav|flac|aac|m4a)$/i.test(file.name) ? 'audio' : 'video';
-                        actionBtns += `<button class="apple-btn apple-btn-glass apple-btn-sm btn-action-play" data-type="${mediaType}" data-path="${safePath}" data-name="${safeName}" title="播放">${I('play', 14)}</button>`;
-                    } else if (/\.(jpg|png|gif|webp|svg)$/i.test(file.name)) {
-                        actionBtns += `<button class="apple-btn apple-btn-glass apple-btn-sm btn-action-play" data-type="image" data-path="${safePath}" data-name="${safeName}" title="预览">${I('eye', 14)}</button>`;
-                    } else if (/\.(txt|md|js|json|html|css|py|c|cpp|h)$/i.test(file.name)) {
-                        actionBtns += `<button class="apple-btn apple-btn-glass apple-btn-sm btn-action-play" data-type="text" data-path="${safePath}" data-name="${safeName}" title="查看">${I('fileText', 14)}</button>`;
-                    }
-                    actionBtns += `<button class="apple-btn apple-btn-glass apple-btn-sm btn-action-download" data-path="${safePath}" title="下载">${I('download', 14)}</button>`;
+            const CHUNK = 150;
+            const total = validFiles.length;
+            const renderToken = ++this._renderToken;
+            let cursor = 0;
+            const appendChunk = () => {
+                if (renderToken !== this._renderToken) return;
+                const end = Math.min(cursor + CHUNK, total);
+                let html = '';
+                for (let i = cursor; i < end; i++) {
+                    html += this._fileCardHtml(validFiles[i], i, escapeHtml);
                 }
-
-                return `
-                    <div class="apple-file-card ${isChecked ? 'selected' : ''}" data-is-dir="${isDir}" data-path="${safePath}" data-idx="${validFiles.indexOf(file)}">
-                        <div class="file-card-main">
-                            <input type="checkbox" class="apple-checkbox cb-file-select" data-path="${safePath}" ${isChecked ? 'checked' : ''}>
-                            <div class="file-icon ${iconDef.cls}">${I(iconDef.icon, 19)}</div>
-                            <div style="flex:1; min-width:0;">
-                                <div class="file-name">${safeName}</div>
-                                <div class="file-meta">${isDir ? '文件夹' : this.formatBytes(file.size)} · ${new Date(file.mtime).toLocaleDateString('zh-CN')}</div>
-                            </div>
-                        </div>
-                        ${actionBtns ? `<div class="file-actions">${actionBtns}</div>` : ''}
-                    </div>
-                `;
-            }).join('') + `</div>`;
-
-            this.container.querySelectorAll('.cb-file-select').forEach(cb => {
-                cb.addEventListener('change', (e) => {
-                    e.stopPropagation();
-                    const path = cb.getAttribute('data-path');
-                    if (cb.checked) this.batchManager.add(path);
-                    else this.batchManager.delete(path);
-                });
-                cb.addEventListener('click', (e) => e.stopPropagation());
-            });
-
-            this.container.querySelectorAll('.apple-file-card').forEach(card => {
-                const isDir = card.getAttribute('data-is-dir') === 'true';
-                const path = card.getAttribute('data-path'); // 浏览器已解码实体，得到原始路径
-                const idx = parseInt(card.getAttribute('data-idx'), 10);
-                const fileObj = validFiles[idx];
-                const rawName = fileObj ? fileObj.name : path;
-
-                card.addEventListener('click', (e) => {
-                    if (e.target.closest('.apple-btn') || e.target.closest('.apple-checkbox')) return;
-                    if (isDir) {
-                        this.loadPath(path);
-                    } else {
-                        this.openFile(path, rawName);
-                    }
-                });
-
-                // 右键 / 长按菜单
-                if (global.LanDiskUI && global.LanDiskUI.bindContextMenu) {
-                    global.LanDiskUI.bindContextMenu(card, () => this._fileMenuItems(card, isDir, path, rawName));
+                grid.insertAdjacentHTML('beforeend', html);
+                cursor = end;
+                if (cursor < total) {
+                    const schedule = window.requestIdleCallback || ((fn) => setTimeout(fn, 16));
+                    schedule(() => requestAnimationFrame(appendChunk));
                 }
-            });
-
-            this.container.querySelectorAll('.btn-action-zip-folder').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    this.batchManager.downloadZip([btn.getAttribute('data-path')], btn.getAttribute('data-name') || 'folder_download');
-                });
-            });
-
-            this.container.querySelectorAll('.btn-action-play').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    if (this.onPlayMedia) {
-                        this.onPlayMedia(btn.getAttribute('data-type'), btn.getAttribute('data-path'), btn.getAttribute('data-name'), this.currentFiles);
-                    }
-                });
-            });
-
-            this.container.querySelectorAll('.btn-action-download').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    this.handleSingleDownload(btn.getAttribute('data-path'));
-                });
-            });
+            };
+            appendChunk();
         }
 
         _fileMenuItems(card, isDir, path, name) {
@@ -726,12 +814,14 @@
                         return p;
                     };
                     if (type === 'audio' || type === 'video') {
+                        // 统一白名单（shared/media-types.js）：本地旧正则漏掉 ts/m4v/flv/wmv/rmvb 等
+                        const M = global.MediaTypes || null;
                         const formattedPlaylist = (playlist || [])
-                            .filter(f => !f.isDirectory && /\.(mp4|mkv|webm|mov|avi|mp3|wav|flac|aac|m4a)$/i.test(f.name))
+                            .filter(f => !f.isDirectory && (M ? M.isMedia(f.name) : /\.(mp4|mkv|webm|mov|avi|mp3|wav|flac|aac|m4a)$/i.test(f.name)))
                             .map(f => ({
                                 name: f.name,
                                 path: f.path,
-                                type: /\.(mp3|wav|flac|aac|m4a)$/i.test(f.name) ? 'audio' : 'video',
+                                type: (M ? M.isAudio(f.name) : /\.(mp3|wav|flac|aac|m4a)$/i.test(f.name)) ? 'audio' : 'video',
                                 url: getUrl(`/api/stream?path=${encodeURIComponent(f.path)}${authQ()}`)
                             }));
                         if (window.AppleMediaPlayer && typeof window.AppleMediaPlayer.play === 'function') {

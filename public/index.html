@@ -10,24 +10,26 @@
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="alternate icon" type="image/png" href="favicon.png">
     <link rel="apple-touch-icon" href="apple-touch-icon.png">
-    <link rel="stylesheet" href="shared/apple-theme.css?v=20260828_v44">
-    <link rel="stylesheet" href="shared/apple-player.css?v=20260828_v44">
+    <link rel="stylesheet" href="shared/apple-theme.css?v=20260831_v46">
+    <link rel="stylesheet" href="shared/apple-player.css?v=20260831_v46">
     <!-- 基础引擎与组件库（一个功能一个文件，桌面端 gui.html 复用同一套） -->
+    <script src="shared/media-types.js?v=20260831_v46"></script>
+    <script src="shared/player-template.js?v=20260831_v46"></script>
     <script src="shared/icons.js"></script>
     <script src="shared/auth.js"></script>
-    <script src="shared/ui.js?v=20260828_v44"></script>
-    <script src="shared/apple-player.js?v=20260828_v44"></script>
+    <script src="shared/ui.js?v=20260831_v46"></script>
+    <script src="shared/apple-player.js?v=20260831_v46"></script>
     <script src="shared/components/file-bookmarks.js"></script>
     <script src="shared/components/file-batch.js"></script>
     <script src="shared/components/file-uploader.js"></script>
     <script src="shared/components/file-explorer.js"></script>
     <script src="shared/components/media-hub.js"></script>
-    <script src="shared/components/media-theater.js?v=20260828_v44"></script>
+    <script src="shared/components/media-theater.js?v=20260831_v46"></script>
     <script src="shared/components/imessage-chat.js"></script>
     <script src="shared/components/whiteboard.js"></script>
     <script src="shared/components/process-monitor.js"></script>
     <script src="shared/components/web-terminal.js"></script>
-    <script src="shared/components/remote-control.js?v=20260828_v44"></script>
+    <script src="shared/components/remote-control.js?v=20260831_v46"></script>
     <style>
         header.web-header {
             position: sticky;
@@ -266,7 +268,15 @@
         </div>
 
         <div style="background:rgba(10,132,255,0.08); border:1px solid rgba(10,132,255,0.2); border-radius:14px; padding:10px 14px; margin-bottom:14px; font-size:12px; color:var(--apple-text-secondary); line-height:1.5;">
-            💡 <strong>连接指引</strong>：请确保手机与电脑连接<strong>同一 Wi-Fi</strong>。在电脑端猫步互联查看 IP（如 <code>192.168.0.104:3000</code>），雷达可自动扫描或直接输入。
+            💡 <strong>连接指引</strong>：请确保手机与电脑连接<strong>同一 Wi-Fi</strong>。在电脑端猫步互联查看 IP（如 <code>192.168.0.104:3000</code>），雷达可自动扫描或直接输入。<br>🌐 <strong>跨网络远程</strong>：电脑与手机都安装 Tailscale 后，直接输入电脑的 <code>100.x.x.x</code> 地址即可永久绑定，出门在外也能连。
+        </div>
+
+        <div id="radar-saved-wrap" style="display:none; margin-bottom:12px; background:var(--apple-bg-card); border:1px solid var(--apple-border); border-radius:14px; padding:10px 12px;">
+            <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <span style="font-size:13px; font-weight:700; color:var(--apple-text-primary);">⭐ 常用服务器</span>
+                <span style="font-size:11px; color:var(--apple-text-muted);">连接成功后自动收藏</span>
+            </div>
+            <div id="radar-saved-list" style="display:flex; flex-direction:column; gap:8px;"></div>
         </div>
 
         <div style="margin-bottom:12px;">
@@ -562,385 +572,10 @@
     
     <!-- 6. 播放器专属视图 (工业级标准播放页) -->
     <div id="view-player" class="view-section" style="padding-bottom: 24px;">
-        <!-- 顶部返回与导航 -->
-        <div class="player-nav-header">
-            <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-player-back">
-                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M19 12H5M12 19l-7-7 7-7"/></svg>
-                <span>返回</span>
-            </button>
-            <div class="player-nav-title ellipsis" id="player-nav-title">正在播放</div>
-            <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-player-pip" title="画中画">
-                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-            </button>
-        </div>
-
-        
-        
-        <!-- 16:9 标准视频核心视窗容器 (Apple 原生无 AI 痕迹精细化体系) -->
-        <div class="player-stage-container" id="player-stage-container">
-            <div class="player-stage-box" id="player-stage-box">
-                <!-- 核心 Video 标签 -->
-                <video id="apple-media-element" playsinline webkit-playsinline x5-playsinline x5-video-player-type="h5" preload="auto"></video>
-
-                <!-- 音频专属全景黑胶舞台 -->
-                <div class="ap-audio-layer" id="ap-audio-layer">
-                    <div class="ap-audio-mesh"></div>
-                    <div class="ap-audio-vinyl-box">
-                        <div class="ap-audio-vinyl" id="ap-audio-vinyl">
-                            <div class="ap-audio-center">
-                                <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/></svg>
-                            </div>
-                        </div>
-                    </div>
-                    <canvas class="ap-audio-canvas" id="ap-audio-canvas"></canvas>
-                </div>
-
-                <!-- 外挂字幕实时渲染层 (Apple Cinematic Subtitles) -->
-                <div class="ap-subtitle-layer" id="ap-subtitle-layer">
-                    <div class="ap-subtitle-text sub-size-md" id="ap-subtitle-text"></div>
-                </div>
-
-                <!-- 浮动控制遮罩层 (Apple QuickTime / Vision 极简通透全套控制) -->
-                <div class="player-controls-overlay" id="player-controls-overlay">
-                    <!-- 顶部精致无边框水晶栏 -->
-                    <div class="player-ctrl-top" id="player-ctrl-top">
-                        <div class="player-ctrl-top-left">
-                            <button class="player-top-icon-btn" id="ap-btn-top-back" title="返回 / 退出全屏">
-                                <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M15 19l-7-7 7-7"/></svg>
-                            </button>
-                            <span class="player-ctrl-title ellipsis" id="ap-video-title">媒体名称</span>
-                            <span class="ap-status-badge" id="ap-video-badge"><span class="ap-status-dot"></span>4K HDR</span>
-                        </div>
-                        <div class="player-ctrl-top-right">
-                            <button class="player-top-icon-btn" id="ap-btn-external-app" title="调用第三方播放器 App (VLC / MX Player / 外部播放器)">
-                                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
-                            </button>
-                            <button class="player-top-icon-btn" id="ap-btn-snapshot" title="一键截帧">
-                                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><circle cx="12" cy="13" r="3" stroke-width="2"/></svg>
-                            </button>
-                            <button class="player-top-icon-btn" id="ap-btn-pip" title="画中画">
-                                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-                            </button>
-                            <button class="player-top-icon-btn" id="ap-btn-top-episodes" title="剧集列表">
-                                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
-                            </button>
-                            <button class="player-top-icon-btn" id="ap-btn-top-settings" title="影院级设置">
-                                <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- 屏幕中央加载指示器 (Apple VisionOS Crystal Spinner) -->
-                    <div class="ap-loading-spinner" id="ap-loading-spinner">
-                        <div class="ap-spinner-ring"></div>
-                    </div>
-
-                    <!-- 屏幕中央 HUD 状态反馈 (点按播放/暂停即时动态气泡) -->
-                    <div class="player-ctrl-center" id="ap-center-badge"></div>
-
-                    <!-- 锁屏按钮 (Apple 悬浮水晶气泡) -->
-                    <button class="ap-lock-btn" id="ap-lock-btn" title="锁定全屏屏幕">
-                        <svg id="ap-icon-unlock" width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
-                        <svg id="ap-icon-lock" width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="display:none;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-                    </button>
-
-                    <!-- 2.0X 极速长按胶囊 -->
-                    <div class="ap-speed-badge" id="ap-speed-badge">2.0X 极速播放中</div>
-                    <div class="ap-gesture-toast" id="ap-gesture-toast"></div>
-
-                    <!-- 断点续播浮动胶囊 -->
-                    <div class="ap-resume-toast" id="ap-resume-toast">
-                        <span id="ap-resume-text">上次播放至 00:00</span>
-                        <button id="ap-btn-resume-action">继续播放</button>
-                        <button id="ap-btn-resume-dismiss">✕</button>
-                    </div>
-
-                    <!-- 左侧亮度 HUD -->
-                    <div class="ap-hud left" id="ap-hud-brightness">
-                        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
-                        <div class="ap-hud-track"><div class="ap-hud-fill" id="ap-hud-brightness-fill"></div></div>
-                        <div class="ap-hud-val" id="ap-hud-brightness-val">100%</div>
-                    </div>
-
-                    <!-- 右侧音量 HUD -->
-                    <div class="ap-hud right" id="ap-hud-volume">
-                        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
-                        <div class="ap-hud-track"><div class="ap-hud-fill" id="ap-hud-volume-fill"></div></div>
-                        <div class="ap-hud-val" id="ap-hud-volume-val">100%</div>
-                    </div>
-
-                    <!-- 底部全套控制栏面板 -->
-                    <div class="player-ctrl-bottom">
-                        <!-- 极光双色流光进度条 (Apple Fluid Scrubber) -->
-                        <div class="ap-progress-wrap" id="ap-progress-wrap">
-                            <div class="ap-progress-tooltip" id="ap-progress-tooltip">00:00</div>
-                            <div class="ap-progress-track">
-                                <div class="ap-progress-buffer" id="ap-progress-buffer"></div>
-                                <div class="ap-progress-fill" id="ap-progress-fill"></div>
-                            </div>
-                            <div class="ap-progress-thumb" id="ap-progress-thumb"></div>
-                        </div>
-
-                        <!-- 底部功能按钮行 (响应式优雅排布) -->
-                        <div class="player-ctrl-row">
-                            <div class="player-ctrl-left">
-                                <button class="player-btn-icon ap-btn-desktop-only" id="ap-btn-prev" title="上一集">
-                                    <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
-                                </button>
-                                <button class="player-btn-icon player-main-play-btn" id="ap-btn-play" title="播放/暂停">
-                                    <svg id="ap-icon-play" width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                                    <svg id="ap-icon-pause" width="16" height="16" fill="currentColor" viewBox="0 0 24 24" style="display:none;"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
-                                </button>
-                                <button class="player-btn-icon ap-btn-desktop-only" id="ap-btn-next" title="下一集">
-                                    <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
-                                </button>
-                                <span class="player-time-display" id="ap-time-text">00:00 / 00:00</span>
-                            </div>
-                            <div class="player-ctrl-right">
-                                <button class="player-btn-pill" id="ap-btn-speed" title="播放倍速">1.0x</button>
-                                <button class="player-btn-pill" id="ap-btn-fit-toggle" title="画面比例">
-                                    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
-                                    <span class="ap-btn-label">自适应</span>
-                                </button>
-                                <button class="player-btn-pill" id="ap-btn-filter-toggle" title="色彩风格">
-                                    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4 4 4 0 014-4c2 0 2-4 6-4 4 0 7 3 7 7a7 7 0 01-7 7H7z"/></svg>
-                                    <span class="ap-btn-label">原画</span>
-                                </button>
-                                <button class="player-btn-pill player-btn-fullscreen" id="ap-btn-fullscreen" title="全屏 / 还原">
-                                    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
-                                    <span class="ap-btn-label" id="ap-fs-btn-label">全屏</span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 悬浮弹窗选项菜单 (Apple VisionOS Popover Menu) -->
-                    <div class="ap-menu-popover" id="ap-menu-popover">
-                        <div class="ap-popover-title" id="ap-popover-title">选择选项</div>
-                        <div class="ap-popover-list" id="ap-popover-list"></div>
-                    </div>
-                </div>
-
-                <!-- 全屏内嵌半透毛玻璃抽屉：选集抽屉 -->
-                <div class="ap-fs-drawer" id="ap-fs-drawer-episodes">
-                    <div class="ap-fs-drawer-header">
-                        <div class="row" style="gap:6px;">
-                            <span style="font-weight:600; font-size:13.5px; color:#fff;">剧集与播放列表</span>
-                            <span class="subtle" id="ap-fs-episodes-count" style="font-size:12px; color:#94a3b8;">(0)</span>
-                        </div>
-                        <button class="ap-fs-drawer-close" id="ap-fs-drawer-episodes-close">✕</button>
-                    </div>
-                    <div style="padding: 0 16px 6px 16px;">
-                        <div class="ap-fs-ep-ranges" id="ap-fs-ep-ranges">
-                            <!-- 动态注入全屏选集分页胶囊 -->
-                        </div>
-                    </div>
-                    <div class="ap-fs-drawer-body" id="ap-fs-drawer-episodes-list">
-                        <!-- 动态注入全屏选集卡片 -->
-                    </div>
-                </div>
-
-                <!-- 全屏内嵌半透毛玻璃抽屉：影院级设置抽屉 -->
-                <div class="ap-fs-drawer" id="ap-fs-drawer-settings">
-                    <div class="ap-fs-drawer-header">
-                        <span style="font-weight:600; font-size:13.5px; color:#fff;">影院级播放设置</span>
-                        <button class="ap-fs-drawer-close" id="ap-fs-drawer-settings-close">✕</button>
-                    </div>
-                    <div class="ap-fs-drawer-body">
-                        <div class="player-control-group">
-                            <div class="player-group-title">播放倍速</div>
-                            <div class="player-pill-grid" id="ap-fs-speed-grid">
-                                <button class="player-opt-pill" data-speed="0.5">0.5x</button>
-                                <button class="player-opt-pill" data-speed="0.75">0.75x</button>
-                                <button class="player-opt-pill active" data-speed="1.0">1.0x</button>
-                                <button class="player-opt-pill" data-speed="1.25">1.25x</button>
-                                <button class="player-opt-pill" data-speed="1.5">1.5x</button>
-                                <button class="player-opt-pill" data-speed="2.0">2.0x</button>
-                                <button class="player-opt-pill" data-speed="3.0">3.0x</button>
-                            </div>
-                        </div>
-
-                        <div class="player-control-group" style="margin-top: 16px;">
-                            <div class="player-group-title">画面色彩风格</div>
-                            <div class="player-pill-grid" id="ap-fs-filter-grid">
-                                <button class="player-opt-pill active" data-filter="none">原画</button>
-                                <button class="player-opt-pill" data-filter="warm">夜间暖光</button>
-                                <button class="player-opt-pill" data-filter="cinema">影院高对比</button>
-                                <button class="player-opt-pill" data-filter="vivid">鲜艳生动</button>
-                            </div>
-                        </div>
-
-                        <div class="player-control-group" style="margin-top: 16px;">
-                            <div class="player-group-title">画面填充与旋转</div>
-                            <div class="player-pill-grid" id="ap-fs-fit-grid">
-                                <button class="player-opt-pill active" data-fit="contain">自适应</button>
-                                <button class="player-opt-pill" data-fit="cover">铺满全屏</button>
-                                <button class="player-opt-pill" data-fit="fill">拉伸全屏</button>
-                                <button class="player-opt-pill" id="ap-fs-btn-rotate">旋转 90°</button>
-                            </div>
-                        </div>
-
-                        <div class="player-control-group" style="margin-top: 16px;">
-                            <div class="player-group-title">循环模式</div>
-                            <div class="player-pill-grid" id="ap-fs-loop-grid">
-                                <button class="player-opt-pill active" data-loop="all">列表循环</button>
-                                <button class="player-opt-pill" data-loop="one">单曲循环</button>
-                                <button class="player-opt-pill" data-loop="off">顺序播放</button>
-                            </div>
-                        </div>
-
-                        <!-- 外挂字幕设置 -->
-                        <div class="player-control-group" style="margin-top: 16px;">
-                            <div class="player-group-title" style="display:flex; justify-content:space-between; align-items:center;">
-                                <span>外挂字幕</span>
-                                <span class="subtle" style="font-size:11px;" id="ap-fs-sub-status">自动加载同名字幕</span>
-                            </div>
-                            <div class="player-pill-grid" id="ap-fs-sub-tracks-grid" style="margin-bottom:8px;">
-                                <button class="player-opt-pill active" data-sub="auto">自动探测</button>
-                                <button class="player-opt-pill" data-sub="off">关闭字幕</button>
-                            </div>
-                            <div class="row" style="gap:6px; margin-top:8px;">
-                                <label class="apple-btn apple-btn-glass apple-btn-sm" style="flex:1; cursor:pointer; font-size:11.5px; justify-content:center;">
-                                    <input type="file" id="ap-fs-input-custom-sub" accept=".srt,.vtt,.ass" style="display:none">
-                                    <span>+ 导入本地字幕 (.srt/.vtt)</span>
-                                </label>
-                            </div>
-                            <div class="player-group-title" style="margin-top:10px; font-size:11px;">字幕字号与时间轴微调</div>
-                            <div class="player-pill-grid" id="ap-fs-sub-size-grid">
-                                <button class="player-opt-pill" data-subsize="sm">小</button>
-                                <button class="player-opt-pill active" data-subsize="md">中</button>
-                                <button class="player-opt-pill" data-subsize="lg">大</button>
-                                <button class="player-opt-pill" data-subsize="xl">特大</button>
-                            </div>
-                            <div class="player-pill-grid" id="ap-fs-sub-delay-grid" style="margin-top:6px;">
-                                <button class="player-opt-pill" data-subdelay="-0.5">-0.5s</button>
-                                <button class="player-opt-pill active" data-subdelay="0">0s 正常</button>
-                                <button class="player-opt-pill" data-subdelay="0.5">+0.5s</button>
-                            </div>
-                        </div>
-
-                        <!-- 外部专业播放器 App 联动 -->
-                        <div class="player-control-group" style="margin-top: 16px;">
-                            <div class="player-group-title" style="display:flex; justify-content:space-between; align-items:center;">
-                                <span>第三方专业播放器 App</span>
-                                <span class="subtle" style="font-size:11px;">硬件极限硬解 · 极速传流</span>
-                            </div>
-                            <div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
-                                <button class="apple-btn apple-btn-glass apple-btn-sm" id="ap-fs-btn-open-intent" style="width:100%; justify-content:center; gap:6px;">
-                                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
-                                    <span>唤起手机/系统播放器 (MX Player / VLC / 系统相册)</span>
-                                </button>
-                                <div style="display:flex; gap:8px;">
-                                    <button class="apple-btn apple-btn-glass apple-btn-sm" id="ap-fs-btn-open-vlc" style="flex:1; justify-content:center; gap:6px;">
-                                        <span>🎬 在 VLC 中打开</span>
-                                    </button>
-                                    <button class="apple-btn apple-btn-glass apple-btn-sm" id="ap-fs-btn-copy-stream" style="flex:1; justify-content:center; gap:6px;">
-                                        <span>📋 复制串流直链</span>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- 下部：标准功能与选集控制面板 -->
-        <div class="player-info-section">
-            <!-- 媒体信息卡片 -->
-            <div class="glass-card" style="margin-bottom: 12px; padding: 14px 16px;">
-                <div class="row-between">
-                    <div style="flex:1; min-width:0;">
-                        <div class="player-main-title ellipsis" id="player-card-title">媒体名称</div>
-                        <div class="subtle" style="font-size:11.5px; margin-top:4px;" id="player-card-sub">局域网 4K HDR 硬件加速直连</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 选集列表 (横向滑动卡片 + 分页区间胶囊) -->
-            <div class="glass-card" style="margin-bottom: 12px; padding: 14px 16px;">
-                <div class="row-between" style="margin-bottom: 10px; gap: 8px; flex-wrap: wrap;">
-                    <div class="row" style="gap:6px; flex-shrink: 0;">
-                        <span class="apple-card-title-text"><span data-icon="playCircle"></span>剧集与播放列表</span>
-                        <span class="subtle" id="player-episodes-count" style="font-size:12px;">(0)</span>
-                    </div>
-                    <div class="player-ep-ranges-container" id="player-ep-ranges-container">
-                        <!-- 动态注入选集分页胶囊，如 [ 01-30 ] [ 31-60 ] [ 61-92 ] -->
-                    </div>
-                </div>
-                <div class="player-episodes-scroll" id="player-episodes-scroll">
-                    <!-- 动态注入选集卡片 -->
-                </div>
-            </div>
-
-            <!-- 快捷播放控制卡片 (倍速 / 滤镜 / 比例 / 循环) -->
-            <div class="glass-card" style="margin-bottom: 12px; padding: 14px 16px;">
-                <div class="player-control-group">
-                    <div class="player-group-title">播放倍速</div>
-                    <div class="player-pill-grid" id="player-speed-grid">
-                        <button class="player-opt-pill" data-speed="0.5">0.5x</button>
-                        <button class="player-opt-pill" data-speed="0.75">0.75x</button>
-                        <button class="player-opt-pill active" data-speed="1.0">1.0x</button>
-                        <button class="player-opt-pill" data-speed="1.25">1.25x</button>
-                        <button class="player-opt-pill" data-speed="1.5">1.5x</button>
-                        <button class="player-opt-pill" data-speed="2.0">2.0x</button>
-                        <button class="player-opt-pill" data-speed="3.0">3.0x</button>
-                    </div>
-                </div>
-
-                <div class="player-control-group" style="margin-top: 14px;">
-                    <div class="player-group-title">画面色彩风格</div>
-                    <div class="player-pill-grid" id="player-filter-grid">
-                        <button class="player-opt-pill active" data-filter="none">原画</button>
-                        <button class="player-opt-pill" data-filter="warm">夜间暖光</button>
-                        <button class="player-opt-pill" data-filter="cinema">影院高对比</button>
-                        <button class="player-opt-pill" data-filter="vivid">鲜艳生动</button>
-                    </div>
-                </div>
-
-                <div class="player-control-group" style="margin-top: 14px;">
-                    <div class="player-group-title">画面比例与循环</div>
-                    <div class="player-pill-grid" id="player-fit-grid">
-                        <button class="player-opt-pill active" data-fit="contain">自适应</button>
-                        <button class="player-opt-pill" data-fit="cover">铺满全屏</button>
-                        <button class="player-opt-pill" data-fit="fill">拉伸</button>
-                        <button class="player-opt-pill" id="btn-player-rotate">旋转 90°</button>
-                    </div>
-                </div>
-
-                <div class="player-control-group" style="margin-top: 14px;">
-                    <div class="player-group-title" style="display:flex; justify-content:space-between; align-items:center;">
-                        <span>外挂字幕</span>
-                        <span class="subtle" style="font-size:11px;" id="player-sub-status">自动加载同名字幕</span>
-                    </div>
-                    <div class="player-pill-grid" id="player-sub-tracks-grid" style="margin-bottom:8px;">
-                        <button class="player-opt-pill active" data-sub="auto">自动探测</button>
-                        <button class="player-opt-pill" data-sub="off">关闭字幕</button>
-                    </div>
-                    <div class="row" style="gap:6px; margin-top:8px;">
-                        <label class="apple-btn apple-btn-glass apple-btn-sm" style="flex:1; cursor:pointer; font-size:11.5px; justify-content:center;">
-                            <input type="file" id="player-input-custom-sub" accept=".srt,.vtt,.ass" style="display:none">
-                            <span>+ 导入本地字幕 (.srt/.vtt)</span>
-                        </label>
-                    </div>
-                    <div class="player-group-title" style="margin-top:10px; font-size:11px;">字幕字号与时间轴微调</div>
-                    <div class="player-pill-grid" id="player-sub-size-grid">
-                        <button class="player-opt-pill" data-subsize="sm">小</button>
-                        <button class="player-opt-pill active" data-subsize="md">中</button>
-                        <button class="player-opt-pill" data-subsize="lg">大</button>
-                        <button class="player-opt-pill" data-subsize="xl">特大</button>
-                    </div>
-                    <div class="player-pill-grid" id="player-sub-delay-grid" style="margin-top:6px;">
-                        <button class="player-opt-pill" data-subdelay="-0.5">-0.5s</button>
-                        <button class="player-opt-pill active" data-subdelay="0">0s 正常</button>
-                        <button class="player-opt-pill" data-subdelay="0.5">+0.5s</button>
-                    </div>
-                </div>
-            </div>
-        </div>
     </div>
+<script>if (window.PlayerTemplate) document.getElementById("view-player").innerHTML = window.PlayerTemplate.markup;</script>
 
-    <div id="view-tools" class="view-section">
+<div id="view-tools" class="view-section">
         <!-- 分段选择器 -->
         <div style="display:flex; justify-content:center; margin-bottom:14px; width:100%;">
             <div class="segmented" id="tools-segmented" style="max-width:100%;">
@@ -1114,6 +749,18 @@
     </div>
 </div>
 
-<script src="app.js?v=20260828_v44"></script>
+<script src="app.js?v=20260831_v46"></script>
+
+<!-- 迷你悬浮窗：切到其他视图时播放器舞台摘挂进来，可拖拽/展开/关闭 -->
+<div class="ap-mini-player" id="ap-mini-player">
+    <div class="ap-mini-stage-mount" id="ap-mini-stage-mount"></div>
+    <div class="ap-mini-bar" id="ap-mini-bar">
+        <span class="ap-mini-title" id="ap-mini-title">正在播放</span>
+        <span class="ap-mini-drag-hint">⠿</span>
+        <button class="ap-mini-btn" id="ap-mini-toggle" title="播放/暂停">⏸</button>
+        <button class="ap-mini-btn" id="ap-mini-expand" title="展开回播放器">⤢</button>
+        <button class="ap-mini-btn" id="ap-mini-close" title="关闭播放器">✕</button>
+    </div>
+</div>
 </body>
 </html>

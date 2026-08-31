@@ -12,6 +12,7 @@ const HISTORY_FILE = path.join(DATA_DIR, 'history.json');
 const MAX_RECORDS = 200;
 
 let records = [];
+let persistTimer = null;
 
 try {
     if (fs.existsSync(HISTORY_FILE)) {
@@ -22,7 +23,20 @@ try {
     records = [];
 }
 
+// 去抖落盘：连续传输（尤其是流式下载切片场景）每 250ms 最多写盘一次
 function persist() {
+    if (persistTimer) clearTimeout(persistTimer);
+    persistTimer = setTimeout(() => {
+        persistTimer = null;
+        try { fs.writeFileSync(HISTORY_FILE, JSON.stringify(records), 'utf8'); } catch (e) {}
+    }, 250);
+}
+
+function flushPersist() {
+    if (persistTimer) {
+        clearTimeout(persistTimer);
+        persistTimer = null;
+    }
     try { fs.writeFileSync(HISTORY_FILE, JSON.stringify(records), 'utf8'); } catch (e) {}
 }
 
@@ -50,7 +64,7 @@ function listRecords(limit) {
 
 function clearRecords() {
     records = [];
-    persist();
+    flushPersist();
 }
 
 module.exports = { recordTransfer, listRecords, clearRecords };
