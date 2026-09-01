@@ -162,11 +162,12 @@ const handleStream = (req, res, isHead = false) => {
             return res.status(416).end();
         }
 
-        // 开放式 Range (如 Range: bytes=0-) 限制每次响应最大 2MB~4MB 切片：
-        // 客户端 15ms~25ms 即收齐首批关键帧瞬间起播，同时避免预取/拖拽把整部视频
-        // 写进 Service Worker 缓存（cache key 只按 Range 头区分，不截断等于全量下载）
+        // 开放式 Range (如 Range: bytes=0-) 限制每次响应切片大小：
+        // 首块保持小切片保证起播速度；续传块大幅放宽到 12MB，远程链路（Tailscale
+        // 等高 RTT 场景）下浏览器不必频繁再发 Range 请求逐块续传，显著减少往返。
+        // SW 侧单条 8MB 以上不入缓存，不会把 Service Worker 缓存撑爆。
         if (isNaN(end) || parts[1].trim() === '') {
-            const maxChunk = start === 0 ? 2 * 1024 * 1024 : 4 * 1024 * 1024;
+            const maxChunk = start === 0 ? 2 * 1024 * 1024 : 12 * 1024 * 1024;
             end = Math.min(fileSize - 1, start + maxChunk - 1);
         } else if (end >= fileSize) {
             end = fileSize - 1;

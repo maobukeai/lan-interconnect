@@ -1,5 +1,5 @@
-const STATIC_CACHE_NAME = 'lan-disk-static-v3';
-const VIDEO_CACHE_NAME = 'lan-disk-video-cache-v3';
+const STATIC_CACHE_NAME = 'lan-disk-static-v4';
+const VIDEO_CACHE_NAME = 'lan-disk-video-cache-v4';
 
 const PRECACHE_ASSETS = [
     '/',
@@ -66,12 +66,10 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // 3. 对静态文件采用 Stale-While-Revalidate（缓存优先秒开，后台异步更新）
+    // 3. 对静态文件采用网络优先（Network-First）：版本升级后手机立刻拿到最新前端，
+    //    断网时回退缓存保证离线可用；成功响应顺手写入缓存供离线兜底
     event.respondWith(
         caches.open(STATIC_CACHE_NAME).then(async (cache) => {
-            const cachedResponse = await cache.match(request);
-            
-            // 后台异步向网络请求最新资源
             const fetchPromise = fetch(request).then((networkResponse) => {
                 if (networkResponse && networkResponse.status === 200) {
                     cache.put(request, networkResponse.clone());
@@ -79,8 +77,12 @@ self.addEventListener('fetch', (event) => {
                 return networkResponse;
             }).catch(() => null);
 
-            // 如果本地已有缓存，0 毫秒即刻返回给用户呈现 UI；否则等待网络响应
-            return cachedResponse || (await fetchPromise) || new Response('Offline', { status: 503 });
+            const networkResponse = await fetchPromise;
+            if (networkResponse) return networkResponse;
+
+            // 网络失败（如电脑休眠/离线）时回退缓存
+            const cachedResponse = await cache.match(request);
+            return cachedResponse || new Response('Offline', { status: 503 });
         })
     );
 });

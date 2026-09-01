@@ -104,7 +104,7 @@ router.get('/ping', (req, res) => {
     const osName = osType === 'Windows_NT' ? 'Windows' : (osType === 'Darwin' ? 'macOS' : (osType === 'Linux' ? 'Linux' : osType));
     res.json({
         app: '猫步互联 Pro',
-        version: '1.8.9',
+        version: '1.9.0',
         hostname: os.hostname(),
         os: osName,
         requiresPin: !!state.currentConfig.pin,
@@ -332,64 +332,111 @@ router.post('/terminal', (req, res) => {
     });
 });
 
-// 剪贴板同步
+// 剪贴板同步（支持图文双向互通）
 router.get('/clipboard', (req, res) => {
     try {
         let text = '';
+        let image = null;
+
         try {
             const { clipboard } = require('electron');
             text = clipboard.readText() || '';
+            const img = clipboard.readImage();
+            if (img && !img.isEmpty()) {
+                image = img.toDataURL();
+            }
         } catch (electronErr) {
             if (process.platform === 'win32') {
                 const tmpFile = path.join(os.tmpdir(), `clipboard_${Date.now()}.txt`);
+                const tmpImg = path.join(os.tmpdir(), `clipboard_${Date.now()}.png`);
                 try {
-                    execSync(`powershell -NoProfile -Command "Get-Clipboard -Raw | Out-File -FilePath '${tmpFile}' -Encoding utf8"`);
+                    const psScript = `Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; if ([System.Windows.Forms.Clipboard]::ContainsImage()) { $img = [System.Windows.Forms.Clipboard]::GetImage(); if ($img) { $img.Save('${tmpImg.replace(/\\/g, '\\\\')}', [System.Drawing.Imaging.ImageFormat]::Png); $img.Dispose(); } } if ([System.Windows.Forms.Clipboard]::ContainsText()) { [System.Windows.Forms.Clipboard]::GetText() | Out-File -FilePath '${tmpFile.replace(/\\/g, '\\\\')}' -Encoding utf8; }`;
+                    execSync(`powershell -NoProfile -Command "${psScript}"`, { timeout: 3000 });
                     if (fs.existsSync(tmpFile)) {
                         text = fs.readFileSync(tmpFile, 'utf8').replace(/^\uFEFF/, '').trim();
                         fs.unlinkSync(tmpFile);
                     }
+                    if (fs.existsSync(tmpImg)) {
+                        const imgBuf = fs.readFileSync(tmpImg);
+                        image = `data:image/png;base64,${imgBuf.toString('base64')}`;
+                        fs.unlinkSync(tmpImg);
+                    }
                 } catch (err) {
-                    if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
+                    if (fs.existsSync(tmpFile)) try { fs.unlinkSync(tmpFile); } catch(e){}
+                    if (fs.existsSync(tmpImg)) try { fs.unlinkSync(tmpImg); } catch(e){}
                 }
             } else if (process.platform === 'darwin') {
-                text = execSync('pbpaste').toString().trim();
+                try { text = execSync('pbpaste').toString().trim(); } catch (e) {}
             }
         }
-        res.json({ text });
+        res.json({
+            text: text || '',
+            image: image || null,
+            type: image ? 'image' : 'text',
+            hasImage: !!image
+        });
     } catch (e) {
-        res.json({ text: '' });
+        res.json({ text: '', image: null, type: 'text', hasImage: false });
     }
 });
 
 router.post('/clipboard', (req, res) => {
-    const { text } = req.body;
-    if (typeof text !== 'string') return res.status(400).json({ error: 'Text required' });
+    const { text, image } = req.body || {};
+    if (typeof text !== 'string' && typeof image !== 'string') {
+        return res.status(400).json({ error: 'Text or image data required' });
+    }
     
     try {
         try {
-            const { clipboard } = require('electron');
-            clipboard.writeText(text);
-            return res.json({ success: true });
+            const { clipboard, nativeImage } = require('electron');
+            if (image && typeof image === 'string' && image.startsWith('data:image/')) {
+                const img = nativeImage.createFromDataURL(image);
+                clipboard.writeImage(img);
+                return res.json({ success: true, type: 'image' });
+            } else if (typeof text === 'string') {
+                clipboard.writeText(text);
+                return res.json({ success: true, type: 'text' });
+            }
         } catch (electronErr) {
             if (process.platform === 'win32') {
-                if (!text) {
-                    execSync(`powershell -NoProfile -Command "Set-Clipboard -Value $null"`);
-                } else {
-                    const tmpFile = path.join(os.tmpdir(), `clipboard_set_${Date.now()}.txt`);
-                    fs.writeFileSync(tmpFile, text, 'utf8');
-                    try {
-                        execSync(`powershell -NoProfile -Command "Get-Content -Path '${tmpFile}' -Encoding utf8 | Set-Clipboard"`);
-                    } finally {
-                        if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
+                if (image && typeof image === 'string' && image.startsWith('data:image/')) {
+                    const base64Data = image.split(',')[1];
+                    if (base64Data) {
+                        const tmpImg = path.join(os.tmpdir(), `clipboard_set_${Date.now()}.png`);
+                        fs.writeFileSync(tmpImg, Buffer.from(base64Data, 'base64'));
+                        try {
+                            const ps = `Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $img = [System.Drawing.Image]::FromFile('${tmpImg.replace(/\\/g, '\\\\')}'); [System.Windows.Forms.Clipboard]::SetImage($img); $img.Dispose();`;
+                            execSync(`powershell -NoProfile -Command "${ps}"`, { timeout: 3000 });
+                            return res.json({ success: true, type: 'image' });
+                        } finally {
+                            if (fs.existsSync(tmpImg)) try { fs.unlinkSync(tmpImg); } catch (e) {}
+                        }
                     }
                 }
+                if (typeof text === 'string') {
+                    if (!text) {
+                        execSync(`powershell -NoProfile -Command "Set-Clipboard -Value $null"`);
+                    } else {
+                        const tmpFile = path.join(os.tmpdir(), `clipboard_set_${Date.now()}.txt`);
+                        fs.writeFileSync(tmpFile, text, 'utf8');
+                        try {
+                            execSync(`powershell -NoProfile -Command "Get-Content -Path '${tmpFile.replace(/\\/g, '\\\\')}' -Encoding utf8 | Set-Clipboard"`);
+                        } finally {
+                            if (fs.existsSync(tmpFile)) try { fs.unlinkSync(tmpFile); } catch (e) {}
+                        }
+                    }
+                    return res.json({ success: true, type: 'text' });
+                }
             } else if (process.platform === 'darwin') {
-                execSync(`pbcopy`, { input: text });
+                if (typeof text === 'string') {
+                    execSync(`pbcopy`, { input: text });
+                    return res.json({ success: true, type: 'text' });
+                }
             }
             res.json({ success: true });
         }
     } catch (e) {
-        res.status(500).json({ error: 'Failed to set clipboard' });
+        res.status(500).json({ error: 'Failed to set clipboard: ' + e.message });
     }
 });
 

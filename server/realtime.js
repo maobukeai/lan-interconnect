@@ -7,7 +7,8 @@
  *  - 上行 text：输入/控制事件 JSON（move/down/up/click/scroll/key/text/start/stop 等）
  *
  * 鉴权：upgrade 时 query 传 pin 或 token，校验逻辑与 checkAuth/checkSensitive 同标准；
- * 免密模式下仅本机连接可开流，与 HTTP 敏感接口安全模型一致。
+ * 鉴权：upgrade 时 query 传 pin 或 token，校验逻辑与 HTTP 侧 checkRemoteControl 同标准；
+ * 免密模式下放行局域网与 Tailscale 私有网段，与宽松版远程控制安全模型一致。
  */
 const os = require('os');
 const path = require('path');
@@ -167,6 +168,32 @@ function runInputAction(args) {
     });
 }
 
+let pendingMove = null;
+let isMoving = false;
+
+function scheduleMove(x, y) {
+    pendingMove = { x, y };
+    if (isMoving) return;
+    processNextMove();
+}
+
+function processNextMove() {
+    if (!pendingMove) {
+        isMoving = false;
+        return;
+    }
+    isMoving = true;
+    const { x, y } = pendingMove;
+    pendingMove = null;
+    runInputAction(['-Action', 'move', '-MouseX', String(x), '-MouseY', String(y)]).then(() => {
+        if (pendingMove) {
+            setTimeout(processNextMove, 10);
+        } else {
+            isMoving = false;
+        }
+    });
+}
+
 function parseCoord(v) {
     const n = Number(v);
     return Number.isFinite(n) ? Math.round(n) : null;
@@ -178,7 +205,7 @@ async function handleInput(client, msg) {
         case 'move': {
             const x = parseCoord(msg.x), y = parseCoord(msg.y);
             if (x === null || y === null) return;
-            await runInputAction(['-Action', 'move', '-MouseX', String(x), '-MouseY', String(y)]);
+            scheduleMove(x, y);
             break;
         }
         case 'down': {
@@ -259,12 +286,17 @@ function verifyUpgrade(req) {
     const token = url.searchParams.get('token');
     if (token && (isValidQrToken(token) || safeEqual(token, state.qrToken))) return true;
 
+    const pin = url.searchParams.get('pin');
     if (state.currentConfig.pin) {
-        const pin = url.searchParams.get('pin');
         if (pin !== null && safeEqual(pin, state.currentConfig.pin)) return true;
         return false;
+    } else if (pin) {
+        // 服务端未设 PIN 但客户端显式传了非空 PIN，判定为凭据不匹配拒绝连接
+        return false;
     }
-    return isLocalRequest({ socket: req.socket });
+    // 免密模式：本机 + 局域网/Tailscale 私有网段放行（与 HTTP 侧 checkRemoteControl 同标准）
+    if (isLocalRequest({ socket: req.socket })) return true;
+    return /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.|169\.254\.)/.test(cleanIp);
 }
 
 function attachRealtime(server) {

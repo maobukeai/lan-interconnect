@@ -189,6 +189,8 @@
 
         const st = (IPC && IPC.state) || {};
         let qrImg = st.qrDataUrl || '';
+        // 初始地址仅作占位：主进程启动时缓存的 state.url 可能是 Tailscale 等非局域网地址，
+        // 真实展示以下方异步拉取的服务端实时报告（优先局域网地址）为准
         let targetUrl = st.qrUrl || st.url || window.currentServerUrl || ('http://' + (window.location.hostname || '127.0.0.1') + ':' + (st.port || 3000));
 
         const ui = window.LanDiskUI || window.UI;
@@ -293,10 +295,12 @@
         (async () => {
             try {
                 // 始终拉取 status：既补齐二维码，也获取服务端识别的 Tailscale 远程地址
-                const probeUrl = targetUrl.startsWith('http') ? targetUrl : `http://127.0.0.1:${st.port || 3000}`;
+                // 桌面端 GUI 与服务端同机，直接探测 127.0.0.1，避免 targetUrl 过期导致探测失败
+                const probeUrl = `http://127.0.0.1:${st.port || 3000}`;
                 const headers = (window.LanDiskAuth && window.LanDiskAuth.authHeaders) ? window.LanDiskAuth.authHeaders() : {};
                 const res = await fetch(probeUrl.replace(/\/$/, '') + '/api/control/status', { headers }).then(r => r.json()).catch(() => ({}));
-                if (res && res.qrDataUrl && !qrImg) {
+                // 无条件采用服务端实时报告：state 里缓存的可能是主进程启动时的过期地址（如 Tailscale IP）
+                if (res && res.qrDataUrl) {
                     qrImg = res.qrDataUrl;
                     st.qrDataUrl = qrImg;
                     if (res.url) targetUrl = res.qrUrl || res.url;
@@ -404,6 +408,16 @@
         if (target) target.classList.add('active');
         $('.app-viewport').scrollTop = 0;
 
+        // 生命周期管理：离开 tools 视图时停止进程轮询与屏幕流
+        if (view !== 'tools') {
+            if (typeof ProcessMonitorComponent !== 'undefined' && ProcessMonitorComponent.stop) {
+                ProcessMonitorComponent.stop();
+            }
+            if (window.desktopRemoteControl && typeof window.desktopRemoteControl.pause === 'function') {
+                window.desktopRemoteControl.pause();
+            }
+        }
+
         if (view === 'home') { pollHome(true); loadHomeHistory(); }
         if (view === 'chat') { chatUnread = 0; updateChatBadge(); bootChat(); }
         if (view === 'files' && IPC.state.running && !filesInited) {
@@ -415,18 +429,25 @@
             MediaTheaterComponent.init({ grid: '#poster-grid', folderLabel: '#media-folder-label', chipRow: '#media-folders-chip-row' });
             if (IPC.state.running) MediaTheaterComponent.scan();
         }
-        if (view === 'tools' && !toolsInited) {
-            toolsInited = true;
-            if (typeof RemoteControl !== 'undefined' && $('#desktop-remote-control-container')) {
-                window.desktopRemoteControl = new RemoteControl({
-                    container: '#desktop-remote-control-container',
-                    getPin: () => IPC.getConfig().pin || ''
-                });
+        if (view === 'tools') {
+            if (!toolsInited) {
+                toolsInited = true;
+                if (typeof RemoteControl !== 'undefined' && $('#desktop-remote-control-container')) {
+                    window.desktopRemoteControl = new RemoteControl({
+                        container: '#desktop-remote-control-container',
+                        getPin: () => IPC.getConfig().pin || ''
+                    });
+                }
+                ProcessMonitorComponent.load('process-list');
+                WhiteboardComponent.init('whiteboard');
+                const ps = $('#process-search');
+                if (ps) ps.addEventListener('input', (e) => ProcessMonitorComponent.filter(e.target.value));
+            } else {
+                ProcessMonitorComponent.load('process-list');
+                if (window.desktopRemoteControl && typeof window.desktopRemoteControl.resume === 'function') {
+                    window.desktopRemoteControl.resume();
+                }
             }
-            ProcessMonitorComponent.load('process-list');
-            WhiteboardComponent.init('whiteboard');
-            const ps = $('#process-search');
-            if (ps) ps.addEventListener('input', (e) => ProcessMonitorComponent.filter(e.target.value));
         }
         if (view === 'settings') {
             initSettingsVisit();
@@ -1247,23 +1268,104 @@
         $('#btn-draw-clear').addEventListener('click', () => WhiteboardComponent.clear('whiteboard'));
         $('#btn-draw-save').addEventListener('click', () => WhiteboardComponent.save());
 
+        let currentClipImage = null;
+
+        function setClipImagePreview(dataUrl) {
+            currentClipImage = dataUrl;
+            const box = $('#clip-img-preview-box');
+            const img = $('#clip-img-preview');
+            const clearBtn = $('#btn-clip-clear');
+            if (box && img) {
+                if (dataUrl) {
+                    img.src = dataUrl;
+                    box.style.display = 'block';
+                    if (clearBtn) clearBtn.style.display = 'inline-flex';
+                } else {
+                    img.src = '';
+                    box.style.display = 'none';
+                    if (clearBtn && !$('#clip-text').value) clearBtn.style.display = 'none';
+                }
+            }
+        }
+
+        $('#btn-clip-clear') && $('#btn-clip-clear').addEventListener('click', () => {
+            $('#clip-text').value = '';
+            setClipImagePreview(null);
+            $('#btn-clip-clear').style.display = 'none';
+        });
+
         $('#btn-clip-pull').addEventListener('click', async () => {
             if (!IPC.state.running) { UI.toast('请先启动服务', 'info'); return; }
             const res = await fetch(api('/api/clipboard'), { headers: auth().authHeaders() });
             const data = await res.json().catch(() => ({}));
-            if (res.ok) { $('#clip-text').value = data.text || ''; UI.toast(data.text ? '已拉取系统剪贴板' : '剪贴板为空', 'success'); }
-            else UI.toast(data.error || '拉取失败', 'error');
+            if (res.ok) {
+                $('#clip-text').value = data.text || '';
+                if (data.image) {
+                    setClipImagePreview(data.image);
+                    UI.toast('已拉取剪贴板中的图片与文本', 'success');
+                } else {
+                    setClipImagePreview(null);
+                    UI.toast(data.text ? '已拉取系统剪贴板文本' : '剪贴板为空', 'success');
+                }
+                if ($('#btn-clip-clear') && (data.text || data.image)) {
+                    $('#btn-clip-clear').style.display = 'inline-flex';
+                }
+            } else {
+                UI.toast(data.error || '拉取失败', 'error');
+            }
         });
-        $('#btn-clip-push').addEventListener('click', async () => {
+
+        $('#btn-clip-img-download') && $('#btn-clip-img-download').addEventListener('click', () => {
+            if (!currentClipImage) return;
+            const a = document.createElement('a');
+            a.href = currentClipImage;
+            a.download = `clipboard_${Date.now()}.png`;
+            a.click();
+        });
+
+        $('#btn-clip-img-push') && $('#btn-clip-img-push').addEventListener('click', async () => {
             if (!IPC.state.running) { UI.toast('请先启动服务', 'info'); return; }
-            const text = $('#clip-text').value;
-            if (!text.trim()) { UI.toast('没有可推送的文本', 'info'); return; }
+            if (!currentClipImage) { UI.toast('没有可推送的图片', 'info'); return; }
             const res = await fetch(api('/api/clipboard'), {
                 method: 'POST',
                 headers: auth().authHeaders({ 'Content-Type': 'application/json' }),
-                body: JSON.stringify({ text })
+                body: JSON.stringify({ image: currentClipImage })
+            });
+            UI.toast(res.ok ? '已推送图片到系统剪贴板' : '推送图片失败', res.ok ? 'success' : 'error');
+        });
+
+        $('#btn-clip-push').addEventListener('click', async () => {
+            if (!IPC.state.running) { UI.toast('请先启动服务', 'info'); return; }
+            const text = $('#clip-text').value;
+            if (!text.trim() && !currentClipImage) { UI.toast('没有可推送的内容', 'info'); return; }
+            const payload = {};
+            if (currentClipImage) payload.image = currentClipImage;
+            if (text.trim()) payload.text = text;
+            const res = await fetch(api('/api/clipboard'), {
+                method: 'POST',
+                headers: auth().authHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify(payload)
             });
             UI.toast(res.ok ? '已推送到系统剪贴板' : '推送失败', res.ok ? 'success' : 'error');
+        });
+
+        // 监听粘贴事件（用户复制了图片直接在输入框 Ctrl+V 预览）
+        $('#clip-text').addEventListener('paste', (e) => {
+            const items = (e.clipboardData || (e.originalEvent && e.originalEvent.clipboardData))?.items;
+            if (!items) return;
+            for (const item of items) {
+                if (item.type.indexOf('image') !== -1) {
+                    const blob = item.getAsFile();
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        setClipImagePreview(event.target.result);
+                        UI.toast('已识别粘贴的图片，点击推送即可发送到电脑', 'info');
+                    };
+                    reader.readAsDataURL(blob);
+                    e.preventDefault();
+                    break;
+                }
+            }
         });
 
         // 模态框

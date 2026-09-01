@@ -254,13 +254,20 @@ function shouldCompress(req, res) {
     if (req.headers['x-no-compression']) {
         return false;
     }
-    // 音视频媒体流、下载与大文件严禁压缩，保证 Range 206 毫秒级直通与 0ms 拖拽
-    if (req.path && (req.path.includes('/stream') || req.path.includes('/download') || req.path.includes('/media'))) {
-        return false;
+    // 媒体二进制流严禁压缩，保证 Range 206 毫秒级直通与 0ms 拖拽。
+    // 只按精确段匹配，避免误伤 /api/media/progress 这类小 JSON 接口
+    // （它们在 /api/media 前缀下，远程链路上 gzip 收益明显）。
+    // /api/subtitle 是文本内容，保持可压缩。
+    if (req.path) {
+        const segs = req.path.split('?')[0].split('/').filter(Boolean);
+        if (segs.includes('stream') || segs.includes('download') ||
+            segs.includes('thumbnail') || segs.includes('preview')) {
+            return false;
+        }
     }
     if (res && res.getHeader) {
         const ct = (res.getHeader('Content-Type') || '').toLowerCase();
-        if (ct.startsWith('video/') || ct.startsWith('audio/') || ct === 'text/event-stream') {
+        if (ct.startsWith('video/') || ct.startsWith('audio/') || ct.startsWith('image/') || ct === 'text/event-stream') {
             return false;
         }
     }

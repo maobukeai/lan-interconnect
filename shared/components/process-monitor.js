@@ -269,6 +269,22 @@
             }
             this.fetchProcesses();
         }
+
+        stopAutoRefresh() {
+            if (this.autoRefreshTimer) {
+                clearInterval(this.autoRefreshTimer);
+                this.autoRefreshTimer = null;
+            }
+        }
+
+        destroy() {
+            this.stopAutoRefresh();
+            this.processes = [];
+        }
+
+        refresh() {
+            this.fetchProcesses();
+        }
     }
 
     let instance = null;
@@ -287,6 +303,10 @@
         const inst = getOrCreateInstance(containerId);
         inst.fetchProcesses();
         inst.startAutoRefresh();
+    };
+
+    ProcessMonitor.stop = function() {
+        if (instance) instance.stopAutoRefresh();
     };
 
     ProcessMonitor.filter = function(keyword) {

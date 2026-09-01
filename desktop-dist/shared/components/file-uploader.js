@@ -16,6 +16,55 @@
             this.onUploadComplete = config.onUploadComplete || null;
             // 单文件粒度状态回调：({name, size, percent, speed, state: 'uploading'|'merging'|'instant'|'done'|'error'})
             this.onFileStatus = config.onFileStatus || null;
+            this._initWorker();
+        }
+
+        _initWorker() {
+            if (typeof Worker === 'undefined') return;
+            try {
+                this.worker = new Worker('/shared/upload-worker.js');
+                this.taskCallbacks = new Map();
+                this.worker.onmessage = (e) => {
+                    const { taskId, success, ...res } = e.data || {};
+                    const cb = this.taskCallbacks.get(taskId);
+                    if (cb) {
+                        this.taskCallbacks.delete(taskId);
+                        if (success) cb.resolve(res);
+                        else cb.reject(new Error(res.error || 'Worker calculation failed'));
+                    }
+                };
+            } catch (err) {
+                this.worker = null;
+            }
+        }
+
+        async _calculateFileMeta(file, chunkSize) {
+            const taskId = 'task_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+            if (this.worker) {
+                return new Promise((resolve, reject) => {
+                    this.taskCallbacks.set(taskId, { resolve, reject });
+                    this.worker.postMessage({
+                        action: 'calculate_hash',
+                        taskId,
+                        file,
+                        chunkSize
+                    });
+                }).catch(() => this._fallbackCalculateMeta(file, chunkSize));
+            }
+            return this._fallbackCalculateMeta(file, chunkSize);
+        }
+
+        _fallbackCalculateMeta(file, chunkSize) {
+            const safeName = (file.name || 'upload').replace(/[^a-zA-Z0-9._-]/g, '_');
+            const fileHash = `${safeName}_${file.size}_${file.lastModified || 0}`;
+            const totalChunks = Math.ceil(file.size / chunkSize);
+            return Promise.resolve({
+                fileHash,
+                totalChunks,
+                chunkSize,
+                size: file.size,
+                name: file.name
+            });
         }
 
         _status(info) {
@@ -54,13 +103,14 @@
 
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
-                const fileHash = `${file.name}_${file.size}_${file.lastModified}`;
 
                 let chunkSize = 2 * 1024 * 1024;
                 if (file.size > 100 * 1024 * 1024) chunkSize = 8 * 1024 * 1024;
                 else if (file.size > 10 * 1024 * 1024) chunkSize = 4 * 1024 * 1024;
 
-                const totalChunks = Math.ceil(file.size / chunkSize);
+                const meta = await this._calculateFileMeta(file, chunkSize);
+                const fileHash = meta.fileHash;
+                const totalChunks = meta.totalChunks;
 
                 try {
                     // 1. 检查秒传 / 断点

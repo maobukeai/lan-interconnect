@@ -151,9 +151,33 @@ function checkSensitive(req, res, next) {
     return res.status(403).json({ error: '安全限制：免密模式下该操作仅允许本机访问。如需从远程客户端操控，请先在控制面板设置 PIN 访问密码。' });
 }
 
+// 远程控制类接口（/api/remote/*）的宽松校验：
+// 免密模式下放行局域网与 Tailscale（100.64/10）网段来源——这些网络本身即用户私有，
+// checkAuth 已拦截公网 Origin 与 IP 黑名单，此处再按源 IP 网段复核一道。
+// 设置了 PIN 时行为与 checkSensitive 一致（PIN 已在 checkAuth 校验）。
+function checkRemoteControl(req, res, next) {
+    const token = req.headers['x-qr-token'] || req.query.token;
+    if (token && (isValidQrToken(token) || safeEqual(token, state.qrToken))) {
+        return next();
+    }
+
+    if (state.currentConfig.pin) {
+        return next();
+    }
+    if (isLocalRequest(req)) {
+        return next();
+    }
+    const cleanIp = getCleanIp(req.ip || req.socket?.remoteAddress);
+    if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.|169\.254\.)/.test(cleanIp)) {
+        return next();
+    }
+    return res.status(403).json({ error: '安全限制：免密模式下远程控制仅允许局域网/Tailscale 设备使用；来自公网的访问请设置 PIN 访问密码。' });
+}
+
 module.exports = {
     checkAuth,
     checkSensitive,
+    checkRemoteControl,
     isLocalRequest,
     isAllowedApiOrigin
 };

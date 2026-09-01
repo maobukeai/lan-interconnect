@@ -491,6 +491,16 @@ class AppleCinemaPlayerEngine {
                 }
             } else {
                 this._releaseWakeLock();
+                // 切后台/锁屏时强制落盘一次播放进度
+                if (this.dom.media && this.dom.media.duration > 10 && this.dom.media.currentTime > 3) {
+                    this.savePlayHistory(this.dom.media.currentTime, this.dom.media.duration, true);
+                }
+            }
+        });
+        // 关闭页面/刷新前强制落盘一次播放进度
+        window.addEventListener('pagehide', () => {
+            if (this.dom.media && this.currentMedia && this.dom.media.duration > 10 && this.dom.media.currentTime > 3) {
+                this.savePlayHistory(this.dom.media.currentTime, this.dom.media.duration, true);
             }
         });
 
@@ -506,20 +516,25 @@ class AppleCinemaPlayerEngine {
         }, { passive: false });
     }
 
-    play(mediaItem, playlist = []) {
+    play(mediaItem, playlist = [], opts = {}) {
         this.init();
         this._applyPrefs();
         // 若上一次会话留下了迷你小窗，先收掉再进入播放视图
         this.exitMiniPlayer(false);
         this.closeDrawers();
         if (playlist && playlist.length > 0) {
-            // 复制并做自然数字排序（Natural Numeric Sort，完美解决 1, 10, 100 乱序问题）
-            const sortedList = [...playlist].sort((a, b) => {
-                const nameA = a.name || '';
-                const nameB = b.name || '';
-                return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
-            });
-            this.playlist = sortedList;
+            if (opts && opts.keepOrder) {
+                // 调用方已按用户选定顺序排好（如影音页时间/大小排序），保持原序
+                this.playlist = [...playlist];
+            } else {
+                // 复制并做自然数字排序（Natural Numeric Sort，完美解决 1, 10, 100 乱序问题）
+                const sortedList = [...playlist].sort((a, b) => {
+                    const nameA = a.name || '';
+                    const nameB = b.name || '';
+                    return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+                });
+                this.playlist = sortedList;
+            }
             this.currentIndex = this.playlist.findIndex(item => item.path === mediaItem.path);
             if (this.currentIndex === -1) {
                 this.playlist.unshift(mediaItem);
@@ -601,6 +616,17 @@ class AppleCinemaPlayerEngine {
         }
 
         const targetView = this.previousView || 'files';
+        // 退出前强制落盘最后一次进度：pause 事件异步派发，下面的清态会先于它执行，
+        // 届时 pause 兜底保存会因 currentMedia 已空而被守卫跳过
+        if (this.dom.media && this.currentMedia && this.dom.media.duration > 10 && this.dom.media.currentTime > 3) {
+            this.savePlayHistory(this.dom.media.currentTime, this.dom.media.duration, true);
+        }
+        // 清空播放态后再还原视图：pause 事件是异步派发的，若不清掉 currentMedia/isPlaying，
+        // 下方 switchView 会认为「仍在播放」而把刚退出的播放器又摘挂成迷你小窗
+        this.currentMedia = null;
+        this.playlist = [];
+        this.currentIndex = -1;
+        this.isPlaying = false;
         const dockBtn = document.querySelector(`.dock-item[data-view="${targetView}"]`);
         if (dockBtn) {
             dockBtn.click();
@@ -610,6 +636,8 @@ class AppleCinemaPlayerEngine {
             if (fallback) fallback.classList.add('active');
         }
         window.scrollTo({ top: 0, behavior: 'smooth' });
+        // 通知影音页等监听方：播放历史刚产生变化，可刷新最近播放/历史视图
+        try { window.dispatchEvent(new CustomEvent('landisk:player-closed')); } catch (e) {}
     }
 
     _authQueryString() {
@@ -659,15 +687,41 @@ class AppleCinemaPlayerEngine {
         } catch (e) {}
     }
 
+    // 计算当前缓冲领先播放位置多少秒（预取门控用）
+    getBufferAheadSeconds() {
+        const media = this.dom.media;
+        if (!media || !media.buffered || media.buffered.length === 0) return 0;
+        let end = 0;
+        for (let i = 0; i < media.buffered.length; i++) {
+            if (media.buffered.start(i) <= media.currentTime + 0.5) {
+                end = Math.max(end, media.buffered.end(i));
+            }
+        }
+        return end - media.currentTime;
+    }
+
     prefetchNextMedia() {
         if (this._prefetchTimer) clearTimeout(this._prefetchTimer);
-        this._prefetchTimer = setTimeout(() => {
+        // 缓冲健康度门控：本地链路缓冲秒满、预取立即放行；远程慢链路下推迟，
+        // 避免下一集的 2MB 首块与当前视频起播缓冲抢带宽
+        const BUFFER_AHEAD_MIN = 30;
+        let retries = 0;
+        const tryPrefetch = () => {
             if (!this.playlist || this.playlist.length <= 1) return;
             const nextIdx = this.currentIndex + 1;
-            if (nextIdx < this.playlist.length) {
+            if (nextIdx >= this.playlist.length) return;
+            const media = this.dom.media;
+            const ahead = this.getBufferAheadSeconds();
+            const nearEnd = media && media.duration && (media.duration - media.currentTime) < BUFFER_AHEAD_MIN;
+            if (ahead >= BUFFER_AHEAD_MIN || nearEnd) {
                 this.prefetchMedia(this.getStreamUrl(this.playlist[nextIdx]));
+                return;
             }
-        }, 4000);
+            // 约 2 分钟仍未充满（如用户暂停在缓冲不足处）则放弃本次预取
+            if (++retries > 30) return;
+            this._prefetchTimer = setTimeout(tryPrefetch, 4000);
+        };
+        this._prefetchTimer = setTimeout(tryPrefetch, 4000);
     }
 
     loadCurrentMedia() {
@@ -1267,7 +1321,18 @@ class AppleCinemaPlayerEngine {
 
     _navigateBackToPlayerView() {
         const dock = document.querySelector('.dock-item[data-view="player"]');
-        if (dock) dock.click();
+        if (dock) {
+            dock.click();
+            return;
+        }
+        // dock 没有 player 项（主页/文件/影音/消息/工具/设置）：舞台已被
+        // exitMiniPlayer 放回播放器容器，直接激活播放器专属视图完成「放大」
+        document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+        if (this.dom.view) this.dom.view.classList.add('active');
+        try {
+            if (history.pushState) history.pushState({ type: 'tab', tab: 'player' }, '', '#tab=player');
+        } catch (e) {}
+        window.scrollTo(0, 0);
     }
 
     isMiniActive() {
@@ -1743,7 +1808,6 @@ class AppleCinemaPlayerEngine {
                 this.savePlayHistory(media.currentTime, media.duration);
             }
         }
-
         // A-B 区间循环：越出区间（含手动拖出）立即拉回 A 点
         const ab = this.abRepeat;
         if (ab && ab.a !== null && ab.b !== null && ab.b > ab.a) {
@@ -1783,13 +1847,18 @@ class AppleCinemaPlayerEngine {
         // 只在 false→true 的跃变时触发，卡顿恢复（playing 再次派发）不会把控制条弹回来
         if (playing && !wasPlaying) this.showControls();
         this._syncMiniPlayIcon();
+
+        // 暂停即强制落盘一次进度（网络限流放行），拖拽/切集前的最后状态不丢失
+        if (!playing && wasPlaying && this.dom.media && this.dom.media.duration > 10 && this.dom.media.currentTime > 3) {
+            this.savePlayHistory(this.dom.media.currentTime, this.dom.media.duration, true);
+        }
     }
 
     onEnded() {
         // 播完落盘一次进度，避免将近片尾关闭时仍只显示上次保存点（如 97%）
         if (this.dom.media && this.currentMedia) {
             const dur = this.dom.media.duration || 0;
-            this.savePlayHistory(dur, dur);
+            this.savePlayHistory(dur, dur, true);
         }
         if (this.loopMode === 'one') {
             this.dom.media.currentTime = 0;
@@ -2328,14 +2397,15 @@ class AppleCinemaPlayerEngine {
         }
     }
 
-    savePlayHistory(current, duration) {
+    // force=true：暂停/播完/切后台等收尾时机，跳过网络限流立即上报
+    savePlayHistory(current, duration, force = false) {
         if (!this.currentMedia || !this.currentMedia.path) return;
         const now = Date.now();
         const curSec = Math.floor(current);
         const durSec = Math.floor(duration);
         const percentage = durSec > 0 ? Math.min(100, Math.max(0, Math.round((curSec / durSec) * 100))) : 0;
 
-        // 1. 写入本地 LocalStorage
+        // 1. 写入本地 LocalStorage（本地写零成本，保持 2.5s 细粒度）
         try {
             const raw = localStorage.getItem(this.historyStorageKey);
             const history = raw ? JSON.parse(raw) : {};
@@ -2358,7 +2428,12 @@ class AppleCinemaPlayerEngine {
         } catch (e) {}
 
         // 2. 跨设备同步至服务端持久化数据库（必须走 API 基址：
-        //    相对路径在 Electron file:// 壳下会打到错误 origin 导致静默失败）
+        //    相对路径在 Electron file:// 壳下会打到错误 origin 导致静默失败）。
+        //    远程链路上 POST 与视频流抢带宽，限流到 10s 一次，收尾时机强制放行
+        if (!force) {
+            if (this._lastServerProgressPost && now - this._lastServerProgressPost < 10000) return;
+            this._lastServerProgressPost = now;
+        }
         try {
             let authHeaders = { 'Content-Type': 'application/json' };
             if (window.LanDiskAuth && typeof window.LanDiskAuth.authHeaders === 'function') {
@@ -2369,6 +2444,7 @@ class AppleCinemaPlayerEngine {
                 headers: authHeaders,
                 body: JSON.stringify({
                     path: this.currentMedia.path,
+                    name: this.currentMedia.name || '',
                     time: curSec,
                     duration: durSec
                 })

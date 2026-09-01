@@ -1633,6 +1633,41 @@
                 }
             }, 4000);
         }
+
+        pause() {
+            if (this.isStreaming) {
+                this._wasStreaming = true;
+                this.stopStream();
+            }
+            if (this.autoSyncTimer) {
+                clearInterval(this.autoSyncTimer);
+                this.autoSyncTimer = null;
+            }
+        }
+
+        resume() {
+            this.startAutoSync();
+            if (this._wasStreaming) {
+                this._wasStreaming = false;
+                this.startStream();
+            }
+        }
+
+        destroy() {
+            this.stopStream();
+            if (this.autoSyncTimer) {
+                clearInterval(this.autoSyncTimer);
+                this.autoSyncTimer = null;
+            }
+            if (this.volumeDebounceTimer) {
+                clearTimeout(this.volumeDebounceTimer);
+                this.volumeDebounceTimer = null;
+            }
+            if (this.ws) {
+                try { this.ws.close(); } catch (e) {}
+                this.ws = null;
+            }
+        }
     }
 
     global.RemoteControl = RemoteControl;

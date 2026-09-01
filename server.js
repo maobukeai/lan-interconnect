@@ -5,7 +5,7 @@ const path = require('path');
 const os = require('os');
 
 const { state, generateQrToken, cleanupExpiredTokens, shouldCompress, getLocalIpAddress, getAddressCatalog } = require('./server/config');
-const { checkAuth, checkSensitive, isLocalRequest, isAllowedApiOrigin } = require('./server/middleware/auth');
+const { checkAuth, checkSensitive, checkRemoteControl, isLocalRequest, isAllowedApiOrigin } = require('./server/middleware/auth');
 const mdnsResponder = require('./server/services/mdns');
 const trashService = require('./server/services/trash');
 
@@ -163,15 +163,15 @@ function startServer(config) {
         app.use('/api/tools/unblock-ip', checkSensitive);
         app.use('/api/tools/set-device-alias', checkSensitive);
         app.use('/api/tools/clean-links', checkSensitive);
-        app.use('/api/remote/power', checkSensitive);
-        app.use('/api/remote/mouse', checkSensitive);
-        // 键盘/文本/滚轮同样是远程输入能力，纳入敏感接口二道门
-        app.use('/api/remote/scroll', checkSensitive);
-        app.use('/api/remote/key', checkSensitive);
-        app.use('/api/remote/text', checkSensitive);
-        // 音量与屏幕截屏同属敏感控制：截屏涉及隐私，免密模式下不应向局域网访客开放
-        app.use('/api/remote/volume', checkSensitive);
-        app.use('/api/remote/screen', checkSensitive);
+        // /api/remote/* 使用宽松校验 checkRemoteControl：免密模式下局域网与 Tailscale（100.64/10 私有网段）
+        // 设备即可遥控；公网来源与终端/进程查杀等高危操作仍走 checkSensitive 严格限制
+        app.use('/api/remote/power', checkRemoteControl);
+        app.use('/api/remote/mouse', checkRemoteControl);
+        app.use('/api/remote/scroll', checkRemoteControl);
+        app.use('/api/remote/key', checkRemoteControl);
+        app.use('/api/remote/text', checkRemoteControl);
+        app.use('/api/remote/volume', checkRemoteControl);
+        app.use('/api/remote/screen', checkRemoteControl);
 
         const QRCode = require('qrcode');
 
@@ -258,6 +258,13 @@ function startServer(config) {
                     state.activeSockets.delete(socket);
                 });
             });
+
+            // 远程链路（Tailscale 等高 RTT 场景）调优：
+            // 默认 keepAliveTimeout 仅 5s，远程客户端复用连接稍一停顿即被服务端
+            // 掐断，下一个 Range 请求被迫重新走 TCP+TLS 握手，白白多付数个 RTT。
+            // 拉长 keep-alive 空闲窗口并提前禁用 Nagle，保证视频切片请求全速下发。
+            server.keepAliveTimeout = 65000;
+            server.headersTimeout = 70000;
 
             server.once('error', (err) => {
                 if ((err.code === 'EADDRINUSE' || err.code === 'EACCES') && attempts < maxAttempts) {

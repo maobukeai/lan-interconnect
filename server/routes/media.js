@@ -76,7 +76,7 @@ router.get('/media/progress', (req, res) => {
 
 // 2. 更新/保存播放进度
 // POST /api/media/progress
-// Body: { path: '...', time: 123.45, duration: 3600 }
+// Body: { path: '...', time: 123.45, duration: 3600, name?: '文件名.mp4' }
 router.post('/media/progress', (req, res) => {
     const { path: targetPath, time, duration } = req.body || {};
     if (!targetPath || typeof targetPath !== 'string') {
@@ -89,6 +89,8 @@ router.post('/media/progress', (req, res) => {
 
     progressStore[targetPath] = {
         path: targetPath,
+        // name 用于播放历史列表展示；旧记录缺失时由 /media/history 按 basename 兜底
+        name: (typeof req.body.name === 'string' && req.body.name.trim()) ? req.body.name.trim().slice(0, 300) : (progressStore[targetPath] && progressStore[targetPath].name) || undefined,
         time: t,
         duration: d,
         percentage,
@@ -98,6 +100,35 @@ router.post('/media/progress', (req, res) => {
     debouncedSaveProgress();
 
     res.json({ success: true, progress: progressStore[targetPath] });
+});
+
+// 2.5 播放历史列表（由播放进度派生，无需独立存储）
+// GET /api/media/history?limit=200
+// 返回按最后播放时间倒序的有效观看记录（从未真正播过的 time=0 且 percentage=0 条目不进历史）
+router.get('/media/history', (req, res) => {
+    const limit = Math.min(500, Math.max(1, parseInt(req.query.limit, 10) || 200));
+    const history = Object.values(progressStore)
+        .filter(item => item && (item.time > 8 || (item.percentage || 0) > 0))
+        .map(item => ({
+            path: item.path,
+            name: item.name || path.basename(item.path),
+            time: item.time || 0,
+            duration: item.duration || 0,
+            percentage: item.percentage || 0,
+            updatedAt: item.updatedAt || 0
+        }))
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .slice(0, limit);
+    res.json({ success: true, history });
+});
+
+// 2.6 清空全部播放记录（同时清掉断点续播进度——两者同源）
+// DELETE /api/media/progress
+router.delete('/media/progress', (req, res) => {
+    const count = Object.keys(progressStore).length;
+    progressStore = {};
+    debouncedSaveProgress();
+    res.json({ success: true, cleared: count });
 });
 
 // 3.5 媒体资料库目录持久化：服务端统一存储（~/.landisk/media_dirs.json），
@@ -133,7 +164,7 @@ router.post('/media/dirs', (req, res) => {
 
 // 3. 探查并自动匹配同级目录下的字幕文件
 // GET /api/media/subtitles?path=...
-router.get('/media/subtitles', (req, res) => {
+router.get('/media/subtitles', async (req, res) => {
     const targetPath = req.query.path;
     if (!targetPath || !fs.existsSync(targetPath)) {
         return res.status(404).json({ error: 'Video file not found' });
@@ -147,7 +178,9 @@ router.get('/media/subtitles', (req, res) => {
         const ext = path.extname(targetPath);
         const baseName = path.basename(targetPath, ext);
 
-        const files = fs.readdirSync(dir);
+        // 异步读目录：媒体目录可能包含上万文件，同步 readdirSync 会卡住
+        // Node 事件循环，把正在下发的视频流一起顿住
+        const files = await fs.promises.readdir(dir);
         const subExts = ['.srt', '.vtt', '.ass', '.ssa'];
         const matched = [];
 
@@ -250,7 +283,7 @@ function decodeSubtitleBuffer(buffer) {
     return { text: buffer.toString('utf8'), encoding: 'utf-8-lenient' };
 }
 
-router.get('/subtitle', (req, res) => {
+router.get('/subtitle', async (req, res) => {
     const targetPath = req.query.path;
     if (!targetPath || !fs.existsSync(targetPath)) {
         return res.status(404).send('Subtitle not found');
@@ -260,7 +293,8 @@ router.get('/subtitle', (req, res) => {
     }
 
     try {
-        const buffer = fs.readFileSync(targetPath);
+        // 异步读：几 MB 的 .ass 大字幕同步读会卡住事件循环，顿住正在下发的视频流
+        const buffer = await fs.promises.readFile(targetPath);
         const { text, encoding } = decodeSubtitleBuffer(buffer);
         res.setHeader('Content-Type', 'text/plain; charset=utf-8');
         res.setHeader('X-Subtitle-Encoding', encoding);
@@ -276,6 +310,25 @@ router.get('/subtitle', (req, res) => {
 // GET /api/media/thumbnail?path=...
 const crypto = require('crypto');
 const { spawn } = require('child_process');
+
+// 全局 ffmpeg 并发闸门：海报墙冷缓存时几十个缩略图请求会同时 spawn ffmpeg，
+// 弱机上 CPU 打满会拖慢正在下发的视频流（尤其远程客户端）。限流到 3 个进程，
+// 多余任务排队等槽位；排队本身不影响已在播的视频。
+const FFMPEG_CONCURRENCY = 3;
+let ffmpegActive = 0;
+const ffmpegWaiters = [];
+function acquireFfmpegSlot() {
+    if (ffmpegActive < FFMPEG_CONCURRENCY) {
+        ffmpegActive++;
+        return Promise.resolve();
+    }
+    return new Promise((resolve) => ffmpegWaiters.push(resolve));
+}
+function releaseFfmpegSlot() {
+    const next = ffmpegWaiters.shift();
+    if (next) next(); // 槽位直接移交，active 计数不变
+    else ffmpegActive--;
+}
 
 const THUMB_CACHE_DIR = path.resolve(DATA_DIR, 'thumbnails');
 if (!fs.existsSync(THUMB_CACHE_DIR)) {
@@ -304,52 +357,55 @@ const sendThumb = (filePath, req, res) => {
 };
 
 // 生成缩略图：先写 .part 再原子改名；第 3 秒失败回退第 0 秒；每个尝试 8s 超时
-function generateThumb(targetPath, thumbFile) {
-    return new Promise((resolve) => {
-        const partFile = thumbFile + '.part';
-        const rmPart = () => { try { fs.unlinkSync(partFile); } catch (e) {} };
-        const run = (ss) => new Promise((r) => {
-            const proc = spawn('ffmpeg', [
-                '-ss', ss,
-                '-i', targetPath,
-                '-vframes', '1',
-                '-filter:v', 'scale=360:-1',
-                '-q:v', '3',
-                partFile,
-                '-y'
-            ], { windowsHide: true });
-            let timedOut = false;
-            const timer = setTimeout(() => {
-                timedOut = true;
-                try { proc.kill(); } catch (e) {}
-            }, 8000);
-            proc.on('close', (code) => {
-                clearTimeout(timer);
-                r(timedOut ? 'timeout' : (code === 0 ? 'ok' : 'fail'));
-            });
-            proc.on('error', () => {
-                clearTimeout(timer);
-                r('error');
-            });
+// 走全局 ffmpeg 闸门限流，防止冷缓存海报墙拖垮视频流
+async function generateThumb(targetPath, thumbFile) {
+    const partFile = thumbFile + '.part';
+    const rmPart = () => { try { fs.unlinkSync(partFile); } catch (e) {} };
+    const run = (ss) => new Promise((r) => {
+        const proc = spawn('ffmpeg', [
+            '-ss', ss,
+            '-i', targetPath,
+            '-vframes', '1',
+            '-filter:v', 'scale=360:-1',
+            '-q:v', '3',
+            // .part 中间名无法被 ffmpeg 推断封装格式，必须显式指定 image2
+            '-f', 'image2',
+            partFile,
+            '-y'
+        ], { windowsHide: true });
+        let timedOut = false;
+        const timer = setTimeout(() => {
+            timedOut = true;
+            try { proc.kill(); } catch (e) {}
+        }, 8000);
+        proc.on('close', (code) => {
+            clearTimeout(timer);
+            r(timedOut ? 'timeout' : (code === 0 ? 'ok' : 'fail'));
         });
-
-        (async () => {
-            try { fs.unlinkSync(partFile); } catch (e) {}
-            let result = await run('00:00:03');
-            if (result !== 'ok') {
-                rmPart();
-                // 视频不足 3 秒时从第 0 秒回退重试
-                result = await run('00:00:00.1');
-            }
-            if (result === 'ok' && fs.existsSync(partFile) && fs.statSync(partFile).size > 0) {
-                fs.renameSync(partFile, thumbFile);
-                resolve(true);
-            } else {
-                rmPart();
-                resolve(false);
-            }
-        })();
+        proc.on('error', () => {
+            clearTimeout(timer);
+            r('error');
+        });
     });
+
+    await acquireFfmpegSlot();
+    try {
+        try { fs.unlinkSync(partFile); } catch (e) {}
+        let result = await run('00:00:03');
+        if (result !== 'ok') {
+            rmPart();
+            // 视频不足 3 秒时从第 0 秒回退重试
+            result = await run('00:00:00.1');
+        }
+        if (result === 'ok' && fs.existsSync(partFile) && fs.statSync(partFile).size > 0) {
+            fs.renameSync(partFile, thumbFile);
+            return true;
+        }
+        rmPart();
+        return false;
+    } finally {
+        releaseFfmpegSlot();
+    }
 }
 
 // 同视频并发请求复用同一个 ffmpeg 任务，避免海报墙瞬间 spawn 十几个进程
@@ -381,6 +437,38 @@ const handleThumbnail = async (req, res) => {
         // 如果不是视频格式，不支持截图
         if (!VIDEO_EXT_RE.test(targetPath)) {
             return res.status(415).send('Unsupported media type for thumbnail');
+        }
+
+        // 0. 本地同级海报/封面图自动探查（0 CPU 开销，优先秒级直通高清本地海报）
+        const dir = path.dirname(targetPath);
+        const ext = path.extname(targetPath);
+        const base = path.basename(targetPath, ext);
+        const candidates = [
+            path.join(dir, `${base}.jpg`),
+            path.join(dir, `${base}.png`),
+            path.join(dir, `${base}.jpeg`),
+            path.join(dir, `${base}.webp`),
+            path.join(dir, `${base}.poster.jpg`),
+            path.join(dir, `${base}-poster.jpg`),
+            path.join(dir, 'poster.jpg'),
+            path.join(dir, 'cover.jpg'),
+            path.join(dir, 'folder.jpg'),
+            path.join(dir, 'poster.png'),
+            path.join(dir, 'cover.png')
+        ];
+        for (const cand of candidates) {
+            if (fs.existsSync(cand)) {
+                try {
+                    const candStat = fs.statSync(cand);
+                    if (candStat.isFile() && candStat.size > 0) {
+                        res.setHeader('Content-Type', cand.endsWith('.png') ? 'image/png' : (cand.endsWith('.webp') ? 'image/webp' : 'image/jpeg'));
+                        res.setHeader('Cache-Control', 'public, max-age=604800');
+                        const s = fs.createReadStream(cand);
+                        req.on('close', () => s.destroy());
+                        return s.pipe(res);
+                    }
+                } catch (e) {}
+            }
         }
 
         // 计算唯一缓存文件名（基于路径与最后修改时间）
@@ -423,39 +511,48 @@ if (!fs.existsSync(PREVIEW_CACHE_DIR)) {
 
 const previewJobs = new Map(); // previewFile -> Promise<boolean>
 
-function generatePreview(targetPath, previewFile, ssSeconds) {
-    return new Promise((resolve) => {
-        const partFile = previewFile + '.part';
-        const rmPart = () => { try { fs.unlinkSync(partFile); } catch (e) {} };
-        // -ss 放在 -i 之前走关键帧快照，秒级定位；时间格式 s.mmm
-        const proc = spawn('ffmpeg', [
-            '-ss', ssSeconds.toFixed(3),
-            '-i', targetPath,
-            '-vframes', '1',
-            '-filter:v', 'scale=192:-1',
-            '-q:v', '5',
-            partFile,
-            '-y'
-        ], { windowsHide: true });
-        let timedOut = false;
-        const timer = setTimeout(() => {
-            timedOut = true;
-            try { proc.kill(); } catch (e) {}
-        }, 5000);
-        proc.on('close', (code) => {
-            clearTimeout(timer);
-            if (!timedOut && code === 0 && fs.existsSync(partFile) && fs.statSync(partFile).size > 0) {
-                try { fs.renameSync(partFile, previewFile); resolve(true); return; } catch (e) {}
-            }
-            rmPart();
-            resolve(false);
+// 与缩略图同一 ffmpeg 闸门限流
+async function generatePreview(targetPath, previewFile, ssSeconds) {
+    const partFile = previewFile + '.part';
+    const rmPart = () => { try { fs.unlinkSync(partFile); } catch (e) {} };
+
+    await acquireFfmpegSlot();
+    try {
+        return await new Promise((resolve) => {
+            // -ss 放在 -i 之前走关键帧快照，秒级定位；时间格式 s.mmm
+            // .part 中间名无法被 ffmpeg 推断封装格式，必须显式指定 image2
+            const proc = spawn('ffmpeg', [
+                '-ss', ssSeconds.toFixed(3),
+                '-i', targetPath,
+                '-vframes', '1',
+                '-filter:v', 'scale=192:-1',
+                '-q:v', '5',
+                '-f', 'image2',
+                partFile,
+                '-y'
+            ], { windowsHide: true });
+            let timedOut = false;
+            const timer = setTimeout(() => {
+                timedOut = true;
+                try { proc.kill(); } catch (e) {}
+            }, 5000);
+            proc.on('close', (code) => {
+                clearTimeout(timer);
+                if (!timedOut && code === 0 && fs.existsSync(partFile) && fs.statSync(partFile).size > 0) {
+                    try { fs.renameSync(partFile, previewFile); resolve(true); return; } catch (e) {}
+                }
+                rmPart();
+                resolve(false);
+            });
+            proc.on('error', () => {
+                clearTimeout(timer);
+                rmPart();
+                resolve(false);
+            });
         });
-        proc.on('error', () => {
-            clearTimeout(timer);
-            rmPart();
-            resolve(false);
-        });
-    });
+    } finally {
+        releaseFfmpegSlot();
+    }
 }
 
 const handlePreview = async (req, res) => {

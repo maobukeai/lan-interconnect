@@ -535,7 +535,16 @@
                     <span class="btn-text-full">平铺全部</span>
                     <span class="btn-text-mobile">平铺</span>
                 </button>
+                <button class="segmented-item" data-mode="history" title="播放历史与断点续播">
+                    <span data-icon="history" data-icon-size="13"></span>
+                    <span class="btn-text-full">历史</span>
+                    <span class="btn-text-mobile">历史</span>
+                </button>
             </div>
+            <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-media-sort" title="切换排序：默认 → 名称↑ → 名称↓ → 时间↓ → 大小↓">
+                <span data-icon="sort" data-icon-size="13"></span>
+                <span id="media-sort-label">默认</span>
+            </button>
             <button class="apple-btn apple-btn-glass" id="btn-media-scan" title="刷新媒体库">
                 <span data-icon="refresh" data-icon-size="14"></span>
                 <span class="btn-text-full">刷新</span>
@@ -605,11 +614,21 @@
         <!-- 子页面 1：剪贴板互通 -->
         <div id="sub-tool-clip" class="glass-card" style="display:none; margin-bottom:16px">
             <div class="apple-card-title">
-                <span class="apple-card-title-text"><span data-icon="clipboard"></span>剪贴板互通</span>
-                <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-clip-pull">拉取电脑剪贴板</button>
+                <span class="apple-card-title-text"><span data-icon="clipboard"></span>剪贴板互通 (图文双向)</span>
+                <div style="display:flex; gap:6px;">
+                    <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-clip-pull">拉取电脑剪贴板</button>
+                    <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-clip-clear" style="display:none">清空</button>
+                </div>
+            </div>
+            <div id="clip-img-preview-box" style="display:none; margin-bottom:10px; position:relative; background:var(--apple-bg-subtle, rgba(0,0,0,0.2)); border-radius:12px; padding:10px; text-align:center;">
+                <img id="clip-img-preview" src="" style="max-height:160px; max-width:100%; border-radius:8px; object-fit:contain; box-shadow:0 4px 12px rgba(0,0,0,0.15);" alt="剪贴板图片">
+                <div style="margin-top:8px; display:flex; justify-content:center; gap:8px;">
+                    <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-clip-img-download">保存图片</button>
+                    <button class="apple-btn apple-btn-primary apple-btn-sm" id="btn-clip-img-push">推送该图片到电脑</button>
+                </div>
             </div>
             <div class="apple-input-box" style="margin-bottom:10px">
-                <textarea id="clip-text" class="apple-input" rows="3" placeholder="在这里输入文本，推送到电脑剪贴板…（拉取后也会显示在这里）" style="resize:vertical; min-height:80px; line-height:1.5"></textarea>
+                <textarea id="clip-text" class="apple-input" rows="3" placeholder="在这里输入文本，或直接粘贴 (Ctrl+V/长按粘贴) 图片推送到电脑…" style="resize:vertical; min-height:80px; line-height:1.5"></textarea>
             </div>
             <button class="apple-btn apple-btn-primary" id="btn-clip-push" style="width:100%">推送到电脑剪贴板</button>
         </div>

@@ -185,6 +185,16 @@
 
         if (pushState && history.pushState) history.pushState({ type: 'tab', tab: view }, '', '#tab=' + view);
 
+        // 离开 tools 视图时暂停进程轮询与远程屏幕流
+        if (view !== 'tools') {
+            if (typeof ProcessMonitorComponent !== 'undefined' && ProcessMonitorComponent.stop) {
+                ProcessMonitorComponent.stop();
+            }
+            if (window.webRemoteControl && typeof window.webRemoteControl.pause === 'function') {
+                window.webRemoteControl.pause();
+            }
+        }
+
         if (view === 'dashboard') { loadDashboard(); loadHistoryFeed(); }
         if (view === 'chat') { chatUnread = 0; updateChatBadge(); }
         if (view === 'files' && !viewInit.files) {
@@ -195,17 +205,24 @@
             viewInit.media = true;
             initMediaView();
         }
-        if (view === 'tools' && !viewInit.tools) {
-            viewInit.tools = true;
-            if (typeof RemoteControl !== 'undefined' && $('#web-remote-control-container')) {
-                window.webRemoteControl = new RemoteControl({
-                    container: '#web-remote-control-container'
-                });
+        if (view === 'tools') {
+            if (!viewInit.tools) {
+                viewInit.tools = true;
+                if (typeof RemoteControl !== 'undefined' && $('#web-remote-control-container')) {
+                    window.webRemoteControl = new RemoteControl({
+                        container: '#web-remote-control-container'
+                    });
+                }
+                ProcessMonitorComponent.load('process-list');
+                WhiteboardComponent.init('whiteboard');
+                const ps = $('#process-search');
+                if (ps) ps.addEventListener('input', (e) => ProcessMonitorComponent.filter(e.target.value));
+            } else {
+                ProcessMonitorComponent.load('process-list');
+                if (window.webRemoteControl && typeof window.webRemoteControl.resume === 'function') {
+                    window.webRemoteControl.resume();
+                }
             }
-            ProcessMonitorComponent.load('process-list');
-            WhiteboardComponent.init('whiteboard');
-            const ps = $('#process-search');
-            if (ps) ps.addEventListener('input', (e) => ProcessMonitorComponent.filter(e.target.value));
         }
     }
 
@@ -499,33 +516,113 @@
         }
     }
 
-    /* ---------- 剪贴板互通 ---------- */
+    /* ---------- 剪贴板互通 (图文双向) ---------- */
     function bindClipboard() {
+        let currentClipImage = null;
+
+        function setClipImagePreview(dataUrl) {
+            currentClipImage = dataUrl;
+            const box = $('#clip-img-preview-box');
+            const img = $('#clip-img-preview');
+            const clearBtn = $('#btn-clip-clear');
+            if (box && img) {
+                if (dataUrl) {
+                    img.src = dataUrl;
+                    box.style.display = 'block';
+                    if (clearBtn) clearBtn.style.display = 'inline-flex';
+                } else {
+                    img.src = '';
+                    box.style.display = 'none';
+                    if (clearBtn && !$('#clip-text').value) clearBtn.style.display = 'none';
+                }
+            }
+        }
+
+        $('#btn-clip-clear') && $('#btn-clip-clear').addEventListener('click', () => {
+            $('#clip-text').value = '';
+            setClipImagePreview(null);
+            $('#btn-clip-clear').style.display = 'none';
+        });
+
         $('#btn-clip-pull').addEventListener('click', async () => {
             try {
                 const res = await fetch('/api/clipboard', { headers: auth().authHeaders() });
                 const data = await res.json();
                 if (res.ok) {
                     $('#clip-text').value = data.text || '';
-                    LanDiskUI.toast(data.text ? '已拉取电脑剪贴板' : '电脑剪贴板为空', 'success');
+                    if (data.image) {
+                        setClipImagePreview(data.image);
+                        LanDiskUI.toast('已拉取电脑剪贴板中的图片与文本', 'success');
+                    } else {
+                        setClipImagePreview(null);
+                        LanDiskUI.toast(data.text ? '已拉取电脑剪贴板文本' : '电脑剪贴板为空', 'success');
+                    }
+                    if ($('#btn-clip-clear') && (data.text || data.image)) {
+                        $('#btn-clip-clear').style.display = 'inline-flex';
+                    }
                 } else {
-                    LanDiskUI.toast(data.error || '拉取失败（免密模式下仅限本机）', 'error');
+                    LanDiskUI.toast(data.error || '拉取失败（免密模式下仅限本机或授权设备）', 'error');
                 }
             } catch (e) { LanDiskUI.toast('拉取失败', 'error'); }
         });
-        $('#btn-clip-push').addEventListener('click', async () => {
-            const text = $('#clip-text').value;
-            if (!text.trim()) { LanDiskUI.toast('没有可推送的文本', 'info'); return; }
+
+        $('#btn-clip-img-download') && $('#btn-clip-img-download').addEventListener('click', () => {
+            if (!currentClipImage) return;
+            const a = document.createElement('a');
+            a.href = currentClipImage;
+            a.download = `clipboard_${Date.now()}.png`;
+            a.click();
+        });
+
+        $('#btn-clip-img-push') && $('#btn-clip-img-push').addEventListener('click', async () => {
+            if (!currentClipImage) { LanDiskUI.toast('没有可推送的图片', 'info'); return; }
             try {
                 const res = await fetch('/api/clipboard', {
                     method: 'POST',
                     headers: auth().authHeaders({ 'Content-Type': 'application/json' }),
-                    body: JSON.stringify({ text })
+                    body: JSON.stringify({ image: currentClipImage })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (res.ok) LanDiskUI.toast('已推送图片到电脑剪贴板', 'success');
+                else LanDiskUI.toast(data.error || '推送图片失败', 'error');
+            } catch (e) { LanDiskUI.toast('推送失败', 'error'); }
+        });
+
+        $('#btn-clip-push').addEventListener('click', async () => {
+            const text = $('#clip-text').value;
+            if (!text.trim() && !currentClipImage) { LanDiskUI.toast('没有可推送的内容', 'info'); return; }
+            const payload = {};
+            if (currentClipImage) payload.image = currentClipImage;
+            if (text.trim()) payload.text = text;
+
+            try {
+                const res = await fetch('/api/clipboard', {
+                    method: 'POST',
+                    headers: auth().authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify(payload)
                 });
                 const data = await res.json().catch(() => ({}));
                 if (res.ok) LanDiskUI.toast('已推送到电脑剪贴板', 'success');
                 else LanDiskUI.toast(data.error || '推送失败（免密模式下仅限本机）', 'error');
             } catch (e) { LanDiskUI.toast('推送失败', 'error'); }
+        });
+
+        $('#clip-text').addEventListener('paste', (e) => {
+            const items = (e.clipboardData || (e.originalEvent && e.originalEvent.clipboardData))?.items;
+            if (!items) return;
+            for (const item of items) {
+                if (item.type.indexOf('image') !== -1) {
+                    const blob = item.getAsFile();
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        setClipImagePreview(event.target.result);
+                        LanDiskUI.toast('已识别粘贴的图片，点击推送即可发送到电脑', 'info');
+                    };
+                    reader.readAsDataURL(blob);
+                    e.preventDefault();
+                    break;
+                }
+            }
         });
     }
 
