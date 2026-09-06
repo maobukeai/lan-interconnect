@@ -163,6 +163,13 @@ function startServer(config) {
         app.use('/api/tools/unblock-ip', checkSensitive);
         app.use('/api/tools/set-device-alias', checkSensitive);
         app.use('/api/tools/clean-links', checkSensitive);
+        app.use('/api/files/extract', checkSensitive);
+        app.use('/api/extract', checkSensitive);
+        app.use('/api/files/copy', checkSensitive);
+        app.use('/api/copy', checkSensitive);
+        app.use('/api/files/move', checkSensitive);
+        app.use('/api/move', checkSensitive);
+        app.use('/api/study/scan-course', checkSensitive);
         // /api/remote/* 使用宽松校验 checkRemoteControl：免密模式下局域网与 Tailscale（100.64/10 私有网段）
         // 设备即可遥控；公网来源与终端/进程查杀等高危操作仍走 checkSensitive 严格限制
         app.use('/api/remote/power', checkRemoteControl);
@@ -234,6 +241,8 @@ function startServer(config) {
         app.use('/api', require('./server/routes/remote'));
         try { delete require.cache[require.resolve('./server/routes/media')]; } catch(e) {}
         app.use('/api', require('./server/routes/media'));
+        app.use('/api', require('./server/routes/dlna'));
+        app.use('/api', require('./server/routes/study'));
 
         const preferredPort = parseInt(state.currentConfig.port, 10) || 3000;
         const bindHost = state.currentConfig.bindIp || '0.0.0.0';
@@ -342,6 +351,8 @@ function stopServer() {
             try { state.realtime.close(); } catch (e) {}
             state.realtime = null;
         }
+
+        try { require('./server/services/dlna').destroy(); } catch (e) {}
 
         if (state.server) {
             for (const socket of state.activeSockets) {

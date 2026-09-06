@@ -676,6 +676,12 @@ body {
     border-radius: 8px;
 }
 
+.apple-btn-xs {
+    padding: 3px 8px;
+    font-size: 11px;
+    border-radius: 6px;
+}
+
 .apple-btn-primary {
     background: linear-gradient(135deg, #0a84ff 0%, #0071e3 100%);
     color: #ffffff !important;
@@ -691,6 +697,14 @@ body {
 
 .apple-btn-primary:active {
     transform: scale(0.96);
+}
+
+.apple-btn:disabled,
+.apple-btn[disabled] {
+    opacity: 0.45 !important;
+    cursor: not-allowed !important;
+    box-shadow: none !important;
+    transform: none !important;
 }
 
 .apple-btn-glass {
@@ -868,7 +882,7 @@ nav.dock,
     justify-content: space-around;
     gap: 6px;
     padding: 6px 10px;
-    width: min(400px, calc(100vw - 32px));
+    width: min(470px, calc(100vw - 32px));
     box-sizing: border-box;
     background: rgba(18, 22, 34, 0.72);
     backdrop-filter: blur(40px) saturate(210%);
@@ -913,8 +927,8 @@ body.theme-light .dock-glider {
 .dock-item,
 .apple-dock-tab {
     flex: 1;
-    min-width: 46px;
-    max-width: 72px;
+    min-width: 40px;
+    max-width: 68px;
     height: 46px;
     border-radius: 9999px;
     border: none;
@@ -3919,9 +3933,9 @@ input[type="range"].apple-range::-webkit-slider-thumb:active {
     .dock {
         bottom: calc(10px + env(safe-area-inset-bottom, 8px)) !important;
         padding: 4px 6px !important;
-        gap: 4px !important;
-        width: calc(100vw - 24px) !important;
-        max-width: 390px !important;
+        gap: 3px !important;
+        width: calc(100vw - 16px) !important;
+        max-width: 440px !important;
     }
 
     .dock-item {
@@ -4081,3 +4095,422 @@ input[type="range"].apple-range::-webkit-slider-thumb:active {
         max-width: calc(100vw - 24px);
     }
 }
+
+/* ---------- 13. 代码与 Markdown 即时工作室 (Code & Text Studio) ---------- */
+.text-editor-card {
+    background: rgba(14, 18, 28, 0.95) !important;
+    border: 1px solid var(--apple-border) !important;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), 0 0 1px rgba(255, 255, 255, 0.15) !important;
+    border-radius: 18px !important;
+}
+
+:root[data-theme="light"] .text-editor-card {
+    background: rgba(255, 255, 255, 0.98) !important;
+    border: 1px solid rgba(0, 0, 0, 0.1) !important;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.18) !important;
+}
+
+:root[data-theme="light"] #text-viewer,
+:root[data-theme="light"] #text-editor-input {
+    color: #1c1d22 !important;
+}
+
+#text-editor-input:focus {
+    outline: none;
+    box-shadow: inset 0 0 0 1px rgba(10, 132, 255, 0.35);
+}
+
+.text-editor-body ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+.text-editor-body ::-webkit-scrollbar-thumb {
+    background: rgba(150, 160, 180, 0.28);
+    border-radius: 4px;
+}
+.text-editor-body ::-webkit-scrollbar-thumb:hover {
+    background: rgba(150, 160, 180, 0.5);
+}
+
+/* ---------- 13.1 Markdown 实时预览与代码高亮 ---------- */
+.code-viewer-wrap {
+    width: 100%;
+    min-height: 100%;
+    padding: 12px 0;
+    box-sizing: border-box;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.code-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+    line-height: 1.6;
+    table-layout: auto;
+}
+
+.code-line {
+    transition: background 0.15s ease;
+}
+
+.code-line:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.code-lineno {
+    width: 44px;
+    min-width: 44px;
+    padding: 0 12px 0 8px;
+    text-align: right;
+    color: rgba(255, 255, 255, 0.25);
+    user-select: none;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 11px;
+    vertical-align: top;
+    white-space: nowrap;
+}
+
+.code-line-code {
+    padding: 0 16px;
+    white-space: pre;
+    word-break: normal;
+    overflow-x: auto;
+    vertical-align: top;
+    color: #e8eaf0;
+}
+
+/* 语法高亮 Token (Dark Mode 默认) */
+.syn-kw { color: #ff7b72; font-weight: 500; }
+.syn-str { color: #a5d6ff; }
+.syn-num { color: #79c0ff; }
+.syn-comment { color: #8b949e; font-style: italic; }
+.syn-type { color: #ffa657; }
+.syn-atom { color: #ff7b72; font-weight: 600; }
+.syn-fn { color: #d2a8ff; }
+.syn-tag { color: #7ee787; }
+.syn-attr { color: #79c0ff; }
+.syn-prop { color: #e8eaf0; font-weight: 500; }
+
+/* 语法高亮 Token (Light Mode) */
+:root[data-theme="light"] .code-line:hover {
+    background: rgba(0, 0, 0, 0.03);
+}
+:root[data-theme="light"] .code-lineno {
+    color: rgba(0, 0, 0, 0.3);
+    border-right-color: rgba(0, 0, 0, 0.08);
+}
+:root[data-theme="light"] .code-line-code {
+    color: #24292f;
+}
+:root[data-theme="light"] .syn-kw { color: #cf222e; }
+:root[data-theme="light"] .syn-str { color: #0a3069; }
+:root[data-theme="light"] .syn-num { color: #0550ae; }
+:root[data-theme="light"] .syn-comment { color: #6e7781; }
+:root[data-theme="light"] .syn-type { color: #953800; }
+:root[data-theme="light"] .syn-atom { color: #cf222e; }
+:root[data-theme="light"] .syn-fn { color: #8250df; }
+:root[data-theme="light"] .syn-tag { color: #116329; }
+:root[data-theme="light"] .syn-attr { color: #0550ae; }
+:root[data-theme="light"] .syn-prop { color: #24292f; }
+
+/* Markdown 内容排版 */
+.markdown-body {
+    padding: 18px 22px;
+    color: #e8eaf0;
+    line-height: 1.7;
+    font-size: 13.5px;
+    word-break: break-word;
+}
+:root[data-theme="light"] .markdown-body {
+    color: #1c1d22;
+}
+
+.md-h1 {
+    font-size: 20px;
+    font-weight: 700;
+    margin: 18px 0 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--apple-border);
+    color: var(--apple-text, #fff);
+}
+.md-h2 {
+    font-size: 17px;
+    font-weight: 600;
+    margin: 16px 0 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--apple-border);
+    color: var(--apple-text, #fff);
+}
+.md-h3 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 14px 0 8px;
+    color: var(--apple-text, #fff);
+}
+.md-h4, .md-h5, .md-h6 {
+    font-size: 13.5px;
+    font-weight: 600;
+    margin: 12px 0 6px;
+    color: var(--apple-text, #fff);
+}
+
+.md-p {
+    margin: 10px 0;
+}
+
+.md-quote {
+    margin: 12px 0;
+    padding: 8px 16px;
+    border-left: 3px solid var(--apple-blue);
+    background: rgba(10, 132, 255, 0.08);
+    border-radius: 0 8px 8px 0;
+    color: rgba(255, 255, 255, 0.88);
+}
+:root[data-theme="light"] .md-quote {
+    color: rgba(0, 0, 0, 0.82);
+    background: rgba(0, 113, 227, 0.06);
+}
+
+.md-ul, .md-ol {
+    margin: 10px 0;
+    padding-left: 24px;
+}
+.md-li {
+    margin: 4px 0;
+}
+.md-task-item {
+    list-style: none;
+    margin-left: -18px;
+}
+.md-checkbox {
+    margin-right: 6px;
+    vertical-align: middle;
+    accent-color: var(--apple-blue);
+}
+
+.md-hr {
+    height: 1px;
+    border: none;
+    background: var(--apple-border);
+    margin: 20px 0;
+}
+
+.md-inline-code {
+    padding: 2px 6px;
+    font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 5px;
+    color: #ff9f0a;
+}
+:root[data-theme="light"] .md-inline-code {
+    background: rgba(0, 0, 0, 0.06);
+    color: #d97706;
+}
+
+.md-link {
+    color: var(--apple-blue);
+    text-decoration: none;
+    border-bottom: 1px dashed var(--apple-blue);
+    transition: opacity 0.2s;
+}
+.md-link:hover {
+    opacity: 0.8;
+}
+
+.md-img {
+    max-width: 100%;
+    border-radius: 8px;
+    margin: 10px 0;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+.md-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0;
+    font-size: 13px;
+}
+.md-table th, .md-table td {
+    padding: 8px 14px;
+    border: 1px solid var(--apple-border);
+}
+.md-table th {
+    background: rgba(255, 255, 255, 0.06);
+    font-weight: 600;
+}
+:root[data-theme="light"] .md-table th {
+    background: rgba(0, 0, 0, 0.04);
+}
+
+.md-code-block {
+    margin: 14px 0;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--apple-border);
+    background: rgba(0, 0, 0, 0.32);
+}
+:root[data-theme="light"] .md-code-block {
+    background: rgba(0, 0, 0, 0.03);
+}
+
+.md-code-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 14px;
+    background: rgba(255, 255, 255, 0.04);
+    border-bottom: 1px solid var(--apple-border);
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.55);
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+:root[data-theme="light"] .md-code-header {
+    background: rgba(0, 0, 0, 0.03);
+    color: rgba(0, 0, 0, 0.5);
+}
+
+.md-code-copy-btn {
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--apple-border);
+    background: transparent;
+    color: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.md-code-copy-btn:hover {
+    background: var(--apple-blue);
+    color: #fff;
+    border-color: var(--apple-blue);
+}
+
+.md-code-body .code-pre {
+    margin: 0;
+    padding: 12px 14px;
+    overflow-x: auto;
+    font-size: 12.5px;
+    line-height: 1.6;
+}
+
+/* ---------- 14. 影音详情与海报卡片交互增强 ---------- */
+.poster-info-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.58);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 5;
+    opacity: 0;
+    transition: opacity 0.2s ease, transform 0.2s ease, background 0.2s ease;
+    padding: 0;
+}
+
+.poster-card:hover .poster-info-btn {
+    opacity: 1;
+}
+
+.poster-info-btn:hover {
+    background: var(--apple-system-blue);
+    transform: scale(1.12);
+    border-color: rgba(255, 255, 255, 0.4);
+}
+
+@media (hover: none) {
+    .poster-info-btn {
+        opacity: 0.88;
+    }
+}
+
+.media-detail-modal-card {
+    background: rgba(16, 20, 32, 0.96) !important;
+    border: 1px solid var(--apple-border) !important;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6) !important;
+}
+
+:root[data-theme="light"] .media-detail-modal-card {
+    background: rgba(255, 255, 255, 0.98) !important;
+    border: 1px solid rgba(0, 0, 0, 0.1) !important;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* -------------------------------------------------------------
+   Apple Floating Batch Bar (极简通透毛玻璃悬浮批量操作栏)
+   ------------------------------------------------------------- */
+.apple-floating-batch-bar {
+    position: fixed;
+    bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px;
+    border-radius: 9999px;
+    background: rgba(22, 26, 38, 0.85);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    animation: batchBarSlideUp 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    max-width: 95vw;
+    white-space: nowrap;
+    user-select: none;
+}
+
+:root[data-theme="light"] .apple-floating-batch-bar {
+    background: rgba(255, 255, 255, 0.88);
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.14), 0 0 0 1px rgba(0, 0, 0, 0.04);
+}
+
+@keyframes batchBarSlideUp {
+    from {
+        opacity: 0;
+        transform: translate(-50%, 20px) scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: translate(-50%, 0) scale(1);
+    }
+}
+
+.apple-floating-batch-bar button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 12px;
+    border-radius: 9999px;
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (max-width: 600px) {
+    .apple-floating-batch-bar {
+        bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+        gap: 6px;
+        padding: 6px 12px;
+    }
+    .apple-floating-batch-bar button {
+        height: 28px;
+        padding: 0 9px;
+        font-size: 11.5px;
+    }
+}
+
+
+

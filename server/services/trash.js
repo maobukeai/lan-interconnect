@@ -35,8 +35,12 @@ function loadMeta() {
 function saveMeta() {
     try {
         ensureTrashDir();
-        fs.writeFileSync(TRASH_META_FILE, JSON.stringify(trashItems), 'utf8');
-    } catch (e) {}
+        const tmp = TRASH_META_FILE + '.tmp';
+        fs.writeFileSync(tmp, JSON.stringify(trashItems), 'utf8');
+        fs.renameSync(tmp, TRASH_META_FILE);
+    } catch (e) {
+        try { fs.writeFileSync(TRASH_META_FILE, JSON.stringify(trashItems), 'utf8'); } catch (e2) {}
+    }
 }
 
 // 异步计算目录大小：删除/恢复大目录时不再冻结事件循环拖垮正在播放的流

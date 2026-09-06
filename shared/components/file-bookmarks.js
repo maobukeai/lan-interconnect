@@ -9,8 +9,19 @@
     const I = (name, size) => (global.Icons ? global.Icons.render(name, size) : '');
 
     function apiBase() {
-        if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
-            return (window.currentServerUrl || 'http://localhost:3000').replace(/\/$/, '');
+        if (typeof window !== 'undefined') {
+            if (global.LanDiskAuth && typeof global.LanDiskAuth.getServerUrl === 'function') {
+                const s = global.LanDiskAuth.getServerUrl();
+                if (s) return s.replace(/\/$/, '');
+            }
+            if (window.currentServerUrl) {
+                return window.currentServerUrl.replace(/\/$/, '');
+            }
+            if (window.location.protocol === 'file:' || (window.location.hostname === 'localhost' && window.location.port !== '3000' && window.location.port !== '3001' && window.location.port !== '3002' && window.location.port !== '3003' && window.location.port !== '3999')) {
+                const saved = localStorage.getItem('landisk_custom_server');
+                if (saved) return saved.replace(/\/$/, '');
+                return 'http://localhost:3000';
+            }
         }
         return '';
     }
@@ -61,10 +72,12 @@
             if (this.serverHomeDir || this._homeDirFetching) return;
             this._homeDirFetching = true;
             const authHeaders = (global.LanDiskAuth && global.LanDiskAuth.authHeaders) ? global.LanDiskAuth.authHeaders() : {};
-            fetch(apiBase() + '/api/sysinfo', { headers: authHeaders })
+            const timeoutSig = (global.LanDiskAuth && global.LanDiskAuth.timeoutSignal)
+                ? global.LanDiskAuth.timeoutSignal(5000)
+                : (AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined);
+            fetch(apiBase() + '/api/sysinfo', { headers: authHeaders, signal: timeoutSig })
                 .then(r => r.ok ? r.json() : null)
                 .then(data => {
-                    this._homeDirFetching = false;
                     if (data && data.homeDir) {
                         this.serverHomeDir = data.homeDir;
                         // 用户尚未自定义过书签时，用修正后的默认书签重新渲染
@@ -73,7 +86,15 @@
                         }
                     }
                 })
-                .catch(() => { this._homeDirFetching = false; });
+                .catch(() => {})
+                .finally(() => {
+                    this._homeDirFetching = false;
+                });
+        }
+
+        reset() {
+            this.serverHomeDir = null;
+            this._homeDirFetching = false;
         }
 
         saveBookmarks(list) {

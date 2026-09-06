@@ -10,6 +10,7 @@ dist/
 release/
 build/
 mobile-dist/
+desktop-dist/
 *.exe
 *.apk
 *.aar

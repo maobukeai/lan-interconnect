@@ -197,7 +197,9 @@
             } else if (m.type === 'voice' || m.type === 'audio') {
                 contentHtml = `<div class="chat-audio-wrapper"><span style="display:inline-flex; align-items:center; gap:5px; font-size:12px; opacity:0.9;">${global.Icons ? global.Icons.render('mic', 15) : ''} 语音</span><audio src="${escapeHtml(m.text)}" controls></audio></div>`;
             } else {
-                contentHtml = escapeHtml((m.text || '').trim()).replace(/\n/g, '<br>');
+                const escaped = escapeHtml((m.text || '').trim());
+                const linked = escaped.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" style="color:inherit; text-decoration:underline; word-break:break-all;">$1</a>');
+                contentHtml = linked.replace(/\n/g, '<br>');
             }
 
             return `<div class="chat-msg-row ${isMe ? 'chat-msg-self' : 'chat-msg-peer'}"><div class="chat-avatar" title="${senderLabel}">${avatarSvg}</div><div class="chat-msg-body"><div class="chat-msg-meta"><span class="chat-sender-name">${senderLabel}</span><span class="chat-msg-time">${timeStr}</span></div><div class="chat-bubble ${isMe ? 'bubble-self msg-right' : 'bubble-peer msg-left'}">${contentHtml}</div></div></div>`;

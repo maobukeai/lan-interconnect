@@ -601,4 +601,157 @@ const handlePreview = async (req, res) => {
 router.get('/media/preview', handlePreview);
 router.get('/preview', handlePreview);
 
+// 7. 智能影视详情与本地 NFO 元数据刮削 API
+// GET /api/media/meta?path=...
+function parseNfoXml(xmlStr) {
+    if (!xmlStr || typeof xmlStr !== 'string') return {};
+    const tag = (name) => {
+        const m = xmlStr.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)<\\/${name}>`, 'i'));
+        return m ? m[1].replace(/<!\[CDATA\[(.*?)\]\]>/gi, '$1').trim() : '';
+    };
+    const tags = (name) => {
+        const results = [];
+        const re = new RegExp(`<${name}[^>]*>([\\s\\S]*?)<\\/${name}>`, 'gi');
+        let m;
+        while ((m = re.exec(xmlStr)) !== null) {
+            const val = m[1].replace(/<!\[CDATA\[(.*?)\]\]>/gi, '$1').trim();
+            if (val) results.push(val);
+        }
+        return results;
+    };
+
+    const actors = [];
+    const actorRe = /<actor>([\s\S]*?)<\/actor>/gi;
+    let aMatch;
+    while ((aMatch = actorRe.exec(xmlStr)) !== null) {
+        const block = aMatch[1];
+        const nameM = block.match(/<name>(.*?)<\/name>/i);
+        const roleM = block.match(/<role>(.*?)<\/role>/i);
+        if (nameM && nameM[1].trim()) {
+            actors.push({
+                name: nameM[1].trim(),
+                role: roleM ? roleM[1].trim() : ''
+            });
+        }
+    }
+
+    return {
+        title: tag('title'),
+        originalTitle: tag('originaltitle') || tag('original_title'),
+        year: tag('year') || (tag('premiered') || tag('releasedate') || '').slice(0, 4),
+        rating: parseFloat(tag('rating') || tag('value')) || null,
+        plot: tag('plot') || tag('outline') || tag('summary'),
+        director: tag('director'),
+        studio: tag('studio'),
+        genres: tags('genre'),
+        actors: actors.slice(0, 10)
+    };
+}
+
+router.get('/media/meta', async (req, res) => {
+    const targetPath = req.query.path;
+    if (!targetPath || !fs.existsSync(targetPath)) {
+        return res.status(404).json({ error: 'File not found' });
+    }
+    if (!isSafePath(targetPath)) {
+        return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    try {
+        const stat = fs.statSync(targetPath);
+        const parsed = path.parse(targetPath);
+        const baseName = parsed.name;
+        const dir = parsed.dir;
+
+        // 基础文件名智能正则解析
+        let cleanTitle = baseName;
+        let year = '';
+        let resolution = '';
+        let tag = '';
+
+        const seMatch = baseName.match(/S(\d{1,2})[._\-\s]*E(\d{1,3})/i) ||
+                        baseName.match(/第\s*(\d+)\s*季.*第\s*(\d+)\s*集/i);
+        if (seMatch) {
+            tag = `第 ${seMatch[1]} 季 · 第 ${seMatch[2]} 集`;
+        }
+
+        const yearMatch = baseName.match(/\b(19\d{2}|20\d{2})\b/);
+        if (yearMatch) year = yearMatch[1];
+
+        if (/\b(4k|2160p|uhd)\b/i.test(baseName)) resolution = '4K UHD';
+        else if (/\b(1080p|1080i|fhd)\b/i.test(baseName)) resolution = '1080P FHD';
+        else if (/\b(720p|hd)\b/i.test(baseName)) resolution = '720P HD';
+
+        cleanTitle = baseName
+            .replace(/\[[^\]]+\]/g, ' ')
+            .replace(/\([^\)]+\)/g, ' ')
+            .replace(/\b(19\d{2}|20\d{2})\b.*/i, '')
+            .replace(/S\d{1,2}[._\-\s]*E\d{1,3}.*/i, '')
+            .replace(/\b(4k|2160p|1080p|720p|bluray|bdrip|web-dl|webrip|hdrip|hdtv|x264|x265|hevc|aac|dts|remux|h264|h265)\b.*/i, '')
+            .replace(/[._\-]/g, ' ')
+            .trim() || baseName;
+
+        let nfoData = {};
+        let hasNfo = false;
+
+        // 探查伴生 NFO 文件
+        const nfoCandidates = [
+            path.join(dir, `${baseName}.nfo`),
+            path.join(dir, 'movie.nfo'),
+            path.join(dir, 'tvshow.nfo')
+        ];
+
+        for (const candidate of nfoCandidates) {
+            if (fs.existsSync(candidate)) {
+                try {
+                    const xml = fs.readFileSync(candidate, 'utf8');
+                    nfoData = parseNfoXml(xml);
+                    hasNfo = true;
+                    break;
+                } catch (e) {}
+            }
+        }
+
+        // 探查伴生本地海报 / 封面
+        let posterUrl = `/api/thumbnail?path=${encodeURIComponent(targetPath)}`;
+        const posterCandidates = [
+            path.join(dir, `${baseName}-poster.jpg`),
+            path.join(dir, `${baseName}.jpg`),
+            path.join(dir, 'poster.jpg'),
+            path.join(dir, 'cover.jpg')
+        ];
+        for (const p of posterCandidates) {
+            if (fs.existsSync(p)) {
+                posterUrl = `/api/stream?path=${encodeURIComponent(p)}`;
+                break;
+            }
+        }
+
+        const meta = {
+            success: true,
+            path: targetPath,
+            name: parsed.base,
+            size: stat.size,
+            title: nfoData.title || cleanTitle,
+            originalTitle: nfoData.originalTitle || '',
+            year: nfoData.year || year,
+            rating: nfoData.rating || null,
+            resolution: resolution || 'HD',
+            tag: tag || '影片',
+            plot: nfoData.plot || '暂无详细剧情简介，点击下方播放按钮即可直接进入 Apple 影院级极速播放体验。',
+            director: nfoData.director || '',
+            studio: nfoData.studio || '',
+            genres: nfoData.genres || [],
+            actors: nfoData.actors || [],
+            posterUrl,
+            hasNfo
+        };
+
+        res.json(meta);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 module.exports = router;
+

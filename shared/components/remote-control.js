@@ -29,6 +29,8 @@
             this.scale = 0.6;
             this.touchMode = true; // 点击屏幕触发电脑鼠标点击
             this.mouseMode = false; // 光标模式：单指滑动 = 移动电脑鼠标
+            this.remoteMode = 'screen'; // 'screen' | 'trackpad' | 'media'
+            this.trackpadSensitivity = 1.2;
             this.streamTimer = null;
             this.isFramePending = false;
 
@@ -163,7 +165,7 @@
                         <div class="apple-card-title" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
                             <span class="apple-card-title-text" style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
                                 ${I('screenMirror', 18)}
-                                <span style="white-space:nowrap;">屏幕实时镜像</span>
+                                <span style="white-space:nowrap;">远程桌面与控制</span>
                                 <span id="remote-stream-status" class="apple-badge apple-badge-gray" style="font-size:11px; margin-left:2px;">未开启</span>
                             </span>
                             <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
@@ -173,83 +175,187 @@
                             </div>
                         </div>
 
-                        <!-- 控制工具栏 -->
-                        <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:10px;">
-                            <!-- 行 1：显示器选择与模式/缩放 -->
-                            <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                                <select id="remote-display-select" class="apple-select" style="flex:1; min-width:130px; height:28px; font-size:12px; padding:0 8px;">
-                                    <option value="0">主显示器</option>
-                                </select>
-                                <select id="remote-fps-select" class="apple-select" style="height:28px; font-size:11.5px; padding:0 6px;">
-                                    <option value="5">省电 (5 FPS)</option>
-                                    <option value="10" selected>均衡 (10 FPS)</option>
-                                    <option value="15">流畅 (15 FPS)</option>
-                                    <option value="20">顺滑 (20 FPS)</option>
-                                    <option value="30">极速 (30 FPS)</option>
-                                    <option value="0">单帧快照</option>
-                                </select>
+                        <!-- 模式切换分段标签 -->
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px; border-bottom:1px solid var(--hairline); padding-bottom:10px;">
+                            <button class="apple-btn apple-btn-primary apple-btn-sm" id="tab-remote-screen">🖥️ 屏幕镜像</button>
+                            <button class="apple-btn apple-btn-glass apple-btn-sm" id="tab-remote-trackpad">🖱️ OLED 触控板</button>
+                            <button class="apple-btn apple-btn-glass apple-btn-sm" id="tab-remote-media">📺 遥控与演示</button>
+                        </div>
+
+                        <!-- 视图 1：屏幕镜像与控制 -->
+                        <div id="remote-view-screen" style="display:block;">
+                            <!-- 控制工具栏 -->
+                            <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:10px;">
+                                <!-- 行 1：显示器选择与模式/缩放 -->
+                                <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                                    <select id="remote-display-select" class="apple-select" style="flex:1; min-width:130px; height:28px; font-size:12px; padding:0 8px;">
+                                        <option value="0">主显示器</option>
+                                    </select>
+                                    <select id="remote-fps-select" class="apple-select" style="height:28px; font-size:11.5px; padding:0 6px;">
+                                        <option value="5">省电 (5 FPS)</option>
+                                        <option value="10" selected>均衡 (10 FPS)</option>
+                                        <option value="15">流畅 (15 FPS)</option>
+                                        <option value="20">顺滑 (20 FPS)</option>
+                                        <option value="30">极速 (30 FPS)</option>
+                                        <option value="0">单帧快照</option>
+                                    </select>
+                                </div>
+                                <!-- 行 1b：画质与清晰度 -->
+                                <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                                    <select id="remote-quality-select" class="apple-select" style="height:28px; font-size:11.5px; padding:0 6px;">
+                                        <option value="40">低画质 (省流量)</option>
+                                        <option value="60" selected>中画质 (均衡)</option>
+                                        <option value="80">高画质 (清晰)</option>
+                                    </select>
+                                    <select id="remote-scale-select" class="apple-select" style="height:28px; font-size:11.5px; padding:0 6px;">
+                                        <option value="0.4">0.4x 极速</option>
+                                        <option value="0.6" selected>0.6x 均衡</option>
+                                        <option value="0.8">0.8x 高清</option>
+                                        <option value="1.0">1.0x 原画</option>
+                                    </select>
+                                    <select id="remote-zoom-select" class="apple-select" style="height:28px; font-size:11.5px; padding:0 6px;">
+                                        <option value="1.0" selected>100% 适应</option>
+                                        <option value="1.25">125%</option>
+                                        <option value="1.5">150% 放大</option>
+                                        <option value="2.0">200% 精细</option>
+                                    </select>
+                                </div>
+                                <!-- 行 2：触控开关与快捷动作按键 -->
+                                <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap;">
+                                    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                                        <label style="display:flex; align-items:center; gap:5px; cursor:pointer; font-size:12px; color:var(--apple-text-secondary); user-select:none;">
+                                            <input type="checkbox" id="remote-touch-toggle" checked style="accent-color:var(--apple-blue); width:15px; height:15px; cursor:pointer;">
+                                            <span>触控点击映射</span>
+                                        </label>
+                                        <label style="display:flex; align-items:center; gap:5px; cursor:pointer; font-size:12px; color:var(--apple-text-secondary); user-select:none;" title="开启后：单指滑动直接移动电脑鼠标光标">
+                                            <input type="checkbox" id="remote-mouse-toggle" style="accent-color:var(--apple-blue); width:15px; height:15px; cursor:pointer;">
+                                            <span>🖱️ 光标模式</span>
+                                        </label>
+                                    </div>
+                                    <div style="display:flex; align-items:center; gap:6px;">
+                                        <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-card-kb" style="height:28px; font-size:11.5px; padding:0 8px;" title="远程键盘：打字与快捷键">
+                                            ⌨️ 键盘
+                                        </button>
+                                        <button class="apple-btn apple-btn-primary apple-btn-sm" id="btn-screen-landscape" style="height:28px; font-size:11.5px; padding:0 10px; background:linear-gradient(135deg, #007aff, #5856d6);" title="放大横屏沉浸显示">
+                                            ${I('rotateCw', 13)} 放大横屏
+                                        </button>
+                                        <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-screen-snap" style="height:28px; font-size:11.5px; padding:0 8px;">
+                                            ${I('camera', 13)} 截帧
+                                        </button>
+                                        <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-screen-fullscreen" style="height:28px; font-size:11.5px; padding:0 8px;" title="全屏视口">
+                                            ${I('maximize', 13)} 全屏
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
-                            <!-- 行 1b：画质与清晰度 -->
-                            <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                                <select id="remote-quality-select" class="apple-select" style="height:28px; font-size:11.5px; padding:0 6px;">
-                                    <option value="40">低画质 (省流量)</option>
-                                    <option value="60" selected>中画质 (均衡)</option>
-                                    <option value="80">高画质 (清晰)</option>
-                                </select>
-                                <select id="remote-scale-select" class="apple-select" style="height:28px; font-size:11.5px; padding:0 6px;">
-                                    <option value="0.4">0.4x 极速</option>
-                                    <option value="0.6" selected>0.6x 均衡</option>
-                                    <option value="0.8">0.8x 高清</option>
-                                    <option value="1.0">1.0x 原画</option>
-                                </select>
-                                <select id="remote-zoom-select" class="apple-select" style="height:28px; font-size:11.5px; padding:0 6px;">
-                                    <option value="1.0" selected>100% 适应</option>
-                                    <option value="1.25">125%</option>
-                                    <option value="1.5">150% 放大</option>
-                                    <option value="2.0">200% 精细</option>
-                                </select>
+
+                            <!-- 屏幕视口区域 -->
+                            <div id="remote-screen-viewport" style="position:relative; width:100%; border-radius:12px; overflow:hidden; background:#07090e; display:flex; align-items:center; justify-content:center; min-height:220px; border:1px solid var(--apple-border); touch-action:none; cursor:crosshair;">
+                                <div id="remote-screen-stage" style="position:relative; width:100%; height:100%; display:flex; align-items:center; justify-content:center; transition:transform 0.15s ease-out; transform-origin:center center;">
+                                    <img id="remote-screen-img" alt="电脑桌面画面" style="max-width:100%; max-height:75vh; object-fit:contain; display:none; pointer-events:none; user-select:none; -webkit-user-drag:none;">
+                                    <div id="remote-click-ripple" style="position:absolute; width:28px; height:28px; border-radius:50%; border:2.5px solid var(--apple-blue); pointer-events:none; transform:translate(-50%, -50%) scale(0); opacity:0; transition:transform 0.35s cubic-bezier(0.1, 0.9, 0.2, 1), opacity 0.35s ease-out; box-shadow:0 0 10px rgba(0,122,255,0.6); z-index:10;"></div>
+                                </div>
+                                <div id="remote-screen-placeholder" style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; color:var(--apple-text-tertiary); padding:36px 16px;">
+                                    <div style="width:48px; height:48px; border-radius:50%; background:var(--mat-regular); display:flex; align-items:center; justify-content:center;">
+                                        ${I('monitor', 24)}
+                                    </div>
+                                    <span style="font-size:13px;">点击右上角「开启镜像」或「放大横屏」实时查看与触控电脑</span>
+                                    <span style="font-size:11px; color:var(--apple-text-tertiary); opacity:0.8;">点按=左键 · 长按=右键 · 长按拖动=拖拽 · 双指滑动=滚轮</span>
+                                </div>
                             </div>
-                            <!-- 行 2：触控开关与快捷动作按键 -->
-                            <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap;">
-                                <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-                                    <label style="display:flex; align-items:center; gap:5px; cursor:pointer; font-size:12px; color:var(--apple-text-secondary); user-select:none;">
-                                        <input type="checkbox" id="remote-touch-toggle" checked style="accent-color:var(--apple-blue); width:15px; height:15px; cursor:pointer;">
-                                        <span>触控点击映射</span>
-                                    </label>
-                                    <label style="display:flex; align-items:center; gap:5px; cursor:pointer; font-size:12px; color:var(--apple-text-secondary); user-select:none;" title="开启后：单指滑动直接移动电脑鼠标光标">
-                                        <input type="checkbox" id="remote-mouse-toggle" style="accent-color:var(--apple-blue); width:15px; height:15px; cursor:pointer;">
-                                        <span>🖱️ 光标模式</span>
-                                    </label>
+                        </div>
+
+                        <!-- 视图 2：纯黑 OLED 触控板 -->
+                        <div id="remote-view-trackpad" style="display:none; flex-direction:column; gap:10px;">
+                            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+                                <div style="display:flex; align-items:center; gap:6px;">
+                                    <span style="font-size:12px; color:var(--apple-text-secondary);">灵敏度:</span>
+                                    <button class="apple-btn apple-btn-glass apple-btn-sm" data-tp-sens="0.8">0.8x</button>
+                                    <button class="apple-btn apple-btn-primary apple-btn-sm" data-tp-sens="1.2">1.2x</button>
+                                    <button class="apple-btn apple-btn-glass apple-btn-sm" data-tp-sens="1.8">1.8x</button>
+                                    <button class="apple-btn apple-btn-glass apple-btn-sm" data-tp-sens="2.5">2.5x</button>
                                 </div>
                                 <div style="display:flex; align-items:center; gap:6px;">
-                                    <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-card-kb" style="height:28px; font-size:11.5px; padding:0 8px;" title="远程键盘：打字与快捷键">
-                                        ⌨️ 键盘
+                                    <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-tp-kb">⌨️ 键盘</button>
+                                    <button class="apple-btn apple-btn-primary apple-btn-sm" id="btn-tp-fullscreen" style="background:#000; border:1px solid rgba(255,255,255,0.25);">
+                                        ${I('maximize', 13)} 纯黑全屏
                                     </button>
-                                    <button class="apple-btn apple-btn-primary apple-btn-sm" id="btn-screen-landscape" style="height:28px; font-size:11.5px; padding:0 10px; background:linear-gradient(135deg, #007aff, #5856d6);" title="放大横屏沉浸显示">
-                                        ${I('rotateCw', 13)} 放大横屏
+                                </div>
+                            </div>
+
+                            <div id="oled-trackpad-card" style="position:relative; width:100%; height:320px; background:#000000; border-radius:16px; border:1px solid rgba(255,255,255,0.12); box-shadow:inset 0 0 20px rgba(0,0,0,0.8); display:flex; flex-direction:column; justify-content:space-between; padding:16px; touch-action:none; user-select:none; cursor:default;">
+                                <div style="display:flex; justify-content:space-between; align-items:center; pointer-events:none; opacity:0.6; font-size:11.5px; color:#8e8e93;">
+                                    <span> OLED Trackpad · 极致省电</span>
+                                    <span>单指滑光标 · 轻点左键 · 双指右键/滚轮</span>
+                                </div>
+                                <div id="oled-trackpad-touch-indicator" style="position:absolute; width:44px; height:44px; border-radius:50%; background:radial-gradient(circle, rgba(0,122,255,0.4) 0%, rgba(0,122,255,0) 70%); pointer-events:none; transform:translate(-50%, -50%); opacity:0; transition:opacity 0.2s;"></div>
+                                <div style="display:flex; gap:12px; height:52px; margin-top:auto;">
+                                    <button id="btn-tp-left" style="flex:2; height:100%; border-radius:12px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); color:#fff; font-size:13px; font-weight:500; display:flex; align-items:center; justify-content:center; gap:6px; cursor:pointer;">
+                                        左键 (Left Click)
                                     </button>
-                                    <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-screen-snap" style="height:28px; font-size:11.5px; padding:0 8px;">
-                                        ${I('camera', 13)} 截帧
-                                    </button>
-                                    <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-screen-fullscreen" style="height:28px; font-size:11.5px; padding:0 8px;" title="全屏视口">
-                                        ${I('maximize', 13)} 全屏
+                                    <button id="btn-tp-right" style="flex:1; height:100%; border-radius:12px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); color:#fff; font-size:13px; font-weight:500; display:flex; align-items:center; justify-content:center; gap:6px; cursor:pointer;">
+                                        右键 (Right Click)
                                     </button>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- 屏幕视口区域 -->
-                        <div id="remote-screen-viewport" style="position:relative; width:100%; border-radius:12px; overflow:hidden; background:#07090e; display:flex; align-items:center; justify-content:center; min-height:220px; border:1px solid var(--apple-border); touch-action:none; cursor:crosshair;">
-                            <div id="remote-screen-stage" style="position:relative; width:100%; height:100%; display:flex; align-items:center; justify-content:center; transition:transform 0.15s ease-out; transform-origin:center center;">
-                                <img id="remote-screen-img" alt="电脑桌面画面" style="max-width:100%; max-height:75vh; object-fit:contain; display:none; pointer-events:none; user-select:none; -webkit-user-drag:none;">
-                                <div id="remote-click-ripple" style="position:absolute; width:28px; height:28px; border-radius:50%; border:2.5px solid var(--apple-blue); pointer-events:none; transform:translate(-50%, -50%) scale(0); opacity:0; transition:transform 0.35s cubic-bezier(0.1, 0.9, 0.2, 1), opacity 0.35s ease-out; box-shadow:0 0 10px rgba(0,122,255,0.6); z-index:10;"></div>
-                            </div>
-                            <div id="remote-screen-placeholder" style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; color:var(--apple-text-tertiary); padding:36px 16px;">
-                                <div style="width:48px; height:48px; border-radius:50%; background:var(--mat-regular); display:flex; align-items:center; justify-content:center;">
-                                    ${I('monitor', 24)}
+                        <!-- 视图 3：多媒体与演示遥控器 -->
+                        <div id="remote-view-media" style="display:none; flex-direction:column; gap:14px;">
+                            <!-- 媒体卡片 -->
+                            <div style="background:rgba(255,255,255,0.04); border-radius:14px; padding:14px; border:1px solid var(--hairline);">
+                                <div style="font-size:12px; font-weight:600; color:var(--apple-text-secondary); margin-bottom:10px; display:flex; align-items:center; gap:6px;">
+                                    ${I('playCircle', 15)} 媒体播放遥控
                                 </div>
-                                <span style="font-size:13px;">点击右上角「开启镜像」或「放大横屏」实时查看与触控电脑</span>
-                                <span style="font-size:11px; color:var(--apple-text-tertiary); opacity:0.8;">点按=左键 · 长按=右键 · 长按拖动=拖拽 · 双指滑动=滚轮</span>
+                                <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:8px;">
+                                    <button class="apple-btn apple-btn-glass" data-media-action="prev10" style="padding:10px 4px; font-size:12px;">⏪ 快退 10s</button>
+                                    <button class="apple-btn apple-btn-primary" data-media-action="playpause" style="padding:10px 4px; font-size:12.5px; font-weight:600;">⏯ 播放/暂停</button>
+                                    <button class="apple-btn apple-btn-glass" data-media-action="next10" style="padding:10px 4px; font-size:12px;">⏩ 快进 10s</button>
+                                    <button class="apple-btn apple-btn-glass" data-media-action="fullscreen" style="padding:10px 4px; font-size:12px;">⛶ 全屏 (F)</button>
+                                </div>
+                                <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin-top:8px;">
+                                    <button class="apple-btn apple-btn-glass apple-btn-sm" data-media-action="voldown">🔉 音量 -</button>
+                                    <button class="apple-btn apple-btn-glass apple-btn-sm" data-media-action="mute">🔇 静音切换</button>
+                                    <button class="apple-btn apple-btn-glass apple-btn-sm" data-media-action="volup">🔊 音量 +</button>
+                                </div>
+                            </div>
+
+                            <!-- 五向 D-Pad 导航卡片 -->
+                            <div style="background:rgba(255,255,255,0.04); border-radius:14px; padding:16px; border:1px solid var(--hairline); display:flex; flex-direction:column; align-items:center;">
+                                <div style="font-size:12px; font-weight:600; color:var(--apple-text-secondary); margin-bottom:12px; align-self:flex-start; display:flex; align-items:center; gap:6px;">
+                                    🧭 导航按键 (D-Pad)
+                                </div>
+                                <div style="display:grid; grid-template-columns: repeat(3, 64px); grid-template-rows: repeat(3, 54px); gap:6px; justify-content:center;">
+                                    <div></div>
+                                    <button class="apple-btn apple-btn-glass" data-dpad="up" style="border-radius:14px; font-size:16px;">▲</button>
+                                    <div></div>
+                                    <button class="apple-btn apple-btn-glass" data-dpad="left" style="border-radius:14px; font-size:16px;">◀</button>
+                                    <button class="apple-btn apple-btn-primary" data-dpad="enter" style="border-radius:14px; font-size:13px; font-weight:600;">OK</button>
+                                    <button class="apple-btn apple-btn-glass" data-dpad="right" style="border-radius:14px; font-size:16px;">▶</button>
+                                    <button class="apple-btn apple-btn-glass apple-btn-sm" data-dpad="esc" style="border-radius:14px; font-size:11px;">返回(Esc)</button>
+                                    <button class="apple-btn apple-btn-glass" data-dpad="down" style="border-radius:14px; font-size:16px;">▼</button>
+                                    <button class="apple-btn apple-btn-glass apple-btn-sm" data-dpad="win" style="border-radius:14px; font-size:11px;">主页(Win)</button>
+                                </div>
+                            </div>
+
+                            <!-- 演示/PPT 卡片 -->
+                            <div style="background:rgba(255,255,255,0.04); border-radius:14px; padding:14px; border:1px solid var(--hairline);">
+                                <div style="font-size:12px; font-weight:600; color:var(--apple-text-secondary); margin-bottom:10px; display:flex; align-items:center; gap:6px;">
+                                    📊 PPT / Keynote 演示遥控器
+                                </div>
+                                <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:8px;">
+                                    <button class="apple-btn apple-btn-glass" data-ppt="prev" style="height:52px; font-size:14px; font-weight:500;">
+                                        ⏮ 上一张幻灯片
+                                    </button>
+                                    <button class="apple-btn apple-btn-primary" data-ppt="next" style="height:52px; font-size:14px; font-weight:600;">
+                                        ⏭ 下一张幻灯片
+                                    </button>
+                                </div>
+                                <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:6px; margin-top:8px;">
+                                    <button class="apple-btn apple-btn-glass apple-btn-sm" data-ppt="f5">从头放映 (F5)</button>
+                                    <button class="apple-btn apple-btn-glass apple-btn-sm" data-ppt="esc">结束放映 (Esc)</button>
+                                    <button class="apple-btn apple-btn-glass apple-btn-sm" data-ppt="b">黑屏/白屏 (B)</button>
+                                </div>
                             </div>
                         </div>
 
@@ -619,8 +725,254 @@
                 () => 0
             );
 
+            // 模式切换分段标签
+            this._setupModeTabs();
+            // OLED 触控板交互
+            this._setupOledTrackpad();
+            // 媒体播放与演示遥控
+            this._setupMediaRemote();
+
             // 横屏 Modal 浮层配置
             this._setupLandscapeModal();
+        }
+
+        _setupModeTabs() {
+            const tabs = [
+                { id: '#tab-remote-screen', view: '#remote-view-screen', mode: 'screen' },
+                { id: '#tab-remote-trackpad', view: '#remote-view-trackpad', mode: 'trackpad' },
+                { id: '#tab-remote-media', view: '#remote-view-media', mode: 'media' }
+            ];
+
+            const switchTab = (mode) => {
+                this.remoteMode = mode;
+                tabs.forEach(t => {
+                    const btn = this.container.querySelector(t.id);
+                    const view = this.container.querySelector(t.view);
+                    const isActive = (t.mode === mode);
+                    if (btn) {
+                        btn.className = `apple-btn apple-btn-sm ${isActive ? 'apple-btn-primary' : 'apple-btn-glass'}`;
+                    }
+                    if (view) {
+                        view.style.display = isActive ? (t.mode === 'screen' ? 'block' : 'flex') : 'none';
+                    }
+                });
+                if (global.LanDiskUI && global.LanDiskUI.Haptic) {
+                    global.LanDiskUI.Haptic.light();
+                }
+            };
+
+            tabs.forEach(t => {
+                const btn = this.container.querySelector(t.id);
+                if (btn) {
+                    btn.addEventListener('click', () => switchTab(t.mode));
+                }
+            });
+        }
+
+        _setupOledTrackpad() {
+            const card = this.container.querySelector('#oled-trackpad-card');
+            if (!card) return;
+
+            const indicator = this.container.querySelector('#oled-trackpad-touch-indicator');
+            const leftBtn = this.container.querySelector('#btn-tp-left');
+            const rightBtn = this.container.querySelector('#btn-tp-right');
+            const kbBtn = this.container.querySelector('#btn-tp-kb');
+            const fsBtn = this.container.querySelector('#btn-tp-fullscreen');
+
+            // 灵敏度调节
+            this.container.querySelectorAll('[data-tp-sens]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    this.trackpadSensitivity = parseFloat(btn.getAttribute('data-tp-sens')) || 1.2;
+                    this.container.querySelectorAll('[data-tp-sens]').forEach(b => {
+                        b.className = 'apple-btn apple-btn-glass apple-btn-sm';
+                    });
+                    btn.className = 'apple-btn apple-btn-primary apple-btn-sm';
+                    if (global.LanDiskUI && global.LanDiskUI.Haptic) {
+                        global.LanDiskUI.Haptic.selection();
+                    }
+                });
+            });
+
+            // 键盘快速唤起
+            if (kbBtn) {
+                kbBtn.addEventListener('click', () => {
+                    const panel = this.container.querySelector('#remote-kb-panel');
+                    if (panel) {
+                        const show = panel.style.display === 'none';
+                        panel.style.display = show ? 'block' : 'none';
+                        kbBtn.classList.toggle('apple-btn-primary', show);
+                    }
+                });
+            }
+
+            // 纯黑全屏
+            if (fsBtn) {
+                fsBtn.addEventListener('click', () => {
+                    if (!document.fullscreenElement) {
+                        if (card.requestFullscreen) card.requestFullscreen();
+                        else if (card.webkitRequestFullscreen) card.webkitRequestFullscreen();
+                    } else {
+                        if (document.exitFullscreen) document.exitFullscreen();
+                    }
+                });
+            }
+
+            // 实体左/右键按键
+            if (leftBtn) {
+                leftBtn.addEventListener('click', () => {
+                    if (global.LanDiskUI && global.LanDiskUI.Haptic) global.LanDiskUI.Haptic.light();
+                    this._sendInput({ type: 'click', button: 'left' });
+                });
+            }
+            if (rightBtn) {
+                rightBtn.addEventListener('click', () => {
+                    if (global.LanDiskUI && global.LanDiskUI.Haptic) global.LanDiskUI.Haptic.medium();
+                    this._sendInput({ type: 'click', button: 'right' });
+                });
+            }
+
+            // 手势跟踪：单指滑动=光标移动，单指轻点=左键，双指轻点=右键，双指滑动=滚轮
+            let startX = 0, startY = 0;
+            let lastX = 0, lastY = 0;
+            let lastScrollY = 0;
+            let startTime = 0;
+            let touchMoved = false;
+            let initialFingers = 0;
+            let scrollAcc = 0;
+
+            const updateIndicator = (clientX, clientY) => {
+                if (!indicator) return;
+                const rect = card.getBoundingClientRect();
+                indicator.style.left = `${clientX - rect.left}px`;
+                indicator.style.top = `${clientY - rect.top}px`;
+                indicator.style.opacity = '1';
+            };
+
+            card.addEventListener('touchstart', (e) => {
+                initialFingers = e.touches.length;
+                startTime = Date.now();
+                touchMoved = false;
+                scrollAcc = 0;
+
+                if (e.touches.length >= 1) {
+                    startX = e.touches[0].clientX;
+                    startY = e.touches[0].clientY;
+                    lastX = startX;
+                    lastY = startY;
+                    updateIndicator(startX, startY);
+                }
+                if (e.touches.length >= 2) {
+                    lastScrollY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+                }
+            }, { passive: false });
+
+            card.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                touchMoved = true;
+
+                if (e.touches.length === 1) {
+                    const curX = e.touches[0].clientX;
+                    const curY = e.touches[0].clientY;
+                    const dx = (curX - lastX) * this.trackpadSensitivity;
+                    const dy = (curY - lastY) * this.trackpadSensitivity;
+                    lastX = curX;
+                    lastY = curY;
+                    updateIndicator(curX, curY);
+
+                    if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) {
+                        this._sendInput({
+                            type: 'move',
+                            dx: Math.round(dx),
+                            dy: Math.round(dy)
+                        });
+                    }
+                } else if (e.touches.length === 2) {
+                    const curScrollY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+                    const dy = curScrollY - lastScrollY;
+                    lastScrollY = curScrollY;
+                    scrollAcc += dy;
+
+                    if (Math.abs(scrollAcc) >= 6) {
+                        const step = scrollAcc > 0 ? 120 : -120;
+                        this._sendInput({ type: 'scroll', delta: step });
+                        scrollAcc = 0;
+                    }
+                }
+            }, { passive: false });
+
+            const handleTouchEnd = (e) => {
+                if (indicator) indicator.style.opacity = '0';
+                const duration = Date.now() - startTime;
+                const dist = Math.hypot(lastX - startX, lastY - startY);
+
+                if (!touchMoved || (duration < 300 && dist < 12)) {
+                    if (initialFingers === 1) {
+                        if (global.LanDiskUI && global.LanDiskUI.Haptic) global.LanDiskUI.Haptic.light();
+                        this._sendInput({ type: 'click', button: 'left' });
+                    } else if (initialFingers === 2) {
+                        if (global.LanDiskUI && global.LanDiskUI.Haptic) global.LanDiskUI.Haptic.medium();
+                        this._sendInput({ type: 'click', button: 'right' });
+                    }
+                }
+            };
+
+            card.addEventListener('touchend', handleTouchEnd);
+            card.addEventListener('touchcancel', () => {
+                if (indicator) indicator.style.opacity = '0';
+            });
+        }
+
+        _setupMediaRemote() {
+            // 媒体播放遥控按键
+            this.container.querySelectorAll('[data-media-action]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const act = btn.getAttribute('data-media-action');
+                    if (global.LanDiskUI && global.LanDiskUI.Haptic) global.LanDiskUI.Haptic.light();
+                    if (act === 'playpause') {
+                        this._sendInput({ type: 'key', key: 'space' });
+                    } else if (act === 'prev10') {
+                        this._sendInput({ type: 'key', key: 'left' });
+                    } else if (act === 'next10') {
+                        this._sendInput({ type: 'key', key: 'right' });
+                    } else if (act === 'fullscreen') {
+                        this._sendInput({ type: 'key', key: 'f' });
+                    } else if (act === 'voldown') {
+                        this.setVolume(Math.max(0, this.volume - 5));
+                    } else if (act === 'volup') {
+                        this.setVolume(Math.min(100, this.volume + 5));
+                    } else if (act === 'mute') {
+                        this.toggleMute();
+                    }
+                });
+            });
+
+            // D-Pad 导航按键
+            this.container.querySelectorAll('[data-dpad]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const key = btn.getAttribute('data-dpad');
+                    if (global.LanDiskUI && global.LanDiskUI.Haptic) global.LanDiskUI.Haptic.light();
+                    this._sendInput({ type: 'key', key });
+                });
+            });
+
+            // PPT 演示控制按键
+            this.container.querySelectorAll('[data-ppt]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const action = btn.getAttribute('data-ppt');
+                    if (global.LanDiskUI && global.LanDiskUI.Haptic) global.LanDiskUI.Haptic.light();
+                    if (action === 'prev') {
+                        this._sendInput({ type: 'key', key: 'pageup' });
+                    } else if (action === 'next') {
+                        this._sendInput({ type: 'key', key: 'pagedown' });
+                    } else if (action === 'f5') {
+                        this._sendInput({ type: 'key', key: 'f5' });
+                    } else if (action === 'esc') {
+                        this._sendInput({ type: 'key', key: 'esc' });
+                    } else if (action === 'b') {
+                        this._sendInput({ type: 'key', key: 'b' });
+                    }
+                });
+            });
         }
 
         _setupLandscapeModal() {
@@ -1184,11 +1536,11 @@
 
         _sendInputHttp(msg) {
             const routes = {
-                move: ['/api/remote/mouse/move', ['x', 'y']],
-                down: ['/api/remote/mouse/down', ['x', 'y', 'button']],
-                up: ['/api/remote/mouse/up', ['x', 'y', 'button']],
-                click: ['/api/remote/mouse/click', ['x', 'y', 'button']],
-                scroll: ['/api/remote/scroll', ['x', 'y', 'delta']],
+                move: ['/api/remote/mouse/move', ['x', 'y', 'dx', 'dy']],
+                down: ['/api/remote/mouse/down', ['x', 'y', 'dx', 'dy', 'button']],
+                up: ['/api/remote/mouse/up', ['x', 'y', 'dx', 'dy', 'button']],
+                click: ['/api/remote/mouse/click', ['x', 'y', 'dx', 'dy', 'button']],
+                scroll: ['/api/remote/scroll', ['x', 'y', 'dx', 'dy', 'delta']],
                 key: ['/api/remote/key', ['key', 'modifiers']],
                 text: ['/api/remote/text', ['text']]
             };
@@ -1598,9 +1950,13 @@
             try {
                 const query = `display=${this.selectedDisplay}&scale=${this.scale}&quality=${this.quality}&_t=${Date.now()}`;
                 const apiUrl = this.getApiUrl(`/api/remote/screen/capture?${query}`);
+                const timeoutSig = (global.LanDiskAuth && global.LanDiskAuth.timeoutSignal)
+                    ? global.LanDiskAuth.timeoutSignal(6000)
+                    : (AbortSignal.timeout ? AbortSignal.timeout(6000) : undefined);
 
                 const res = await fetch(apiUrl, {
-                    headers: this._authHeaders()
+                    headers: this._authHeaders(),
+                    signal: timeoutSig
                 });
 
                 if (res.ok) {

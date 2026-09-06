@@ -57,6 +57,7 @@
             this.autoRefreshTimer = setInterval(async () => {
                 if (document.hidden || !this.container || !this.container.isConnected) return;
                 if (this.container.offsetParent === null) return; // 所在视图未激活
+                if (this.isFetching) return;
                 if (this.container.querySelector('div[id^="group-detail-"][style*="display: block"]')) return; // 用户正在看明细
                 try {
                     const st = this.container.scrollTop;
@@ -67,10 +68,15 @@
         }
 
         async fetchProcesses() {
+            if (this.isFetching) return;
+            this.isFetching = true;
             this._ensureElements();
             try {
                 const apiUrl = this.getApiUrl('/api/processes');
-                const res = await fetch(apiUrl, { headers: this._authHeaders() });
+                const timeoutSig = (global.LanDiskAuth && global.LanDiskAuth.timeoutSignal)
+                    ? global.LanDiskAuth.timeoutSignal(5000)
+                    : (AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined);
+                const res = await fetch(apiUrl, { headers: this._authHeaders(), signal: timeoutSig });
 
                 if (res.status === 403) {
                     const data = await res.json().catch(() => ({}));
@@ -94,6 +100,8 @@
                 if (this.container) {
                     this.container.innerHTML = `<div style="padding:24px; text-align:center; color:var(--apple-text-muted); font-size:13px;">进程监控数据获取失败: ${err.message}</div>`;
                 }
+            } finally {
+                this.isFetching = false;
             }
         }
 
@@ -234,7 +242,11 @@
         }
 
         async killProcess(pid) {
-            if (!confirm(`确定要结束 PID 为 ${pid} 的进程吗？`)) return;
+            const ui = global.LanDiskUI;
+            const ok = ui && ui.confirmDialog
+                ? await ui.confirmDialog({ title: '结束进程', message: `确定要结束 PID 为 ${pid} 的进程吗？`, confirmText: '结束进程', danger: true })
+                : confirm(`确定要结束 PID 为 ${pid} 的进程吗？`);
+            if (!ok) return;
 
             try {
                 const apiUrl = this.getApiUrl('/api/kill-process');
@@ -245,28 +257,38 @@
                 });
                 const data = await res.json().catch(() => ({}));
                 if (!res.ok) {
-                    alert('结束进程失败: ' + (data.error || res.statusText));
+                    if (ui && ui.toast) ui.toast('结束进程失败: ' + (data.error || res.statusText), 'error');
+                    else alert('结束进程失败: ' + (data.error || res.statusText));
                 } else {
+                    if (ui && ui.toast) ui.toast(`已成功结束进程 (PID: ${pid})`, 'success');
                     this.fetchProcesses();
                 }
             } catch (err) {
-                alert('结束进程抛出异常: ' + err.message);
+                if (ui && ui.toast) ui.toast('结束进程抛出异常: ' + err.message, 'error');
+                else alert('结束进程抛出异常: ' + err.message);
             }
         }
 
         async killGroup(pids, appName) {
-            if (!confirm(`确定结束应用「${appName}」的所有 ${pids.length} 个子进程吗？`)) return;
+            const ui = global.LanDiskUI;
+            const ok = ui && ui.confirmDialog
+                ? await ui.confirmDialog({ title: '结束应用进程组', message: `确定结束应用「${appName}」的所有 ${pids.length} 个子进程吗？`, confirmText: '结束全部', danger: true })
+                : confirm(`确定结束应用「${appName}」的所有 ${pids.length} 个子进程吗？`);
+            if (!ok) return;
 
             const apiUrl = this.getApiUrl('/api/kill-process');
+            let succ = 0;
             for (const pid of pids) {
                 try {
-                    await fetch(apiUrl, {
+                    const res = await fetch(apiUrl, {
                         method: 'POST',
                         headers: this._authHeaders({ 'Content-Type': 'application/json' }),
                         body: JSON.stringify({ pid })
                     });
+                    if (res.ok) succ++;
                 } catch(e){}
             }
+            if (ui && ui.toast) ui.toast(`已结束「${appName}」的 ${succ} 个子进程`, 'success');
             this.fetchProcesses();
         }
 

@@ -1,5 +1,5 @@
-const STATIC_CACHE_NAME = 'lan-disk-static-v4';
-const VIDEO_CACHE_NAME = 'lan-disk-video-cache-v4';
+const STATIC_CACHE_NAME = 'lan-disk-static-v5';
+const VIDEO_CACHE_NAME = 'lan-disk-video-cache-v5';
 
 const PRECACHE_ASSETS = [
     '/',
@@ -9,13 +9,17 @@ const PRECACHE_ASSETS = [
     '/manifest.json',
     '/shared/apple-theme.css',
     '/shared/apple-player.css',
+    '/shared/media-types.js',
+    '/shared/player-template.js',
     '/shared/icons.js',
     '/shared/auth.js',
     '/shared/ui.js',
     '/shared/apple-player.js',
+    '/shared/upload-worker.js',
     '/shared/components/file-explorer.js',
     '/shared/components/file-bookmarks.js',
     '/shared/components/file-batch.js',
+    '/shared/components/media-hub.js',
     '/shared/components/media-theater.js',
     '/shared/components/imessage-chat.js',
     '/shared/components/whiteboard.js',

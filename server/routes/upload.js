@@ -12,6 +12,25 @@ function isValidFileHash(hash) {
     return typeof hash === 'string' && /^[a-zA-Z0-9_-]{6,64}$/.test(hash);
 }
 
+// 避免文件覆盖冲突，同名文件自动重命名为 filename (1).ext
+function getNonConflictingFileName(targetDir, originalName, allocatedNames = null) {
+    let name = originalName;
+    const ext = path.extname(name);
+    const base = path.basename(name, ext);
+    let counter = 1;
+    while (
+        fs.existsSync(path.join(targetDir, name)) ||
+        (allocatedNames && allocatedNames.has(name))
+    ) {
+        name = `${base} (${counter})${ext}`;
+        counter++;
+    }
+    if (allocatedNames) {
+        allocatedNames.add(name);
+    }
+    return name;
+}
+
 // 设置 Multer 文件上传
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -38,6 +57,8 @@ const storage = multer.diskStorage({
                 return cb(new Error('权限不足，无法在当前目录创建文件夹或写入文件'));
             }
         }
+        req.__uploadDir = targetPath;
+        if (!req.__allocatedNames) req.__allocatedNames = new Set();
         cb(null, targetPath);
     },
     filename: (req, file, cb) => {
@@ -52,6 +73,11 @@ const storage = multer.diskStorage({
             } catch(e) {}
         }
         fileName = fileName.replace(/[/\\?%*:|"<>]/g, '-');
+        fileName = sanitizeFileName(fileName) || `upload_${Date.now()}`;
+        const allowOverwrite = req.headers['x-overwrite'] === 'true' || req.query.overwrite === 'true';
+        if (!allowOverwrite && req.__uploadDir) {
+            fileName = getNonConflictingFileName(req.__uploadDir, fileName, req.__allocatedNames);
+        }
         cb(null, fileName);
     }
 });
@@ -70,6 +96,10 @@ router.post('/upload/raw', (req, res) => {
         }
 
         fileName = sanitizeFileName(fileName) || `upload_${Date.now()}`;
+        const allowOverwrite = req.headers['x-overwrite'] === 'true' || req.query.overwrite === 'true';
+        if (!allowOverwrite) {
+            fileName = getNonConflictingFileName(targetPath, fileName);
+        }
 
         if (!isSafePath(targetPath, true)) {
             return res.status(403).json({ error: 'Forbidden' });
@@ -250,7 +280,9 @@ router.post('/upload/merge', async (req, res) => {
     }
     if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
-    const targetFilePath = path.join(uploadDir, safeName);
+    const allowOverwrite = req.headers['x-overwrite'] === 'true' || req.query.overwrite === 'true' || req.body?.overwrite === true;
+    const finalFileName = allowOverwrite ? safeName : getNonConflictingFileName(uploadDir, safeName);
+    const targetFilePath = path.join(uploadDir, finalFileName);
     const chunkDir = path.join(tempChunksDir, fileHash);
 
     if (!fs.existsSync(chunkDir)) {
@@ -313,13 +345,13 @@ router.post('/upload/merge', async (req, res) => {
         try { mergedSize = fs.statSync(targetFilePath).size; } catch (e) {}
         dirCacheInvalidateParent(targetFilePath);
         historyService.recordTransfer('upload', {
-            name: safeName,
+            name: finalFileName,
             size: mergedSize,
             path: targetFilePath,
             detail: '分片合并',
             ip: getCleanIp(req.ip || req.socket?.remoteAddress)
         });
-        res.json({ success: true, filename: safeName, filePath: targetFilePath });
+        res.json({ success: true, filename: finalFileName, filePath: targetFilePath });
     } catch(e) {
         try { fs.unlinkSync(targetFilePath); } catch(err) {}
         if (!res.headersSent) {
@@ -395,20 +427,22 @@ router.post('/upload/base64', (req, res) => {
         if (dataBuffer.length > 10 * 1024 * 1024) {
             return res.status(413).json({ error: '图片数据过大（限制 10MB）' });
         }
-        const fullPath = path.join(saveDir, safeName);
+        const allowOverwrite = req.headers['x-overwrite'] === 'true' || req.query.overwrite === 'true' || req.body?.overwrite === true;
+        const finalFileName = allowOverwrite ? safeName : getNonConflictingFileName(saveDir, safeName);
+        const fullPath = path.join(saveDir, finalFileName);
 
         if (!fs.existsSync(saveDir)) {
             fs.mkdirSync(saveDir, { recursive: true });
         }
         fs.writeFileSync(fullPath, dataBuffer);
         historyService.recordTransfer('upload', {
-            name: safeName,
+            name: finalFileName,
             size: dataBuffer.length,
             path: fullPath,
             detail: '涂鸦/图片',
             ip: getCleanIp(req.ip || req.socket?.remoteAddress)
         });
-        res.json({ success: true, filename: safeName });
+        res.json({ success: true, filename: finalFileName });
     } catch (err) {
         res.status(500).json({ error: 'Failed to save base64 image: ' + err.message });
     }

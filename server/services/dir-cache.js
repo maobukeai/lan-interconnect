@@ -11,34 +11,41 @@ const MAX_DIR_CACHE_SIZE = 200;
 
 const dirCache = new Map(); // resolvedPath -> { key: fingerprint, ts, data }
 
+function normalizeKey(p) {
+    if (!p) return '';
+    const resolved = path.resolve(p);
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
 function dirCacheGet(resolvedPath, fingerprint) {
-    const entry = dirCache.get(resolvedPath);
+    const key = normalizeKey(resolvedPath);
+    const entry = dirCache.get(key);
     if (!entry) return null;
     if (entry.key !== fingerprint) return null;
     if (Date.now() - entry.ts > DIR_CACHE_TTL_MS) {
-        dirCache.delete(resolvedPath);
+        dirCache.delete(key);
         return null;
     }
     return entry.data;
 }
 
 function dirCacheSet(resolvedPath, fingerprint, data) {
+    const key = normalizeKey(resolvedPath);
     if (dirCache.size >= MAX_DIR_CACHE_SIZE) {
-        // Map 按插入序迭代，淘汰最旧的条目
         const oldestKey = dirCache.keys().next().value;
         dirCache.delete(oldestKey);
     }
-    dirCache.set(resolvedPath, { key: fingerprint, ts: Date.now(), data });
+    dirCache.set(key, { key: fingerprint, ts: Date.now(), data });
 }
 
 // 目录内容变动后失效对应目录
 function dirCacheInvalidate(dirPath) {
-    dirCache.delete(path.resolve(dirPath));
+    if (dirPath) dirCache.delete(normalizeKey(dirPath));
 }
 
 // 文件/目录被增删改后，失效其所在父目录的列表缓存
 function dirCacheInvalidateParent(filePath) {
-    dirCache.delete(path.resolve(path.dirname(filePath)));
+    if (filePath) dirCache.delete(normalizeKey(path.dirname(filePath)));
 }
 
 module.exports = { dirCacheGet, dirCacheSet, dirCacheInvalidate, dirCacheInvalidateParent };

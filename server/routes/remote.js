@@ -6,6 +6,14 @@ const fs = require('fs');
 const { exec, execFile } = require('child_process');
 const { state } = require('../config');
 
+let sendFastInput = null;
+try {
+    const rt = require('../realtime');
+    if (rt && typeof rt.sendFastInput === 'function') {
+        sendFastInput = rt.sendFastInput;
+    }
+} catch (e) {}
+
 const isPackaged = __dirname.includes('app.asar');
 const psScriptPath = isPackaged
     ? path.join(__dirname.replace('app.asar', 'app.asar.unpacked'), '..', 'services', 'system-control.ps1')
@@ -181,36 +189,58 @@ router.get('/remote/screen/capture', async (req, res) => {
 router.post('/remote/mouse/click', async (req, res) => {
     try {
         const { x, y, button } = req.body;
-        if (typeof x !== 'number' || typeof y !== 'number') {
-            return res.status(400).json({ error: 'Coordinates x and y are required' });
+        const safeBtn = (button === 'right' || button === 'double') ? button : 'left';
+        const hasCoords = typeof x === 'number' && typeof y === 'number';
+        const cmd = { action: 'click', button: safeBtn };
+        if (hasCoords) {
+            cmd.x = Math.round(x);
+            cmd.y = Math.round(y);
         }
 
-        const safeBtn = (button === 'right' || button === 'double') ? button : 'left';
-        await runPsControl([
-            '-Action', 'click',
-            '-MouseX', String(Math.round(x)),
-            '-MouseY', String(Math.round(y)),
-            '-MouseButton', safeBtn
-        ]);
+        if (sendFastInput) {
+            await sendFastInput(cmd);
+        } else {
+            const args = ['-Action', 'click', '-MouseButton', safeBtn];
+            if (hasCoords) {
+                args.push('-MouseX', String(cmd.x), '-MouseY', String(cmd.y));
+            }
+            await runPsControl(args);
+        }
 
-        res.json({ success: true, x: Math.round(x), y: Math.round(y), button: safeBtn });
+        res.json({ success: true, ...(hasCoords ? { x: cmd.x, y: cmd.y } : {}), button: safeBtn });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// 5a. 鼠标移动（不点击）
+// 5a. 鼠标移动（不点击，支持绝对坐标 x,y 或相对位移 dx,dy）
 router.post('/remote/mouse/move', async (req, res) => {
     try {
-        const { x, y } = req.body;
-        if (typeof x !== 'number' || typeof y !== 'number') {
-            return res.status(400).json({ error: 'Coordinates x and y are required' });
+        const { x, y, dx, dy } = req.body;
+        const hasCoords = typeof x === 'number' && typeof y === 'number';
+        const hasDeltas = typeof dx === 'number' && typeof dy === 'number';
+        if (!hasCoords && !hasDeltas) {
+            return res.status(400).json({ error: 'Coordinates x,y or relative deltas dx,dy are required' });
         }
-        await runPsControl([
-            '-Action', 'move',
-            '-MouseX', String(Math.round(x)),
-            '-MouseY', String(Math.round(y))
-        ]);
+        const cmd = { action: 'move' };
+        if (hasDeltas) {
+            cmd.dx = Math.round(dx);
+            cmd.dy = Math.round(dy);
+        } else {
+            cmd.x = Math.round(x);
+            cmd.y = Math.round(y);
+        }
+        if (sendFastInput) {
+            await sendFastInput(cmd);
+        } else {
+            const args = ['-Action', 'move'];
+            if (hasDeltas) {
+                args.push('-MouseX', String(cmd.dx), '-MouseY', String(cmd.dy));
+            } else {
+                args.push('-MouseX', String(cmd.x), '-MouseY', String(cmd.y));
+            }
+            await runPsControl(args);
+        }
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -221,16 +251,22 @@ router.post('/remote/mouse/move', async (req, res) => {
 router.post('/remote/mouse/down', async (req, res) => {
     try {
         const { x, y, button } = req.body;
-        if (typeof x !== 'number' || typeof y !== 'number') {
-            return res.status(400).json({ error: 'Coordinates x and y are required' });
-        }
         const safeBtn = (button === 'right' || button === 'middle') ? button : 'left';
-        await runPsControl([
-            '-Action', 'mousedown',
-            '-MouseX', String(Math.round(x)),
-            '-MouseY', String(Math.round(y)),
-            '-MouseButton', safeBtn
-        ]);
+        const hasCoords = typeof x === 'number' && typeof y === 'number';
+        const cmd = { action: 'mousedown', button: safeBtn };
+        if (hasCoords) {
+            cmd.x = Math.round(x);
+            cmd.y = Math.round(y);
+        }
+        if (sendFastInput) {
+            await sendFastInput(cmd);
+        } else {
+            const args = ['-Action', 'mousedown', '-MouseButton', safeBtn];
+            if (hasCoords) {
+                args.push('-MouseX', String(cmd.x), '-MouseY', String(cmd.y));
+            }
+            await runPsControl(args);
+        }
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -240,16 +276,22 @@ router.post('/remote/mouse/down', async (req, res) => {
 router.post('/remote/mouse/up', async (req, res) => {
     try {
         const { x, y, button } = req.body;
-        if (typeof x !== 'number' || typeof y !== 'number') {
-            return res.status(400).json({ error: 'Coordinates x and y are required' });
-        }
         const safeBtn = (button === 'right' || button === 'middle') ? button : 'left';
-        await runPsControl([
-            '-Action', 'mouseup',
-            '-MouseX', String(Math.round(x)),
-            '-MouseY', String(Math.round(y)),
-            '-MouseButton', safeBtn
-        ]);
+        const hasCoords = typeof x === 'number' && typeof y === 'number';
+        const cmd = { action: 'mouseup', button: safeBtn };
+        if (hasCoords) {
+            cmd.x = Math.round(x);
+            cmd.y = Math.round(y);
+        }
+        if (sendFastInput) {
+            await sendFastInput(cmd);
+        } else {
+            const args = ['-Action', 'mouseup', '-MouseButton', safeBtn];
+            if (hasCoords) {
+                args.push('-MouseX', String(cmd.x), '-MouseY', String(cmd.y));
+            }
+            await runPsControl(args);
+        }
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -264,11 +306,20 @@ router.post('/remote/scroll', async (req, res) => {
             return res.status(400).json({ error: 'Non-zero delta is required' });
         }
         const safeDelta = Math.max(-50, Math.min(50, Math.round(delta)));
-        const args = ['-Action', 'scroll', '-Delta', String(safeDelta)];
-        if (typeof x === 'number' && typeof y === 'number') {
-            args.push('-MouseX', String(Math.round(x)), '-MouseY', String(Math.round(y)));
+        if (sendFastInput) {
+            const cmd = { action: 'scroll', delta: safeDelta };
+            if (typeof x === 'number' && typeof y === 'number') {
+                cmd.x = Math.round(x);
+                cmd.y = Math.round(y);
+            }
+            await sendFastInput(cmd);
+        } else {
+            const args = ['-Action', 'scroll', '-Delta', String(safeDelta)];
+            if (typeof x === 'number' && typeof y === 'number') {
+                args.push('-MouseX', String(Math.round(x)), '-MouseY', String(Math.round(y)));
+            }
+            await runPsControl(args);
         }
-        await runPsControl(args);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -293,7 +344,11 @@ router.post('/remote/key', async (req, res) => {
             const parsed = modifiers.split(',').map(m => m.trim().toLowerCase()).filter(m => ['ctrl', 'alt', 'shift', 'win'].includes(m));
             mods = parsed.join(',');
         }
-        await runPsControl(['-Action', 'key', '-KeyName', key.trim(), '-Modifiers', mods]);
+        if (sendFastInput) {
+            await sendFastInput({ action: 'key', key: key.trim(), modifiers: mods });
+        } else {
+            await runPsControl(['-Action', 'key', '-KeyName', key.trim(), '-Modifiers', mods]);
+        }
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -313,7 +368,11 @@ router.post('/remote/text', async (req, res) => {
         if (text.length > 2000) {
             return res.status(400).json({ error: 'Text too long (max 2000 chars)' });
         }
-        await runPsControl(['-Action', 'text', '-Text', text]);
+        if (sendFastInput) {
+            await sendFastInput({ action: 'text', text });
+        } else {
+            await runPsControl(['-Action', 'text', '-Text', text]);
+        }
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });

@@ -103,6 +103,7 @@ namespace LanDiskSystem {
         public static extern IntPtr SelectObject(IntPtr hDC, IntPtr hObject);
 
         public const int SRCCOPY = 0x00CC0020;
+        public const uint MOUSEEVENTF_MOVE = 0x0001;
         public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
         public const uint MOUSEEVENTF_LEFTUP = 0x0004;
         public const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
@@ -254,6 +255,42 @@ namespace LanDiskSystem {
         public static void Scroll(int x, int y, int delta) {
             SetCursorPos(x, y);
             mouse_event(MOUSEEVENTF_WHEEL, (uint)x, (uint)y, unchecked((uint)(delta * 120)), 0);
+        }
+
+        public static void MoveRelative(int dx, int dy) {
+            mouse_event(MOUSEEVENTF_MOVE, (uint)dx, (uint)dy, 0, 0);
+        }
+
+        public static void ClickCurrent(string btn) {
+            if (btn == "right") {
+                mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0);
+                System.Threading.Thread.Sleep(20);
+                mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0);
+            } else if (btn == "double") {
+                mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0);
+                mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+                System.Threading.Thread.Sleep(50);
+                mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0);
+                mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+            } else {
+                mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0);
+                System.Threading.Thread.Sleep(20);
+                mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+            }
+        }
+
+        public static void MouseDownCurrent(string btn) {
+            uint flag = (btn == "right") ? MOUSEEVENTF_RIGHTDOWN : ((btn == "middle") ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_LEFTDOWN);
+            mouse_event(flag, 0, 0, 0, 0);
+        }
+
+        public static void MouseUpCurrent(string btn) {
+            uint flag = (btn == "right") ? MOUSEEVENTF_RIGHTUP : ((btn == "middle") ? MOUSEEVENTF_MIDDLEUP : MOUSEEVENTF_LEFTUP);
+            mouse_event(flag, 0, 0, 0, 0);
+        }
+
+        public static void ScrollCurrent(int delta) {
+            mouse_event(MOUSEEVENTF_WHEEL, 0, 0, unchecked((uint)(delta * 120)), 0);
         }
 
         private static ushort ResolveVk(string name) {
@@ -550,6 +587,73 @@ switch ($Action) {
     'text' {
         [LanDiskSystem.Core]::SendUnicodeText($Text)
         Write-Output '{"success":true}'
+    }
+    'input-loop' {
+        # Resident fast input runner: reads single-line JSON commands from stdin and executes via user32 P/Invoke with ~1ms latency
+        $reader = [Console]::In
+        while ($true) {
+            $line = $reader.ReadLine()
+            if ($null -eq $line) { break }
+            $trimmed = $line.Trim()
+            if ($trimmed -eq '') { continue }
+            if ($trimmed -eq 'exit' -or $trimmed -eq 'quit') { break }
+            try {
+                $cmd = ConvertFrom-Json $trimmed
+                switch ($cmd.action) {
+                    'move' {
+                        if ($null -ne $cmd.dx -and $null -ne $cmd.dy) {
+                            [LanDiskSystem.Core]::MoveRelative([int]$cmd.dx, [int]$cmd.dy)
+                        } else {
+                            [LanDiskSystem.Core]::MoveTo([int]$cmd.x, [int]$cmd.y)
+                        }
+                    }
+                    'click' {
+                        $btn = if ($cmd.button) { [string]$cmd.button } else { 'left' }
+                        if ($null -ne $cmd.x -and $null -ne $cmd.y) {
+                            [LanDiskSystem.Core]::ClickAt([int]$cmd.x, [int]$cmd.y, $btn)
+                        } else {
+                            [LanDiskSystem.Core]::ClickCurrent($btn)
+                        }
+                    }
+                    'mousedown' {
+                        $btn = if ($cmd.button) { [string]$cmd.button } else { 'left' }
+                        if ($null -ne $cmd.x -and $null -ne $cmd.y) {
+                            [LanDiskSystem.Core]::MouseDown([int]$cmd.x, [int]$cmd.y, $btn)
+                        } else {
+                            [LanDiskSystem.Core]::MouseDownCurrent($btn)
+                        }
+                    }
+                    'mouseup' {
+                        $btn = if ($cmd.button) { [string]$cmd.button } else { 'left' }
+                        if ($null -ne $cmd.x -and $null -ne $cmd.y) {
+                            [LanDiskSystem.Core]::MouseUp([int]$cmd.x, [int]$cmd.y, $btn)
+                        } else {
+                            [LanDiskSystem.Core]::MouseUpCurrent($btn)
+                        }
+                    }
+                    'scroll' {
+                        if ($null -ne $cmd.x -and $null -ne $cmd.y) {
+                            [LanDiskSystem.Core]::Scroll([int]$cmd.x, [int]$cmd.y, [int]$cmd.delta)
+                        } else {
+                            [LanDiskSystem.Core]::ScrollCurrent([int]$cmd.delta)
+                        }
+                    }
+                    'key' {
+                        $mods = if ($cmd.modifiers) { [string]$cmd.modifiers } else { '' }
+                        [LanDiskSystem.Core]::KeyCombo([string]$cmd.key, $mods)
+                    }
+                    'text' {
+                        [LanDiskSystem.Core]::SendUnicodeText([string]$cmd.text)
+                    }
+                }
+                [Console]::Out.WriteLine('{"success":true}')
+                [Console]::Out.Flush()
+            } catch {
+                $err = $_.Exception.Message
+                [Console]::Out.WriteLine('{"success":false,"error":' + (ConvertTo-Json $err -Compress) + '}')
+                [Console]::Out.Flush()
+            }
+        }
     }
     'stream' {
         # Resident capture loop: writes [4-byte LE length prefix + JPEG] frames to stdout, parsed by Node and forwarded over WebSocket

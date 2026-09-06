@@ -24,6 +24,7 @@
     <script src="shared/components/process-monitor.js"></script>
     <script src="shared/components/web-terminal.js"></script>
     <script src="shared/components/remote-control.js?v=20260831_v46"></script>
+    <script src="shared/components/study-plan.js?v=20260831_v46"></script>
     <style>
                 /* ---------- 自定义标题栏与窗体圆角 ---------- */
         html, body {
@@ -391,6 +392,9 @@
                     <!-- 动态注入设备列表或空状态引导 -->
                 </div>
             </div>
+
+            <!-- 7. 今日学习与打卡微件 (占 12 列) -->
+            <div id="home-study-widget" style="grid-column: 1 / -1;"></div>
         </div>
 
         <div class="row wrap" style="gap:10px; margin-bottom:16px">
@@ -419,6 +423,7 @@
                 <input type="text" id="search-input" class="apple-input" placeholder="搜索当前目录…">
             </div>
             <button class="apple-btn apple-btn-glass file-tool-btn" id="btn-mkdir" title="新建文件夹"><span data-icon="folderPlus" data-icon-size="16"></span></button>
+            <button class="apple-btn apple-btn-glass file-tool-btn" id="btn-touch" title="新建文本文件"><span data-icon="filePlus" data-icon-size="16"></span></button>
             <button class="apple-btn apple-btn-glass file-tool-btn" id="btn-explorer-refresh" title="刷新"><span data-icon="refresh" data-icon-size="16"></span></button>
             <label class="apple-btn apple-btn-primary file-upload-btn" id="btn-upload-label" title="上传文件">
                 <span id="btn-upload-icon"></span>
@@ -528,7 +533,10 @@
     </section>
 <script>if (window.PlayerTemplate) document.getElementById("view-player").innerHTML = window.PlayerTemplate.markup;</script>
 
-<section id="view-chat" class="view-section">
+    <!-- 4. 学习计划与督学 -->
+    <section id="view-plan" class="view-section"></section>
+
+    <section id="view-chat" class="view-section">
         <div class="glass-card">
             <div class="apple-card-title">
                 <span class="apple-card-title-text"><span data-icon="chat"></span>跨端消息</span>
@@ -591,7 +599,14 @@
         <div class="glass-card" style="margin-bottom:16px">
             <div class="apple-card-title"><span class="apple-card-title-text"><span data-icon="terminal"></span>Shell 控制台</span></div>
             <div id="terminal-output" class="mono" style="background:#0b0d14; border-radius:12px; padding:14px; font-size:12.5px; color:#34c759; height:190px; overflow-y:auto; white-space:pre-wrap; border:1px solid var(--apple-border)">ready — 本机 Shell 控制台</div>
-            <div class="row" style="margin-top:12px">
+            <div class="terminal-quick-presets" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:10px;">
+                <button class="apple-btn apple-btn-glass apple-btn-xs terminal-preset-btn" data-cmd="ipconfig">ipconfig</button>
+                <button class="apple-btn apple-btn-glass apple-btn-xs terminal-preset-btn" data-cmd="ping 127.0.0.1">ping</button>
+                <button class="apple-btn apple-btn-glass apple-btn-xs terminal-preset-btn" data-cmd="systeminfo">systeminfo</button>
+                <button class="apple-btn apple-btn-glass apple-btn-xs terminal-preset-btn" data-cmd="netstat -ano">netstat</button>
+                <button class="apple-btn apple-btn-glass apple-btn-xs terminal-preset-btn" data-cmd="cls">cls</button>
+            </div>
+            <div class="row" style="margin-top:10px">
                 <div class="apple-input-box" style="flex:1">
                     <input type="text" id="terminal-input" class="apple-input mono" placeholder="输入 Shell 命令…">
                 </div>
@@ -752,6 +767,7 @@
     <button class="dock-item active" data-view="home"><span data-icon="home" data-icon-size="22"></span><span class="dock-tip">主页</span></button>
     <button class="dock-item" data-view="files"><span data-icon="folder" data-icon-size="22"></span><span class="dock-tip">文件</span></button>
     <button class="dock-item" data-view="media"><span data-icon="playCircle" data-icon-size="22"></span><span class="dock-tip">影音</span></button>
+    <button class="dock-item" data-view="plan"><span data-icon="plan" data-icon-size="22"></span><span class="dock-tip">计划</span></button>
     <button class="dock-item" data-view="chat"><span data-icon="chat" data-icon-size="22"></span><span class="dock-tip">消息</span></button>
     <button class="dock-item" data-view="tools"><span data-icon="tools" data-icon-size="22"></span><span class="dock-tip">工具</span></button>
     <button class="dock-item" data-view="settings"><span data-icon="settings" data-icon-size="22"></span><span class="dock-tip">设置</span></button>
@@ -779,13 +795,46 @@
     </div>
 </div>
 
-<div id="text-modal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(4,6,12,0.9); backdrop-filter:blur(20px); align-items:center; justify-content:center; padding:20px">
-    <div style="width:min(92vw,700px)" class="glass-card">
-        <div class="row-between" style="margin-bottom:14px">
-            <div id="text-title" style="font-weight:600"></div>
-            <button class="apple-btn-icon" id="text-modal-close"></button>
+<div id="text-modal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(4,6,12,0.92); backdrop-filter:blur(24px); align-items:center; justify-content:center; padding:16px;">
+    <div style="width:min(94vw,860px); max-height:88vh; display:flex; flex-direction:column; padding:0; overflow:hidden;" class="glass-card text-editor-card">
+        <!-- 头部工具栏 -->
+        <div class="text-editor-header" style="display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid var(--apple-border); background:rgba(255,255,255,0.03); flex-shrink:0;">
+            <div style="display:flex; align-items:center; gap:10px; min-width:0; flex:1;">
+                <span style="display:flex; align-items:center; color:var(--apple-blue);" id="text-editor-icon"></span>
+                <div id="text-title" class="ellipsis" style="font-weight:600; font-size:14px; max-width:min(45vw,360px);"></div>
+                <span class="apple-badge apple-badge-sm apple-badge-info" id="text-editor-badge">只读</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+                <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-text-mode-toggle" style="height:28px; font-size:12px; padding:0 10px;">
+                    <span data-icon="pencil" data-icon-size="13"></span> 编辑
+                </button>
+                <button class="apple-btn apple-btn-primary apple-btn-sm" id="btn-text-save" style="height:28px; font-size:12px; padding:0 12px; display:none;">
+                    <span data-icon="check" data-icon-size="13"></span> 保存
+                </button>
+                <button class="apple-btn apple-btn-glass apple-btn-sm" id="btn-text-copy" style="height:28px; font-size:12px; padding:0 10px;" title="复制全文">
+                    <span data-icon="copy" data-icon-size="13"></span> 复制
+                </button>
+                <button class="apple-btn-icon" id="text-modal-close" style="width:28px; height:28px;"></button>
+            </div>
         </div>
-        <div id="text-viewer" class="mono" style="background:#0b0d14; padding:16px; border-radius:12px; white-space:pre-wrap; max-height:55vh; overflow-y:auto; font-size:12.5px; color:#e8eaf0"></div>
+
+        <!-- 编辑区 / 预览区 -->
+        <div class="text-editor-body" style="flex:1; min-height:220px; max-height:58vh; display:flex; flex-direction:column; position:relative; overflow:hidden;">
+            <!-- 只读查看器 -->
+            <div id="text-viewer" class="mono" style="padding:16px; white-space:pre-wrap; word-break:break-all; overflow-y:auto; font-size:13px; color:#e8eaf0; line-height:1.6; height:100%; box-sizing:border-box;"></div>
+            <!-- 编辑输入框 -->
+            <textarea id="text-editor-input" class="mono" spellcheck="false" style="display:none; width:100%; height:100%; border:none; outline:none; background:transparent; color:#e8eaf0; padding:16px; font-size:13px; line-height:1.6; resize:none; box-sizing:border-box; font-family:ui-monospace,SFMono-Regular,Consolas,monospace;"></textarea>
+        </div>
+
+        <!-- 底部状态栏 -->
+        <div class="text-editor-footer subtle" style="display:flex; align-items:center; justify-content:space-between; padding:8px 16px; border-top:1px solid var(--apple-border); font-size:11px; background:rgba(0,0,0,0.15); flex-shrink:0;">
+            <div style="display:flex; align-items:center; gap:12px;">
+                <span id="text-stat-lines">0 行</span>
+                <span id="text-stat-chars">0 字符</span>
+                <span id="text-stat-ext" class="apple-badge apple-badge-sm apple-badge-secondary" style="font-size:10px; padding:1px 6px;">TXT</span>
+            </div>
+            <div style="font-size:11px; opacity:0.7;">Ctrl+S 保存 · Tab 缩进 · Esc 退出</div>
+        </div>
     </div>
 </div>
 

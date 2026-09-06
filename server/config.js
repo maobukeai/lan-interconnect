@@ -50,7 +50,8 @@ const state = {
     deviceAliases: {},
     sharedLinks: {},
     statsInterval: null,
-    autoCleanupInterval: null
+    autoCleanupInterval: null,
+    studyPaths: new Set()
 };
 
 const BLOCKED_IPS_FILE = resolveDataFile('blocked_ips.json', path.join(__dirname, '..', 'blocked_ips.json'));
@@ -101,14 +102,59 @@ function loadPersistedSecurityData() {
 
 function savePersistedSecurityData() {
     try {
-        fs.writeFileSync(BLOCKED_IPS_FILE, JSON.stringify(Array.from(state.blockedIps)), 'utf8');
-    } catch(e) {}
+        const tmp = BLOCKED_IPS_FILE + '.tmp';
+        fs.writeFileSync(tmp, JSON.stringify(Array.from(state.blockedIps)), 'utf8');
+        fs.renameSync(tmp, BLOCKED_IPS_FILE);
+    } catch(e) {
+        try { fs.writeFileSync(BLOCKED_IPS_FILE, JSON.stringify(Array.from(state.blockedIps)), 'utf8'); } catch(e2) {}
+    }
     try {
-        fs.writeFileSync(DEVICE_ALIASES_FILE, JSON.stringify(state.deviceAliases), 'utf8');
-    } catch(e) {}
+        const tmp2 = DEVICE_ALIASES_FILE + '.tmp';
+        fs.writeFileSync(tmp2, JSON.stringify(state.deviceAliases), 'utf8');
+        fs.renameSync(tmp2, DEVICE_ALIASES_FILE);
+    } catch(e) {
+        try { fs.writeFileSync(DEVICE_ALIASES_FILE, JSON.stringify(state.deviceAliases), 'utf8'); } catch(e2) {}
+    }
 }
 
 loadPersistedSecurityData();
+
+function loadStudyPaths() {
+    try {
+        const plansFile = path.join(DATA_DIR, 'study_plans.json');
+        if (fs.existsSync(plansFile)) {
+            const list = JSON.parse(fs.readFileSync(plansFile, 'utf8'));
+            if (Array.isArray(list)) {
+                list.forEach(item => {
+                    if (item && item.coursePath) {
+                        state.studyPaths.add(path.resolve(item.coursePath));
+                    }
+                });
+            }
+        }
+    } catch (e) {}
+}
+
+function addStudyPath(p) {
+    if (!p || typeof p !== 'string') return;
+    try {
+        state.studyPaths.add(path.resolve(p));
+    } catch(e) {}
+}
+
+function removeStudyPath(p) {
+    if (!p || typeof p !== 'string') return;
+    try {
+        const resolved = path.resolve(p).toLowerCase();
+        for (const item of state.studyPaths) {
+            if (item.toLowerCase() === resolved) {
+                state.studyPaths.delete(item);
+            }
+        }
+    } catch(e) {}
+}
+
+loadStudyPaths();
 
 function broadcastMessage(msg) {
     const data = `data: ${JSON.stringify({ type: 'new', message: msg })}\n\n`;
@@ -140,7 +186,20 @@ function isSafePath(targetPath, forWrite) {
         const resolvedShared = path.resolve(state.sharedDir);
         const a = process.platform === 'win32' ? resolvedPath.toLowerCase() : resolvedPath;
         const b = process.platform === 'win32' ? resolvedShared.toLowerCase() : resolvedShared;
-        return a === b || a.startsWith(b + path.sep);
+        let isWhitelisted = (a === b || a.startsWith(b + path.sep));
+
+        // 学习计划课程目录白名单：即使在互传模式下，已配置的学习计划目录也允许访问与流式播放
+        if (!isWhitelisted && state.studyPaths && state.studyPaths.size > 0) {
+            for (const sp of state.studyPaths) {
+                const s = process.platform === 'win32' ? sp.toLowerCase() : sp;
+                if (a === s || a.startsWith(s + path.sep)) {
+                    isWhitelisted = true;
+                    break;
+                }
+            }
+        }
+
+        if (!isWhitelisted) return false;
     }
     if (process.platform === 'win32') {
         const lower = resolvedPath.toLowerCase();
@@ -293,5 +352,8 @@ module.exports = {
     sanitizeFileName,
     getLocalIpAddress,
     getAddressCatalog,
-    shouldCompress
+    shouldCompress,
+    addStudyPath,
+    removeStudyPath,
+    loadStudyPaths
 };

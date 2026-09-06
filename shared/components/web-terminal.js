@@ -194,8 +194,13 @@
         return instance;
     }
 
-    WebTerminal.execute = function(inputId, outputId) {
-        const inst = getOrCreateInstance(inputId, outputId);
+    WebTerminal.execute = function(cmdOrInputId, outputId) {
+        if (typeof cmdOrInputId === 'string' && !cmdOrInputId.startsWith('#') && !cmdOrInputId.startsWith('.')) {
+            const inst = getOrCreateInstance();
+            inst.executeCommand(cmdOrInputId);
+            return;
+        }
+        const inst = getOrCreateInstance(cmdOrInputId, outputId);
         inst.executeCommand();
     };
 

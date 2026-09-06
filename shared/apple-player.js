@@ -77,10 +77,15 @@ class AppleCinemaPlayerEngine {
         this.isProgressDragging = false;
         this.activePopoverBtn = null;
 
-        // 音频可视化
+        // 音频可视化与 Web Audio 扩展管线
         this.audioCtx = null;
         this.audioAnalyser = null;
         this.audioSource = null;
+        this.audioGainNode = null;
+        this.audioCompressorNode = null;
+        this.volumeBoost = 1.0;
+        this.speechNightMode = false;
+        this.transcodeMode = 'direct';
         this.animFrameId = null;
         this._mediaSeq = 0; // 切集序号：防止异步响应（续播/字幕探测）污染当前媒体
 
@@ -177,6 +182,12 @@ class AppleCinemaPlayerEngine {
             fsLoopGrid: document.getElementById('ap-fs-loop-grid'),
             fsBtnRotate: document.getElementById('ap-fs-btn-rotate'),
             fsBtnBrightnessReset: document.getElementById('ap-fs-btn-brightness-reset'),
+            fsBoostGrid: document.getElementById('ap-fs-boost-grid'),
+            fsBoostStatus: document.getElementById('ap-fs-boost-status'),
+            fsSpeechGrid: document.getElementById('ap-fs-speech-grid'),
+            fsSpeechStatus: document.getElementById('ap-fs-speech-status'),
+            fsTranscodeGrid: document.getElementById('ap-fs-transcode-grid'),
+            fsTranscodeStatus: document.getElementById('ap-fs-transcode-status'),
             fsSubStatus: document.getElementById('ap-fs-sub-status'),
             fsSubTracksGrid: document.getElementById('ap-fs-sub-tracks-grid'),
             fsSubSizeGrid: document.getElementById('ap-fs-sub-size-grid'),
@@ -229,13 +240,24 @@ class AppleCinemaPlayerEngine {
         media.addEventListener('seeked', () => this.setLoading(false));
         media.addEventListener('canplay', () => this.setLoading(false));
         media.addEventListener('playing', () => { this.setLoading(false); this.onPlayStateChange(true); });
-        media.addEventListener('play', () => this.onPlayStateChange(true));
+        media.addEventListener('play', () => {
+            this.ensureAudioPipeline();
+            if (this.audioCtx && this.audioCtx.state === 'suspended') {
+                this.audioCtx.resume().catch(() => {});
+            }
+            this.onPlayStateChange(true);
+        });
         media.addEventListener('pause', () => this.onPlayStateChange(false));
         media.addEventListener('ended', () => this.onEnded());
         media.addEventListener('loadedmetadata', () => { this.setLoading(false); this.onLoadedMetadata(); });
         media.addEventListener('error', () => {
             this.setLoading(false);
             if (this.dom.media && this.dom.media.error) {
+                if (this.dom.media.error.code === 4 && (!this.transcodeMode || this.transcodeMode === 'direct')) {
+                    this.showGestureToast('原画不受浏览器支持，已自动切换为兼容转码…');
+                    this.setTranscodeMode('remux');
+                    return;
+                }
                 this.showGestureToast(this.dom.media.error.code === 4
                     ? '视频源不可用：不受支持的格式'
                     : '视频加载失败，请检查文件或网络');
@@ -301,16 +323,17 @@ class AppleCinemaPlayerEngine {
         drawerEpisodesClose?.addEventListener('click', (e) => { e.stopPropagation(); this.closeDrawers(); });
         drawerSettingsClose?.addEventListener('click', (e) => { e.stopPropagation(); this.closeDrawers(); });
 
-        // 外部专业播放器 App 联动
+        // 外部专业播放器 App 联动与 DLNA 电视投屏
         this.dom.btnExternalApp?.addEventListener('click', (e) => {
             e.stopPropagation();
             const options = [
+                { label: '📺 投屏至智能电视 (DLNA / UPnP)', value: 'dlna' },
                 { label: '🌟 唤起手机/系统播放器 (MX Player / 系统相册)', value: 'intent' },
                 { label: '🎬 在 VLC 播放器中打开', value: 'vlc' },
                 { label: '📱 在 nPlayer 播放器中打开', value: 'nplayer' },
                 { label: '📋 复制局域网直连播放地址 (可粘贴至 Infuse/PotPlayer)', value: 'copy' }
             ];
-            this.openMenuPopover(this.dom.btnExternalApp, '🚀 调用外部专业播放器 App', options, null, (val) => {
+            this.openMenuPopover(this.dom.btnExternalApp, '🚀 调用外部专业播放器 / 电视投屏', options, null, (val) => {
                 this.openInExternalApp(val);
             });
         });
@@ -392,6 +415,9 @@ class AppleCinemaPlayerEngine {
         bindGridEvents(fitGrid, (v) => this.setObjectFit(v), 'data-fit');
         bindGridEvents(fsLoopGrid, (v) => this.setLoopMode(v), 'data-loop');
         bindGridEvents(this.dom.loopGrid, (v) => this.setLoopMode(v), 'data-loop');
+        bindGridEvents(this.dom.fsBoostGrid, (v) => this.setVolumeBoost(v), 'data-boost');
+        bindGridEvents(this.dom.fsSpeechGrid, (v) => this.setSpeechNightMode(v === 'night'), 'data-speech');
+        bindGridEvents(this.dom.fsTranscodeGrid, (v) => this.setTranscodeMode(v), 'data-transcode');
 
         // 字幕字号、延迟与轨道切换绑定
         const bindSubGrid = (grid, setter, attr) => {
@@ -665,8 +691,14 @@ class AppleCinemaPlayerEngine {
 
     getStreamUrl(item) {
         if (!item) return '';
-        if (item.url) return item.url;
-        return this._apiUrl('/api/stream') + '?path=' + encodeURIComponent(item.path) + this._authQueryString();
+        if (item.url && (!this.transcodeMode || this.transcodeMode === 'direct')) return item.url;
+        let ep = '/api/stream';
+        if (this.transcodeMode === 'remux') {
+            ep = '/api/stream/remux';
+        } else if (this.transcodeMode === 'full' || this.transcodeMode === 'transcode') {
+            ep = '/api/stream/transcode';
+        }
+        return this._apiUrl(ep) + '?path=' + encodeURIComponent(item.path) + this._authQueryString();
     }
 
     // 加载期间用作 video.poster 的缩略图地址（与海报墙同一张缓存图，几乎零成本）
@@ -776,6 +808,7 @@ class AppleCinemaPlayerEngine {
 
             this.setLoading(true);
             this.dom.media.playsInline = true;
+            this.dom.media.crossOrigin = 'anonymous';
             this.dom.media.preload = 'auto';
             if (this.dom.media.src !== streamUrl) {
                 this.dom.media.src = streamUrl;
@@ -2380,6 +2413,11 @@ class AppleCinemaPlayerEngine {
             return;
         }
 
+        if (protocol === 'dlna') {
+            this.openDlnaCastingDialog(absoluteUrl);
+            return;
+        }
+
         // 默认: 唤起移动端系统播放器选择器 (MX Player, 系统相册, VLC 等)
         const isAndroid = /android/i.test(navigator.userAgent);
         if (isAndroid) {
@@ -2395,6 +2433,64 @@ class AppleCinemaPlayerEngine {
                 this.openInExternalApp('copy');
             }
         }
+    }
+
+    async openDlnaCastingDialog(videoUrl) {
+        if (this.dom.media) this.dom.media.pause();
+        this.showGestureToast('正在扫描局域网智能电视…');
+
+        let devices = [];
+        try {
+            const apiUrl = this._apiUrl ? this._apiUrl('/api/dlna/devices?scan=1') : '/api/dlna/devices?scan=1';
+            let authHeaders = {};
+            if (window.LanDiskAuth && typeof window.LanDiskAuth.authHeaders === 'function') {
+                authHeaders = window.LanDiskAuth.authHeaders();
+            }
+            const res = await fetch(apiUrl, { headers: authHeaders });
+            if (res.ok) {
+                const data = await res.json();
+                devices = data.devices || [];
+            }
+        } catch (e) {}
+
+        if (devices.length === 0) {
+            alert('未扫描到局域网内的 DLNA 智能电视设备。\n\n排查建议：\n1. 请确认电视已开机并与本机连接同一 Wi-Fi\n2. 确认电视已开启投屏或系统多屏互动功能\n3. 也可选择「复制局域网播放地址」在电视播放器中粘贴打开。');
+            return;
+        }
+
+        const options = devices.map(d => ({
+            label: `📺 ${d.name} (${d.ip})`,
+            value: d.id
+        }));
+
+        this.openMenuPopover(this.dom.btnExternalApp || this.dom.stageBox, '📺 选择投屏电视', options, null, async (deviceId) => {
+            const chosen = devices.find(d => d.id === deviceId);
+            this.showGestureToast(`正在向「${chosen ? chosen.name : '电视'}」发起投屏…`);
+            try {
+                const playUrl = this._apiUrl ? this._apiUrl('/api/dlna/play') : '/api/dlna/play';
+                let authHeaders = { 'Content-Type': 'application/json' };
+                if (window.LanDiskAuth && typeof window.LanDiskAuth.authHeaders === 'function') {
+                    authHeaders = window.LanDiskAuth.authHeaders(authHeaders);
+                }
+                const playRes = await fetch(playUrl, {
+                    method: 'POST',
+                    headers: authHeaders,
+                    body: JSON.stringify({
+                        deviceId,
+                        videoUrl,
+                        title: this.currentMedia ? this.currentMedia.name : '局域网视频'
+                    })
+                });
+                const resData = await playRes.json();
+                if (playRes.ok && resData.success) {
+                    this.showGestureToast(`✅ 投屏成功！正在「${chosen ? chosen.name : '电视'}」播放`);
+                } else {
+                    alert(`投屏失败: ${resData.error || '电视响应错误'}`);
+                }
+            } catch (err) {
+                alert('投屏请求异常: ' + err.message);
+            }
+        });
     }
 
     // force=true：暂停/播完/切后台等收尾时机，跳过网络限流立即上报
@@ -2543,7 +2639,7 @@ class AppleCinemaPlayerEngine {
             let timeLine = lines[0].includes('-->') ? lines[0] : (lines[1].includes('-->') ? lines[1] : null);
             if (!timeLine) continue;
             
-            const match = timeLine.match(/(\d{1,2}:\d{2}:\d{2}[,\.]\d{2,3})\s*-->\s*(\d{1,2}:\d{2}:\d{2}[,\.]\d{2,3})/);
+            const match = timeLine.match(/((?:\d{1,2}:)?\d{2}:\d{2}[,\.]\d{2,3})\s*-->\s*((?:\d{1,2}:)?\d{2}:\d{2}[,\.]\d{2,3})/);
             if (!match) continue;
             
             const start = this.timeStrToSeconds(match[1]);
@@ -2699,16 +2795,19 @@ class AppleCinemaPlayerEngine {
         }
 
         const t = currentTime + (this.subtitleOffset || 0);
-        let activeText = '';
+        const activeTexts = [];
 
         for (let i = 0; i < this.subtitleCues.length; i++) {
             const cue = this.subtitleCues[i];
             if (t >= cue.start && t <= cue.end) {
-                activeText = cue.text;
-                break;
+                if (cue.text && !activeTexts.includes(cue.text)) {
+                    activeTexts.push(cue.text);
+                }
             }
             if (cue.start > t) break;
         }
+
+        const activeText = activeTexts.join('\n');
 
         if (activeText) {
             if (this.dom.subtitleText.textContent !== activeText) {
@@ -2751,20 +2850,136 @@ class AppleCinemaPlayerEngine {
         this.showGestureToast(label);
     }
 
-    initAudioVisualizer() {
+    ensureAudioPipeline() {
         try {
+            if (!this.dom.media) return;
             if (!this.audioCtx) {
                 const AudioContext = window.AudioContext || window.webkitAudioContext;
                 if (!AudioContext) return;
                 this.audioCtx = new AudioContext();
+                this.audioSource = this.audioCtx.createMediaElementSource(this.dom.media);
+                this.audioGainNode = this.audioCtx.createGain();
+                this.audioGainNode.gain.value = this.volumeBoost || 1.0;
+                this.audioCompressorNode = this.audioCtx.createDynamicsCompressor();
+                // 优化夜间观影清晰人声调优参数
+                this.audioCompressorNode.threshold.setValueAtTime(-24, this.audioCtx.currentTime);
+                this.audioCompressorNode.knee.setValueAtTime(30, this.audioCtx.currentTime);
+                this.audioCompressorNode.ratio.setValueAtTime(12, this.audioCtx.currentTime);
+                this.audioCompressorNode.attack.setValueAtTime(0.003, this.audioCtx.currentTime);
+                this.audioCompressorNode.release.setValueAtTime(0.25, this.audioCtx.currentTime);
+
                 this.audioAnalyser = this.audioCtx.createAnalyser();
                 this.audioAnalyser.fftSize = 64;
-                this.audioSource = this.audioCtx.createMediaElementSource(this.dom.media);
-                this.audioSource.connect(this.audioAnalyser);
-                this.audioAnalyser.connect(this.audioCtx.destination);
+
+                this._rebuildAudioGraph();
             } else if (this.audioCtx.state === 'suspended') {
                 this.audioCtx.resume().catch(() => {});
             }
+        } catch (e) {
+            // 已有音频链路或初始化失败时安全忽略
+        }
+    }
+
+    _rebuildAudioGraph() {
+        if (!this.audioSource || !this.audioGainNode || !this.audioCtx) return;
+        try {
+            this.audioSource.disconnect();
+            this.audioGainNode.disconnect();
+            if (this.audioCompressorNode) this.audioCompressorNode.disconnect();
+            if (this.audioAnalyser) this.audioAnalyser.disconnect();
+
+            let node = this.audioSource;
+            if (this.speechNightMode && this.audioCompressorNode) {
+                node.connect(this.audioCompressorNode);
+                node = this.audioCompressorNode;
+            }
+            node.connect(this.audioGainNode);
+            if (this.audioAnalyser) {
+                this.audioGainNode.connect(this.audioAnalyser);
+                this.audioAnalyser.connect(this.audioCtx.destination);
+            } else {
+                this.audioGainNode.connect(this.audioCtx.destination);
+            }
+        } catch (e) {}
+    }
+
+    setVolumeBoost(boost, skipToast = false) {
+        const val = Math.max(1, Math.min(3, parseFloat(boost) || 1));
+        this.volumeBoost = val;
+        this.ensureAudioPipeline();
+        if (this.audioGainNode && this.audioCtx) {
+            try { this.audioGainNode.gain.setValueAtTime(val, this.audioCtx.currentTime); } catch (e) {}
+        }
+        if (this.dom.fsBoostStatus) {
+            this.dom.fsBoostStatus.textContent = val === 1 ? '100% (正常)' : `${Math.round(val * 100)}% 软增益`;
+        }
+        if (this.dom.fsBoostGrid) {
+            this.dom.fsBoostGrid.querySelectorAll('.player-opt-pill').forEach(btn => {
+                const b = parseFloat(btn.getAttribute('data-boost'));
+                btn.classList.toggle('active', b === val);
+            });
+        }
+        this._savePrefs();
+        if (!skipToast) this.showGestureToast(val === 1 ? '音频增益已还原 100%' : `音频突破软增益: ${Math.round(val * 100)}%`);
+    }
+
+    setSpeechNightMode(enabled, skipToast = false) {
+        this.speechNightMode = !!enabled;
+        this.ensureAudioPipeline();
+        this._rebuildAudioGraph();
+        if (this.dom.fsSpeechStatus) {
+            this.dom.fsSpeechStatus.textContent = this.speechNightMode ? '夜间清晰对白 (开启)' : '关';
+        }
+        if (this.dom.fsSpeechGrid) {
+            this.dom.fsSpeechGrid.querySelectorAll('.player-opt-pill').forEach(btn => {
+                const sp = btn.getAttribute('data-speech');
+                btn.classList.toggle('active', (sp === 'night' && this.speechNightMode) || (sp === 'off' && !this.speechNightMode));
+            });
+        }
+        this._savePrefs();
+        if (!skipToast) this.showGestureToast(this.speechNightMode ? '夜间清晰对白已开启 (动态压缩器)' : '夜间清晰对白已关闭');
+    }
+
+    setTranscodeMode(mode, skipToast = false) {
+        if (!['direct', 'remux', 'full'].includes(mode)) mode = 'direct';
+        if (this.transcodeMode === mode) return;
+        this.transcodeMode = mode;
+        if (this.dom.fsTranscodeStatus) {
+            const labels = { direct: '原画直连', remux: '快速分流 (Remux)', full: '兼容全转码 (Transcode)' };
+            this.dom.fsTranscodeStatus.textContent = labels[mode] || mode;
+        }
+        if (this.dom.fsTranscodeGrid) {
+            this.dom.fsTranscodeGrid.querySelectorAll('.player-opt-pill').forEach(btn => {
+                btn.classList.toggle('active', btn.getAttribute('data-transcode') === mode);
+            });
+        }
+        if (!this.currentMedia || !this.dom.media) return;
+
+        const currentTime = this.dom.media.currentTime || 0;
+        const wasPaused = this.dom.media.paused;
+        const newUrl = this.getStreamUrl(this.currentMedia);
+
+        this.setLoading(true);
+        this.dom.media.src = newUrl;
+        const onLoaded = () => {
+            this.dom.media.removeEventListener('loadedmetadata', onLoaded);
+            try { this.dom.media.currentTime = currentTime; } catch (e) {}
+            if (!wasPaused) {
+                this.dom.media.play().catch(() => {});
+            }
+        };
+        this.dom.media.addEventListener('loadedmetadata', onLoaded);
+        if (!skipToast) {
+            const msgs = { direct: '已切换为原画直连播放', remux: '已切换为快速 MP4/AAC 封装串流', full: '已切换为 FFmpeg 实时转码串流' };
+            this.showGestureToast(msgs[mode] || '已切换播放源');
+        }
+    }
+
+    initAudioVisualizer() {
+        try {
+            this.ensureAudioPipeline();
+            if (!this.audioAnalyser) return;
+
             // 已有画布动画循环时直接复用
             if (this.animFrameId) return;
 
@@ -2791,12 +3006,7 @@ class AppleCinemaPlayerEngine {
                 }
             };
             render();
-        } catch (e) {
-            // createMediaElementSource 等初始化失败：置空以便下次重试
-            this.audioCtx = null;
-            this.audioAnalyser = null;
-            this.audioSource = null;
-        }
+        } catch (e) {}
     }
 
     // 停止音频可视化：取消 rAF 循环并挂起 AudioContext（切回视频/退出播放器时调用），
@@ -2806,7 +3016,7 @@ class AppleCinemaPlayerEngine {
             cancelAnimationFrame(this.animFrameId);
             this.animFrameId = null;
         }
-        if (this.audioCtx && this.audioCtx.state === 'running') {
+        if (this.audioCtx && this.audioCtx.state === 'running' && (!this.dom.media || this.dom.media.paused)) {
             try { this.audioCtx.suspend(); } catch (e) {}
         }
     }
@@ -2832,7 +3042,9 @@ class AppleCinemaPlayerEngine {
                 subtitleOffset: this.subtitleOffset,
                 brightness: this.brightness,
                 volume: this.volume,
-                muted: this.isMuted
+                muted: this.isMuted,
+                volumeBoost: this.volumeBoost,
+                speechNightMode: this.speechNightMode
             }));
         } catch (e) {}
     }
@@ -2849,6 +3061,8 @@ class AppleCinemaPlayerEngine {
         if (typeof p.subtitleOffset === 'number') this.setSubtitleDelay(p.subtitleOffset, true);
         if (typeof p.brightness === 'number') this.setBrightness(p.brightness, true);
         if (typeof p.volume === 'number') this.setVolume(p.volume, true);
+        if (p.volumeBoost) this.setVolumeBoost(p.volumeBoost, true);
+        if (p.speechNightMode) this.setSpeechNightMode(true, true);
         if (p.muted && this.dom.media) {
             this.dom.media.muted = true;
             this.isMuted = true;

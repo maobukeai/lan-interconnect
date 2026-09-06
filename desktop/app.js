@@ -35,6 +35,7 @@
         updateMaximizeIcon();
         $('#btn-go-up') && ($('#btn-go-up').innerHTML = I('chevronUp', 16));
         $('#btn-mkdir') && ($('#btn-mkdir').innerHTML = I('folderPlus', 16));
+        $('#btn-touch') && ($('#btn-touch').innerHTML = I('filePlus', 16));
         $('#btn-explorer-refresh') && ($('#btn-explorer-refresh').innerHTML = I('refresh', 16));
         $('#btn-upload-icon') && ($('#btn-upload-icon').innerHTML = I('upload', 15));
         $('#btn-add-bookmark') && ($('#btn-add-bookmark').innerHTML = I('sparkles', 13) + ' 收藏路径');
@@ -419,6 +420,11 @@
         }
 
         if (view === 'home') { pollHome(true); loadHomeHistory(); }
+        if (view === 'plan') {
+            if (typeof StudyPlanComponent !== 'undefined') {
+                StudyPlanComponent.init('view-plan');
+            }
+        }
         if (view === 'chat') { chatUnread = 0; updateChatBadge(); bootChat(); }
         if (view === 'files' && IPC.state.running && !filesInited) {
             filesInited = true;
@@ -474,114 +480,129 @@
     const sparkNet = new UI.Sparkline($('#spark-net'), 'var(--apple-system-green)');
     let homeVisible = true;
 
+    let isHomePolling = false;
     async function pollHome(force) {
-        if (!homeVisible && !force) return;
-        if (minPaused) return;
+        if ((!homeVisible && !force) || minPaused || isHomePolling) return;
+        isHomePolling = true;
 
-        if (IPC.state.running) {
-            try {
-                const [sysRes, devRes] = await Promise.all([
-                    fetch(api('/api/sys-info'), { headers: auth().authHeaders() }),
-                    fetch(api('/api/devices'), { headers: auth().authHeaders() })
-                ]);
-                if (sysRes.ok) {
-                    const d = await sysRes.json();
-                    $('#dash-cpu').textContent = (d.cpuUsage || 0) + '%';
-                    sparkCpu.push(d.cpuUsage || 0);
-                    const cpuModel = (d.cpu || '').split('@')[0].trim();
-                    if ($('#dash-cpu-name')) $('#dash-cpu-name').textContent = cpuModel || '多核高能效处理器';
+        try {
+            if (IPC.state.running) {
+                try {
+                    const timeoutSig = (global.LanDiskAuth && global.LanDiskAuth.timeoutSignal)
+                        ? global.LanDiskAuth.timeoutSignal(3000)
+                        : (AbortSignal.timeout ? AbortSignal.timeout(3000) : undefined);
+                    const [sysRes, devRes] = await Promise.all([
+                        fetch(api('/api/sys-info'), { headers: auth().authHeaders(), signal: timeoutSig }),
+                        fetch(api('/api/devices'), { headers: auth().authHeaders(), signal: timeoutSig })
+                    ]);
+                    if (sysRes.ok) {
+                        const d = await sysRes.json();
+                        $('#dash-cpu').textContent = (d.cpuUsage || 0) + '%';
+                        sparkCpu.push(d.cpuUsage || 0);
+                        const cpuModel = (d.cpu || '').split('@')[0].trim();
+                        if ($('#dash-cpu-name')) $('#dash-cpu-name').textContent = cpuModel || '多核高能效处理器';
 
-                    const memPercent = Math.round(((d.memTotal - d.memFree) / d.memTotal) * 100) || 0;
-                    $('#dash-mem').textContent = memPercent + '%';
-                    sparkMem.push(memPercent);
-                    if ($('#dash-mem-sub')) {
-                        const usedMem = fmtBytes(d.memTotal - d.memFree);
-                        const totalMem = fmtBytes(d.memTotal);
-                        $('#dash-mem-sub').textContent = `已用 ${usedMem} / 共 ${totalMem}`;
-                    }
+                        const totalMemNum = +d.memTotal || 0;
+                        const freeMemNum = +d.memFree || 0;
+                        const usedMemNum = Math.max(0, totalMemNum - freeMemNum);
+                        const memPercent = totalMemNum > 0 ? Math.round((usedMemNum / totalMemNum) * 100) : 0;
+                        $('#dash-mem').textContent = memPercent + '%';
+                        sparkMem.push(memPercent);
+                        if ($('#dash-mem-sub')) {
+                            const usedMem = totalMemNum > 1024 * 1024 ? fmtBytes(usedMemNum) : `${usedMemNum.toFixed(1)} GB`;
+                            const totalMem = totalMemNum > 1024 * 1024 ? fmtBytes(totalMemNum) : `${totalMemNum.toFixed(1)} GB`;
+                            $('#dash-mem-sub').textContent = `已用 ${usedMem} / 共 ${totalMem}`;
+                        }
 
-                    if (d.diskSpace) {
-                        if (d.diskSpace.includes('可用 / 共')) {
-                            const parts = d.diskSpace.split('可用 / 共');
-                            const freeStr = parts[0].trim();
-                            const totalStr = (parts[1] || '').trim();
-                            $('#dash-disk').textContent = freeStr + ' 可用';
-                            if ($('#dash-disk-sub')) $('#dash-disk-sub').textContent = `总容量 ${totalStr}`;
-                        } else {
-                            $('#dash-disk').textContent = d.diskSpace;
+                        if (d.diskSpace) {
+                            if (d.diskSpace.includes('可用 / 共')) {
+                                const parts = d.diskSpace.split('可用 / 共');
+                                const freeStr = parts[0].trim();
+                                const totalStr = (parts[1] || '').trim();
+                                $('#dash-disk').textContent = freeStr + ' 可用';
+                                if ($('#dash-disk-sub')) $('#dash-disk-sub').textContent = `总容量 ${totalStr}`;
+                            } else {
+                                $('#dash-disk').textContent = d.diskSpace;
+                            }
                         }
                     }
+                    if (devRes.ok) {
+                        const d = await devRes.json();
+                        const rawDevices = d.devices || [];
+                        // 过滤出真正连入的外接设备 (排除本机 127.0.0.1 / localhost)
+                        const externalDevices = rawDevices.filter(dev => dev.ip && dev.ip !== '127.0.0.1' && dev.ip !== 'localhost' && dev.ip !== '::1');
+                        const count = externalDevices.length;
+
+                        $('#dash-device-count').textContent = count;
+                        $('#dash-device-sub').textContent = count > 0 ? `${count} 台外接终端在线协同` : '等待手机/平板扫码连接';
+                        
+                        const badge = $('#dash-device-badge');
+                        const badgeText = $('#dash-device-status-text');
+                        if (badge && badgeText) {
+                            badge.className = 'apple-badge apple-badge-sm ' + (count > 0 ? 'apple-badge-success' : '');
+                            badgeText.textContent = count > 0 ? '极速互联' : '广播就绪';
+                        }
+                        if ($('#dash-devices-summary')) {
+                            $('#dash-devices-summary').textContent = count > 0 ? `已连 ${count} 台终端` : '免客户端直连';
+                        }
+
+                        const fmtSpeed = b => b > 1024 * 1024 ? (b / 1024 / 1024).toFixed(1) + ' MB/s' : (b / 1024).toFixed(1) + ' KB/s';
+                        const tx = d.stats ? d.stats.txSpeed : 0;
+                        const rx = d.stats ? d.stats.rxSpeed : 0;
+                        $('#dash-tx-speed').textContent = fmtSpeed(tx);
+                        $('#dash-rx-speed').textContent = fmtSpeed(rx);
+                        sparkNet.push(tx + rx);
+                        if ($('#dash-net-sub')) {
+                            $('#dash-net-sub').textContent = (tx + rx > 0) ? `双向流量 ${(tx + rx > 1024 * 1024 ? ((tx + rx) / 1024 / 1024).toFixed(1) + ' MB/s' : ((tx + rx) / 1024).toFixed(1) + ' KB/s')}` : '局域网千兆就绪';
+                        }
+                        renderHomeDevices(externalDevices, IPC.state.info);
+                    }
+                } catch (e) { /* 轮询静默 */ }
+
+                if (typeof StudyPlanComponent !== 'undefined' && $('#home-study-widget')) {
+                    StudyPlanComponent.renderDashboardWidget('#home-study-widget');
                 }
-                if (devRes.ok) {
-                    const d = await devRes.json();
-                    const rawDevices = d.devices || [];
-                    // 过滤出真正连入的外接设备 (排除本机 127.0.0.1 / localhost)
-                    const externalDevices = rawDevices.filter(dev => dev.ip && dev.ip !== '127.0.0.1' && dev.ip !== 'localhost' && dev.ip !== '::1');
-                    const count = externalDevices.length;
+            } else if (IPC.available) {
+                // 服务未启动：展示本机硬件状态
+                try {
+                    const d = await IPC.getSysInfo();
+                    if (d) {
+                        $('#dash-cpu').textContent = (d.cpuUsage || 0) + '%';
+                        sparkCpu.push(d.cpuUsage || 0);
+                        const cpuModel = (d.cpu || '').split('@')[0].trim();
+                        if ($('#dash-cpu-name')) $('#dash-cpu-name').textContent = cpuModel || '多核高能效处理器';
 
-                    $('#dash-device-count').textContent = count;
-                    $('#dash-device-sub').textContent = count > 0 ? `${count} 台外接终端在线协同` : '等待手机/平板扫码连接';
-                    
-                    const badge = $('#dash-device-badge');
-                    const badgeText = $('#dash-device-status-text');
-                    if (badge && badgeText) {
-                        badge.className = 'apple-badge apple-badge-sm ' + (count > 0 ? 'apple-badge-success' : '');
-                        badgeText.textContent = count > 0 ? '极速互联' : '广播就绪';
-                    }
-                    if ($('#dash-devices-summary')) {
-                        $('#dash-devices-summary').textContent = count > 0 ? `已连 ${count} 台终端` : '免客户端直连';
-                    }
+                        const memPercent = d.memTotal ? Math.round(((d.memTotal - d.memFree) / d.memTotal) * 100) : 0;
+                        $('#dash-mem').textContent = memPercent + '%';
+                        sparkMem.push(memPercent);
+                        if ($('#dash-mem-sub') && d.memTotal) {
+                            $('#dash-mem-sub').textContent = `已用 ${fmtBytes(d.memTotal - (d.memFree || 0))} / 共 ${fmtBytes(d.memTotal)}`;
+                        }
 
-                    const fmtSpeed = b => b > 1024 * 1024 ? (b / 1024 / 1024).toFixed(1) + ' MB/s' : (b / 1024).toFixed(1) + ' KB/s';
-                    const tx = d.stats ? d.stats.txSpeed : 0;
-                    const rx = d.stats ? d.stats.rxSpeed : 0;
-                    $('#dash-tx-speed').textContent = fmtSpeed(tx);
-                    $('#dash-rx-speed').textContent = fmtSpeed(rx);
-                    sparkNet.push(tx + rx);
-                    if ($('#dash-net-sub')) {
-                        $('#dash-net-sub').textContent = (tx + rx > 0) ? `双向流量 ${(tx + rx > 1024 * 1024 ? ((tx + rx) / 1024 / 1024).toFixed(1) + ' MB/s' : ((tx + rx) / 1024).toFixed(1) + ' KB/s')}` : '局域网千兆就绪';
-                    }
-                    renderHomeDevices(externalDevices, IPC.state.info);
-                }
-            } catch (e) { /* 轮询静默 */ }
-        } else if (IPC.available) {
-            // 服务未启动：展示本机硬件状态
-            try {
-                const d = await IPC.getSysInfo();
-                if (d) {
-                    $('#dash-cpu').textContent = (d.cpuUsage || 0) + '%';
-                    sparkCpu.push(d.cpuUsage || 0);
-                    const cpuModel = (d.cpu || '').split('@')[0].trim();
-                    if ($('#dash-cpu-name')) $('#dash-cpu-name').textContent = cpuModel || '多核高能效处理器';
-
-                    const memPercent = d.memTotal ? Math.round(((d.memTotal - d.memFree) / d.memTotal) * 100) : 0;
-                    $('#dash-mem').textContent = memPercent + '%';
-                    sparkMem.push(memPercent);
-                    if ($('#dash-mem-sub') && d.memTotal) {
-                        $('#dash-mem-sub').textContent = `已用 ${fmtBytes(d.memTotal - (d.memFree || 0))} / 共 ${fmtBytes(d.memTotal)}`;
-                    }
-
-                    if (d.diskSpace) {
-                        if (d.diskSpace.includes('可用 / 共')) {
-                            const parts = d.diskSpace.split('可用 / 共');
-                            $('#dash-disk').textContent = parts[0].trim() + ' 可用';
-                            if ($('#dash-disk-sub')) $('#dash-disk-sub').textContent = `总容量 ${(parts[1] || '').trim()}`;
-                        } else {
-                            $('#dash-disk').textContent = d.diskSpace;
+                        if (d.diskSpace) {
+                            if (d.diskSpace.includes('可用 / 共')) {
+                                const parts = d.diskSpace.split('可用 / 共');
+                                $('#dash-disk').textContent = parts[0].trim() + ' 可用';
+                                if ($('#dash-disk-sub')) $('#dash-disk-sub').textContent = `总容量 ${(parts[1] || '').trim()}`;
+                            } else {
+                                $('#dash-disk').textContent = d.diskSpace;
+                            }
                         }
                     }
+                } catch (e) {}
+                $('#dash-device-count').textContent = '0';
+                $('#dash-device-sub').textContent = '服务离线（点击上方启动）';
+                const badge = $('#dash-device-badge');
+                const badgeText = $('#dash-device-status-text');
+                if (badge && badgeText) {
+                    badge.className = 'apple-badge apple-badge-sm';
+                    badgeText.textContent = '待启动';
                 }
-            } catch (e) {}
-            $('#dash-device-count').textContent = '0';
-            $('#dash-device-sub').textContent = '服务离线（点击上方启动）';
-            const badge = $('#dash-device-badge');
-            const badgeText = $('#dash-device-status-text');
-            if (badge && badgeText) {
-                badge.className = 'apple-badge apple-badge-sm';
-                badgeText.textContent = '待启动';
+                if ($('#dash-devices-summary')) $('#dash-devices-summary').textContent = '启动后显示';
+                renderHomeDevices([], null);
             }
-            if ($('#dash-devices-summary')) $('#dash-devices-summary').textContent = '启动后显示';
-            renderHomeDevices([], null);
+        } finally {
+            isHomePolling = false;
         }
     }
 
@@ -1210,6 +1231,7 @@
         // 文件页
         $('#btn-go-up').addEventListener('click', () => FileExplorerComponent.goUp());
         $('#btn-mkdir').addEventListener('click', () => FileExplorerComponent.newFolder());
+        $('#btn-touch') && $('#btn-touch').addEventListener('click', () => FileExplorerComponent.newFile());
         $('#btn-explorer-refresh').addEventListener('click', () => FileExplorerComponent.refresh());
         $('#btn-add-bookmark').addEventListener('click', () => FileExplorerComponent.addBookmark());
 
@@ -1264,6 +1286,16 @@
 
         // 工具页
         $('#btn-terminal-run').addEventListener('click', () => WebTerminalComponent.execute('terminal-input', 'terminal-output'));
+        $$('.terminal-preset-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const cmd = btn.getAttribute('data-cmd');
+                const inp = $('#terminal-input');
+                if (inp && cmd) {
+                    inp.value = cmd;
+                    WebTerminalComponent.execute('terminal-input', 'terminal-output');
+                }
+            });
+        });
         $('#btn-proc-refresh').addEventListener('click', () => ProcessMonitorComponent.load('process-list'));
         $('#btn-draw-clear').addEventListener('click', () => WhiteboardComponent.clear('whiteboard'));
         $('#btn-draw-save').addEventListener('click', () => WhiteboardComponent.save());

@@ -21,7 +21,7 @@ const WS_PATH = '/api/remote/ws';
 
 const isPackaged = __dirname.includes('app.asar');
 const psScriptPath = isPackaged
-    ? path.join(__dirname.replace('app.asar', 'app.asar.unpacked'), '..', 'services', 'system-control.ps1')
+    ? path.join(__dirname.replace('app.asar', 'app.asar.unpacked'), 'services', 'system-control.ps1')
     : path.join(__dirname, 'services', 'system-control.ps1');
 
 function safeEqual(a, b) {
@@ -31,8 +31,8 @@ function safeEqual(a, b) {
     return crypto.timingSafeEqual(bufA, bufB);
 }
 
-// 每个客户端最多允许积压的未确认字节数，超过则跳帧（背压）
-const MAX_BACKLOG = 2 * 1024 * 1024;
+// 每个客户端最多允许积压的未确认字节数，超过则跳帧（背压自适应防延迟雪崩）
+const MAX_BACKLOG = 64 * 1024;
 
 // 全局唯一的截图常驻进程（多客户端共享同一画面流）
 let captureProc = null;
@@ -142,29 +142,127 @@ function stopStreamFor(ws) {
    }
 }
 
-// ---- 输入事件执行：与 HTTP 端点复用同一个 PowerShell 脚本 ----
+// ---- 毫秒级常驻 PowerShell 输入执行通道 (Piped Stdin Runner, ~1-2ms 延迟) ----
 
-let lastInputAt = 0;
+let inputProc = null;
+let inputProcQueue = [];
+let isInputProcStarting = false;
 
-function runInputAction(args) {
+function ensureInputProc() {
+    if (process.platform !== 'win32') return null;
+    if (inputProc && !inputProc.killed) return inputProc;
+    if (isInputProcStarting) return null;
+
+    isInputProcStarting = true;
+    try {
+        const ps = spawn('powershell.exe', [
+            '-NoProfile',
+            '-ExecutionPolicy', 'Bypass',
+            '-File', psScriptPath,
+            '-Action', 'input-loop'
+        ], { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] });
+
+        ps.on('error', () => {
+            inputProc = null;
+            isInputProcStarting = false;
+        });
+
+        ps.on('exit', () => {
+            inputProc = null;
+            isInputProcStarting = false;
+            while (inputProcQueue.length) {
+                const cb = inputProcQueue.shift();
+                try { cb({ success: false }); } catch (e) {}
+            }
+        });
+
+        let outBuf = '';
+        ps.stdout.on('data', (chunk) => {
+            outBuf += chunk.toString('utf8');
+            let idx;
+            while ((idx = outBuf.indexOf('\n')) !== -1) {
+                const line = outBuf.slice(0, idx).trim();
+                outBuf = outBuf.slice(idx + 1);
+                if (line && inputProcQueue.length > 0) {
+                    const callback = inputProcQueue.shift();
+                    try {
+                        callback(JSON.parse(line));
+                    } catch (e) {
+                        callback({ success: true });
+                    }
+                }
+            }
+        });
+
+        inputProc = ps;
+        isInputProcStarting = false;
+        return inputProc;
+    } catch (e) {
+        inputProc = null;
+        isInputProcStarting = false;
+        return null;
+    }
+}
+
+function sendFastInput(cmd) {
     return new Promise((resolve) => {
-        if (process.platform !== 'win32') return resolve(false);
-        // 粗节流：输入事件最小间隔 15ms，防止事件洪泛打爆进程创建
-        const now = Date.now();
-        const wait = lastInputAt + 15 - now;
-        lastInputAt = now;
-        if (wait > 0) {
-            setTimeout(() => runInputAction(args).then(resolve), wait);
-            return;
+        if (process.platform !== 'win32') return resolve({ success: false });
+        const proc = ensureInputProc();
+        if (!proc || !proc.stdin || proc.stdin.destroyed) {
+            return fallbackRunInputAction(cmd).then(resolve);
         }
+
+        let isHandled = false;
+        const timer = setTimeout(() => {
+            if (isHandled) return;
+            isHandled = true;
+            const idx = inputProcQueue.indexOf(handleDone);
+            if (idx !== -1) inputProcQueue.splice(idx, 1);
+            resolve({ success: false, timeout: true });
+        }, 3000);
+
+        function handleDone(res) {
+            if (isHandled) return;
+            isHandled = true;
+            clearTimeout(timer);
+            resolve(res);
+        }
+
+        inputProcQueue.push(handleDone);
+        try {
+            proc.stdin.write(JSON.stringify(cmd) + '\n');
+        } catch (err) {
+            if (!isHandled) {
+                isHandled = true;
+                const idx = inputProcQueue.indexOf(handleDone);
+                if (idx !== -1) inputProcQueue.splice(idx, 1);
+                clearTimeout(timer);
+                fallbackRunInputAction(cmd).then(resolve);
+            }
+        }
+    });
+}
+
+function fallbackRunInputAction(cmd) {
+    return new Promise((resolve) => {
+        if (process.platform !== 'win32') return resolve({ success: false });
+        const args = ['-Action', cmd.action];
+        if (cmd.x !== undefined) args.push('-MouseX', String(cmd.x));
+        if (cmd.y !== undefined) args.push('-MouseY', String(cmd.y));
+        if (cmd.button !== undefined) args.push('-MouseButton', String(cmd.button));
+        if (cmd.delta !== undefined) args.push('-Delta', String(cmd.delta));
+        if (cmd.key !== undefined) args.push('-KeyName', String(cmd.key));
+        if (cmd.modifiers !== undefined) args.push('-Modifiers', String(cmd.modifiers));
+        if (cmd.text !== undefined) args.push('-Text', String(cmd.text));
+
         const ps = spawn('powershell.exe', [
             '-NoProfile',
             '-ExecutionPolicy', 'Bypass',
             '-File', psScriptPath,
             ...args
-        ], { windowsHide: true, timeout: 10000 });
-        ps.on('exit', () => resolve(true));
-        ps.on('error', () => resolve(false));
+        ], { windowsHide: true, timeout: 5000 });
+        ps.on('exit', () => resolve({ success: true }));
+        ps.on('error', () => resolve({ success: false }));
     });
 }
 
@@ -185,9 +283,9 @@ function processNextMove() {
     isMoving = true;
     const { x, y } = pendingMove;
     pendingMove = null;
-    runInputAction(['-Action', 'move', '-MouseX', String(x), '-MouseY', String(y)]).then(() => {
+    sendFastInput({ action: 'move', x, y }).then(() => {
         if (pendingMove) {
-            setTimeout(processNextMove, 10);
+            processNextMove();
         } else {
             isMoving = false;
         }
@@ -203,39 +301,47 @@ async function handleInput(client, msg) {
     const type = String(msg.type || '');
     switch (type) {
         case 'move': {
-            const x = parseCoord(msg.x), y = parseCoord(msg.y);
-            if (x === null || y === null) return;
-            scheduleMove(x, y);
+            const dx = parseCoord(msg.dx), dy = parseCoord(msg.dy);
+            if (dx !== null && dy !== null) {
+                await sendFastInput({ action: 'move', dx, dy });
+            } else {
+                const x = parseCoord(msg.x), y = parseCoord(msg.y);
+                if (x === null || y === null) return;
+                scheduleMove(x, y);
+            }
             break;
         }
         case 'down': {
             const x = parseCoord(msg.x), y = parseCoord(msg.y);
-            if (x === null || y === null) return;
             const btn = (msg.button === 'right' || msg.button === 'middle') ? msg.button : 'left';
-            await runInputAction(['-Action', 'mousedown', '-MouseX', String(x), '-MouseY', String(y), '-MouseButton', btn]);
+            const cmd = { action: 'mousedown', button: btn };
+            if (x !== null && y !== null) { cmd.x = x; cmd.y = y; }
+            await sendFastInput(cmd);
             break;
         }
         case 'up': {
             const x = parseCoord(msg.x), y = parseCoord(msg.y);
-            if (x === null || y === null) return;
             const btn = (msg.button === 'right' || msg.button === 'middle') ? msg.button : 'left';
-            await runInputAction(['-Action', 'mouseup', '-MouseX', String(x), '-MouseY', String(y), '-MouseButton', btn]);
+            const cmd = { action: 'mouseup', button: btn };
+            if (x !== null && y !== null) { cmd.x = x; cmd.y = y; }
+            await sendFastInput(cmd);
             break;
         }
         case 'click': {
             const x = parseCoord(msg.x), y = parseCoord(msg.y);
-            if (x === null || y === null) return;
             const btn = (msg.button === 'right' || msg.button === 'double') ? msg.button : 'left';
-            await runInputAction(['-Action', 'click', '-MouseX', String(x), '-MouseY', String(y), '-MouseButton', btn]);
+            const cmd = { action: 'click', button: btn };
+            if (x !== null && y !== null) { cmd.x = x; cmd.y = y; }
+            await sendFastInput(cmd);
             break;
         }
         case 'scroll': {
             const delta = Math.max(-50, Math.min(50, Math.round(Number(msg.delta) || 0)));
             if (!delta) return;
-            const args = ['-Action', 'scroll', '-Delta', String(delta)];
             const x = parseCoord(msg.x), y = parseCoord(msg.y);
-            if (x !== null && y !== null) args.push('-MouseX', String(x), '-MouseY', String(y));
-            await runInputAction(args);
+            const cmd = { action: 'scroll', delta };
+            if (x !== null && y !== null) { cmd.x = x; cmd.y = y; }
+            await sendFastInput(cmd);
             break;
         }
         case 'key': {
@@ -244,13 +350,13 @@ async function handleInput(client, msg) {
             const mods = Array.isArray(msg.modifiers)
                 ? msg.modifiers.map(m => String(m).toLowerCase()).filter(m => ['ctrl', 'alt', 'shift', 'win'].includes(m)).join(',')
                 : '';
-            await runInputAction(['-Action', 'key', '-KeyName', key, '-Modifiers', mods]);
+            await sendFastInput({ action: 'key', key, modifiers: mods });
             break;
         }
         case 'text': {
             const text = String(msg.text || '');
             if (!text || text.length > 2000) return;
-            await runInputAction(['-Action', 'text', '-Text', text]);
+            await sendFastInput({ action: 'text', text });
             break;
         }
     }
@@ -375,6 +481,10 @@ function attachRealtime(server) {
         close() {
             clearInterval(heartbeat);
             killCaptureProc();
+            if (inputProc) {
+                try { inputProc.kill(); } catch (e) {}
+                inputProc = null;
+            }
             for (const ws of wss.clients) {
                 try { ws.terminate(); } catch (e) {}
             }
@@ -383,4 +493,4 @@ function attachRealtime(server) {
     };
 }
 
-module.exports = { attachRealtime, WS_PATH };
+module.exports = { attachRealtime, WS_PATH, sendFastInput };

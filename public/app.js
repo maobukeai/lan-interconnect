@@ -7,6 +7,7 @@
     'use strict';
 
     const $ = (sel) => document.querySelector(sel);
+    const $$ = (sel) => document.querySelectorAll(sel);
     const I = (name, size) => window.Icons ? Icons.render(name, size) : '';
     const auth = () => window.LanDiskAuth || null;
     const api = (p) => (auth() && auth().api) ? auth().api(p) : (window.api ? window.api(p) : p);
@@ -34,6 +35,7 @@
         btnIcon('btn-refresh', 'refresh', '刷新数据');
         btnIcon('btn-go-up', 'chevronUp', '返回上级');
         btnIcon('btn-mkdir', 'folderPlus', '新建文件夹');
+        btnIcon('btn-touch', 'filePlus', '新建文本文件');
         btnIcon('btn-explorer-refresh', 'refresh', '刷新');
         btnIcon('image-modal-close', 'close');
         btnIcon('text-modal-close', 'close');
@@ -196,6 +198,11 @@
         }
 
         if (view === 'dashboard') { loadDashboard(); loadHistoryFeed(); }
+        if (view === 'plan') {
+            if (typeof StudyPlanComponent !== 'undefined') {
+                StudyPlanComponent.init('view-plan');
+            }
+        }
         if (view === 'chat') { chatUnread = 0; updateChatBadge(); }
         if (view === 'files' && !viewInit.files) {
             viewInit.files = true;
@@ -316,13 +323,18 @@
         });
     }
 
+    let isDashboardFetching = false;
     async function loadDashboard() {
-        if (!window.__lanDiskLoggedIn) return;
+        if (!window.__lanDiskLoggedIn || isDashboardFetching) return;
+        isDashboardFetching = true;
         renderDashRemoteWidget();
         try {
+            const timeoutSig = (global.LanDiskAuth && global.LanDiskAuth.timeoutSignal)
+                ? global.LanDiskAuth.timeoutSignal(3500)
+                : (AbortSignal.timeout ? AbortSignal.timeout(3500) : undefined);
             const [sysRes, devRes] = await Promise.all([
-                fetch(api('/api/sys-info'), { headers: auth().authHeaders() }),
-                fetch(api('/api/devices'), { headers: auth().authHeaders() })
+                fetch(api('/api/sys-info'), { headers: auth().authHeaders(), signal: timeoutSig }),
+                fetch(api('/api/devices'), { headers: auth().authHeaders(), signal: timeoutSig })
             ]);
 
             if (sysRes.ok) {
@@ -330,11 +342,17 @@
                 $('#dash-cpu').textContent = (d.cpuUsage || 0) + '%';
                 sparkCpu.push(d.cpuUsage || 0);
 
-                const usedMem = d.memTotal - d.memFree;
-                const memPercent = Math.round((usedMem / d.memTotal) * 100) || 0;
+                const totalMemNum = +d.memTotal || 0;
+                const freeMemNum = +d.memFree || 0;
+                const usedMemNum = Math.max(0, totalMemNum - freeMemNum);
+                const memPercent = totalMemNum > 0 ? Math.round((usedMemNum / totalMemNum) * 100) : 0;
                 $('#dash-mem').textContent = memPercent + '%';
                 sparkMem.push(memPercent);
-                if ($('#dash-mem-sub')) $('#dash-mem-sub').textContent = `已用 ${fmtBytes(usedMem)} / 共 ${fmtBytes(d.memTotal)}`;
+                if ($('#dash-mem-sub')) {
+                    const usedStr = totalMemNum > 1024 * 1024 ? fmtBytes(usedMemNum) : `${usedMemNum.toFixed(1)} GB`;
+                    const totalStr = totalMemNum > 1024 * 1024 ? fmtBytes(totalMemNum) : `${totalMemNum.toFixed(1)} GB`;
+                    $('#dash-mem-sub').textContent = `已用 ${usedStr} / 共 ${totalStr}`;
+                }
 
                 const cpuModel = (d.cpu || '').split('@')[0].trim();
                 if ($('#dash-cpu-name')) $('#dash-cpu-name').textContent = cpuModel || '多核处理器';
@@ -427,12 +445,24 @@
                 }
             }
         } catch (e) { /* 静默：轮询失败不打扰 */ }
+        finally {
+            isDashboardFetching = false;
+        }
+
+        if (typeof StudyPlanComponent !== 'undefined' && $('#dashboard-study-widget')) {
+            StudyPlanComponent.renderDashboardWidget('#dashboard-study-widget');
+        }
     }
 
+    let isHistoryFetching = false;
     async function loadHistoryFeed() {
-        if (!window.__lanDiskLoggedIn) return;
+        if (!window.__lanDiskLoggedIn || isHistoryFetching) return;
+        isHistoryFetching = true;
         try {
-            const res = await fetch('/api/history?limit=8', { headers: auth().authHeaders() });
+            const timeoutSig = (global.LanDiskAuth && global.LanDiskAuth.timeoutSignal)
+                ? global.LanDiskAuth.timeoutSignal(3500)
+                : (AbortSignal.timeout ? AbortSignal.timeout(3500) : undefined);
+            const res = await fetch(api('/api/history?limit=8'), { headers: auth().authHeaders(), signal: timeoutSig });
             if (!res.ok) return;
             const data = await res.json();
             const list = $('#history-list');
@@ -451,6 +481,9 @@
                 </div>
             `).join('');
         } catch (e) {}
+        finally {
+            isHistoryFetching = false;
+        }
     }
 
     // 大盘轮询：仅登录后且当前页可见时
@@ -465,6 +498,7 @@
     function bindFilesView() {
         $('#btn-go-up').addEventListener('click', () => FileExplorerComponent.goUp());
         $('#btn-mkdir').addEventListener('click', () => FileExplorerComponent.newFolder());
+        $('#btn-touch') && $('#btn-touch').addEventListener('click', () => FileExplorerComponent.newFile());
         $('#btn-explorer-refresh').addEventListener('click', () => FileExplorerComponent.refresh());
         $('#btn-add-bookmark').addEventListener('click', () => FileExplorerComponent.addBookmark());
 
@@ -546,7 +580,7 @@
 
         $('#btn-clip-pull').addEventListener('click', async () => {
             try {
-                const res = await fetch('/api/clipboard', { headers: auth().authHeaders() });
+                const res = await fetch(api('/api/clipboard'), { headers: auth().authHeaders() });
                 const data = await res.json();
                 if (res.ok) {
                     $('#clip-text').value = data.text || '';
@@ -577,7 +611,7 @@
         $('#btn-clip-img-push') && $('#btn-clip-img-push').addEventListener('click', async () => {
             if (!currentClipImage) { LanDiskUI.toast('没有可推送的图片', 'info'); return; }
             try {
-                const res = await fetch('/api/clipboard', {
+                const res = await fetch(api('/api/clipboard'), {
                     method: 'POST',
                     headers: auth().authHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({ image: currentClipImage })
@@ -596,7 +630,7 @@
             if (text.trim()) payload.text = text;
 
             try {
-                const res = await fetch('/api/clipboard', {
+                const res = await fetch(api('/api/clipboard'), {
                     method: 'POST',
                     headers: auth().authHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify(payload)
@@ -674,6 +708,16 @@
 
         // 终端 / 进程 / 涂鸦
         $('#btn-terminal-run').addEventListener('click', () => WebTerminalComponent.execute('terminal-input', 'terminal-output'));
+        $$('.terminal-preset-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const cmd = btn.getAttribute('data-cmd');
+                const inp = $('#terminal-input');
+                if (inp && cmd) {
+                    inp.value = cmd;
+                    WebTerminalComponent.execute('terminal-input', 'terminal-output');
+                }
+            });
+        });
         $('#btn-proc-refresh').addEventListener('click', () => ProcessMonitorComponent.load('process-list'));
         $('#btn-draw-clear').addEventListener('click', () => WhiteboardComponent.clear('whiteboard'));
         $('#btn-draw-save').addEventListener('click', () => WhiteboardComponent.save());
@@ -792,7 +836,7 @@
             const ulBytes = 4 * 1024 * 1024;
             const ulBuffer = new Uint8Array(ulBytes);
             const ulT0 = performance.now();
-            const ulRes = await fetch('/api/speedtest/upload', {
+            const ulRes = await fetch(api('/api/speedtest/upload'), {
                 method: 'POST',
                 headers: auth().authHeaders({ 'Content-Type': 'application/octet-stream' }),
                 body: ulBuffer
@@ -977,22 +1021,40 @@
 
         if (!modal) return;
 
+        let radarAbortController = null;
+        function abortRadarScan() {
+            if (radarAbortController) {
+                try { radarAbortController.abort(); } catch (e) {}
+                radarAbortController = null;
+            }
+            if (btnScan) {
+                btnScan.disabled = false;
+                btnScan.textContent = '重新雷达全网扫描';
+            }
+        }
+
         btnOpen && btnOpen.addEventListener('click', () => {
             modal.style.display = 'flex';
-            if (ipInput && savedServer) ipInput.value = savedServer.replace(/^https?:\/\//, '');
+            const cur = (auth() && auth().getServerUrl) ? auth().getServerUrl() : (localStorage.getItem('landisk_custom_server') || savedServer || '');
+            if (ipInput && cur) ipInput.value = cur.replace(/^https?:\/\//, '');
             renderSavedServers();
             hydrateIcons();
         });
 
         btnClose && btnClose.addEventListener('click', () => {
+            abortRadarScan();
             modal.style.display = 'none';
         });
 
         modal.addEventListener('click', (e) => {
-            if (e.target === modal) modal.style.display = 'none';
+            if (e.target === modal) {
+                abortRadarScan();
+                modal.style.display = 'none';
+            }
         });
 
         const connectToServer = async (url) => {
+            abortRadarScan(); // 关键：直连时立即中断并取消后台雷达扫描，释放全部 Socket 与网络资源
             let fullUrl = (url || '').trim();
             if (!fullUrl) return;
             // 替换全角中文冒号与异常空格
@@ -1018,13 +1080,14 @@
             let serverInfo = null;
             const isTailscale = /^http:\/\/100\./i.test(fullUrl) || /100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(fullUrl);
             const timeoutMs = isTailscale ? 6000 : 2500;
+            const safeTimeout = (ms) => (global.LanDiskAuth && global.LanDiskAuth.timeoutSignal) ? global.LanDiskAuth.timeoutSignal(ms) : (AbortSignal.timeout ? AbortSignal.timeout(ms) : undefined);
 
             try {
                 // 1. 优先探测免鉴权轻量发现接口
                 const pingRes = await fetch(`${fullUrl}/api/ping`, {
                     method: 'GET',
                     headers: { 'Accept': 'application/json' },
-                    signal: AbortSignal.timeout(timeoutMs)
+                    signal: safeTimeout(timeoutMs)
                 });
                 if (pingRes.ok) {
                     serverInfo = await pingRes.json().catch(() => ({}));
@@ -1039,7 +1102,7 @@
                     const vRes = await fetch(`${fullUrl}/api/verify`, {
                         method: 'GET',
                         headers: (auth() ? auth().authHeaders() : {}),
-                        signal: AbortSignal.timeout(timeoutMs)
+                        signal: safeTimeout(timeoutMs)
                     });
                     if (vRes.ok || vRes.status === 401) {
                         reachable = true;
@@ -1060,11 +1123,28 @@
             }
 
             // 保存服务端配置
+            savedServer = fullUrl;
             if (auth() && auth().setServerUrl) {
                 auth().setServerUrl(fullUrl);
             } else {
                 localStorage.setItem('landisk_custom_server', fullUrl);
                 window.currentServerUrl = fullUrl;
+            }
+
+            // 重置视图初始化标记，保证换服后各视图重新向新服务端拉取数据
+            viewInit.files = false;
+            viewInit.media = false;
+            viewInit.tools = false;
+            viewInit.chat = false;
+
+            if (window.FileExplorerComponent && typeof window.FileExplorerComponent.reset === 'function') {
+                window.FileExplorerComponent.reset();
+            }
+            if (typeof MediaTheaterComponent !== 'undefined' && typeof MediaTheaterComponent.restoreFolders === 'function') {
+                MediaTheaterComponent.restoreFolders();
+            }
+            if (typeof IMessageChatComponent !== 'undefined' && typeof IMessageChatComponent.init === 'function') {
+                IMessageChatComponent.init('chat-messages');
             }
 
             // 成功连接即收藏为常用服务器 (局域网地址与 Tailscale 远程地址都长期保留)
@@ -1074,6 +1154,7 @@
             if (labelEl) labelEl.textContent = `当前已绑定: ${displayHost}`;
             if (btnLabel) btnLabel.textContent = displayHost.length > 18 ? displayHost.substring(0, 16) + '…' : displayHost;
 
+            abortRadarScan();
             modal.style.display = 'none';
 
             if (!requiresPin) {
@@ -1087,7 +1168,7 @@
                         const testAuth = await fetch(`${fullUrl}/api/verify`, {
                             method: 'POST',
                             headers: { 'x-pin': savedPin, 'x-qr-token': (auth() ? auth().getToken() : '') },
-                            signal: AbortSignal.timeout(2000)
+                            signal: safeTimeout(2000)
                         });
                         if (testAuth.ok) {
                             LanDiskUI.toast(`已通过已存密码连入 (${displayHost})`, 'success');
@@ -1223,6 +1304,10 @@
         });
 
         async function triggerRadarScan(silent = false) {
+            abortRadarScan();
+            radarAbortController = new AbortController();
+            const currentSignal = radarAbortController.signal;
+
             if (!silent && LanDiskUI.Haptic) LanDiskUI.Haptic.light();
             if (statusEl) statusEl.textContent = '⚡ 正在全网并发探测局域网电脑……';
             listEl.innerHTML = `
@@ -1325,7 +1410,27 @@
                 }, 120);
             }
 
-            async function probeUrl(targetUrl) {
+            function makeProbeSignal(ms, parentSignal) {
+                const ctrl = new AbortController();
+                const timer = setTimeout(() => {
+                    try { ctrl.abort(); } catch (e) {}
+                }, ms);
+                if (parentSignal) {
+                    if (parentSignal.aborted) {
+                        clearTimeout(timer);
+                        ctrl.abort();
+                    } else {
+                        parentSignal.addEventListener('abort', () => {
+                            clearTimeout(timer);
+                            try { ctrl.abort(); } catch (e) {}
+                        }, { once: true });
+                    }
+                }
+                return ctrl.signal;
+            }
+
+            async function probeUrl(targetUrl, parentSignal) {
+                if (parentSignal && parentSignal.aborted) return;
                 let parsedHost = '';
                 try { parsedHost = new URL(targetUrl).hostname; } catch (e) {}
                 const isTargetLoopback = (parsedHost === '127.0.0.1' || parsedHost === 'localhost');
@@ -1334,8 +1439,9 @@
                     const r = await fetch(`${targetUrl}/api/ping`, {
                         method: 'GET',
                         headers: { 'Accept': 'application/json' },
-                        signal: AbortSignal.timeout(800)
+                        signal: makeProbeSignal(800, parentSignal)
                     });
+                    if (parentSignal && parentSignal.aborted) return;
                     if (r.ok) {
                         const data = await r.json().catch(() => ({}));
                         const osName = data.os || '电脑';
@@ -1362,11 +1468,14 @@
                     }
                 } catch (e) {}
 
+                if (parentSignal && parentSignal.aborted) return;
+
                 try {
                     const r2 = await fetch(`${targetUrl}/api/verify`, {
                         method: 'POST',
-                        signal: AbortSignal.timeout(600)
+                        signal: makeProbeSignal(600, parentSignal)
                     });
+                    if (parentSignal && parentSignal.aborted) return;
                     if (r2.ok || r2.status === 401) {
                         const deviceKey = `host_${parsedHost}`;
                         const existing = foundMap.get(deviceKey);
@@ -1392,10 +1501,14 @@
             }
 
             for (let i = 0; i < tasks.length; i += batchSize) {
+                if (currentSignal.aborted) break;
                 const chunk = tasks.slice(i, i + batchSize);
-                await Promise.all(chunk.map(url => probeUrl(url)));
+                await Promise.all(chunk.map(url => probeUrl(url, currentSignal)));
+                if (currentSignal.aborted) break;
                 if (foundMap.size > 0 && selectedSubnet === 'auto' && i > 120) break; // 智能模式已发现设备则提早收尾
             }
+
+            if (currentSignal.aborted) return;
 
             if (foundMap.size === 0) {
                 if (statusEl) statusEl.textContent = '未扫描到其他在线电脑';
@@ -1421,124 +1534,10 @@
         };
     }
 
-    /* ---------- 启动 ---------- */
-    async function init() {
-        hydrateIcons();
-        initTheme();
-        initRadar();
-        bindFilesView();
-        bindClipboard();
-        bindMisc();
-        setupMobileGestures();
-
-        window.MediaHubInstance = new MediaHubComponent({
-            imageModal: '#image-modal',
-            imageViewer: '#image-viewer',
-            textModal: '#text-modal',
-            textViewer: '#text-viewer',
-            textTitle: '#text-title'
-        });
-
-        const isAppContainer = typeof window !== 'undefined' && (
-            window.Capacitor ||
-            window.location.protocol === 'file:' ||
-            (window.location.hostname === 'localhost' && window.location.port !== '3000' && window.location.port !== '3001' && window.location.port !== '3002' && window.location.port !== '3003' && window.location.port !== '3999')
-        );
-
-        const currentServer = (auth() && auth().getServerUrl) ? auth().getServerUrl() : (localStorage.getItem('landisk_custom_server') || '');
-
-        // 在独立移动端 App 且尚未绑定任何服务器 IP 时，直接弹出局域网雷达引导
-        if (isAppContainer && !currentServer) {
-            $('#login-overlay').style.display = 'none';
-            if (window.triggerAppRadar) {
-                window.triggerAppRadar();
-            }
-            return;
-        }
-
-        // 收藏竞速切换：已绑定地址失联时（如出门后局域网 IP 不可达），并行探测常用服务器
-        //（含 Tailscale 远程地址），总耗时约等于单次探测超时，先通者自动接管
-        const failoverToFavorite = async (excludeUrl) => {
-            const norm = (u) => String(u || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
-            const favorites = getSavedServers().filter(s => norm(s.url) !== norm(excludeUrl));
-            if (!favorites.length) return false;
-            const probes = await Promise.all(favorites.map(s =>
-                fetch(`${s.url}/api/ping`, {
-                    method: 'GET',
-                    headers: { 'Accept': 'application/json' },
-                    signal: AbortSignal.timeout(3000)
-                }).then(r => (r.ok ? s.url : null)).catch(() => null)
-            ));
-            const winner = probes.find(Boolean);
-            if (winner && window.appConnectToServer) {
-                if (window.LanDiskUI && LanDiskUI.toast) LanDiskUI.toast('原地址失联，已自动切换至可用服务器', 'info', 3000);
-                window.appConnectToServer(winner);
-                return true;
-            }
-            return false;
-        };
-
-        // 静默校验登录态（优先探测免鉴权 ping，再核验免密/PIN）
-        try {
-            const pingRes = await fetch(api('/api/ping'), {
-                method: 'GET',
-                headers: { 'Accept': 'application/json' },
-                signal: AbortSignal.timeout(2000)
-            });
-            if (pingRes.ok) {
-                const sInfo = await pingRes.json().catch(() => ({}));
-                if (!sInfo.requiresPin) {
-                    // 免密模式直接直通进入，绝不弹密码框
-                    enterApp();
-                    return;
-                }
-            }
-        } catch (ePing) {}
-
-        try {
-            const res = await fetch(api('/api/verify'), {
-                method: 'GET',
-                headers: auth().authHeaders(),
-                signal: AbortSignal.timeout(2500)
-            });
-            if (res.ok) {
-                enterApp();
-            } else if (res.status === 401) {
-                // 服务端明确要求输入密码
-                $('#login-overlay').style.display = 'flex';
-                $('#pin-input').focus();
-            } else {
-                if (isAppContainer) {
-                    const switched = await failoverToFavorite(currentServer);
-                    if (!switched && window.triggerAppRadar) window.triggerAppRadar();
-                } else {
-                    $('#login-overlay').style.display = 'flex';
-                }
-            }
-        } catch (e) {
-            if (isAppContainer) {
-                const switched = await failoverToFavorite(currentServer);
-                if (!switched && window.triggerAppRadar) window.triggerAppRadar();
-            } else {
-                $('#login-overlay').style.display = 'flex';
-            }
-        }
-
-        // PWA 横幅
-        if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && !window.matchMedia('(display-mode: standalone)').matches && !isAppContainer) {
-            LanDiskUI.toast('添加到主屏幕，获得原生 App 体验', 'info', 4000);
-        }
-
-        // Service Worker：离线与视频秒播缓存
-        if ('serviceWorker' in navigator && !isAppContainer) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js').catch(() => {});
-            });
-        }
-
-        /* ---------- Android / 移动端 原生物理返回键与全场景逐级返回治理 ---------- */
+    /* ---------- Android / 移动端 原生物理返回键与全场景逐级返回治理 ---------- */
+    function setupGlobalBackButton() {
         let lastBackPressTime = 0;
-        
+
         function handleGlobalBack() {
             // 1. 关闭全屏大图查看器
             const imgModal = $('#image-modal');
@@ -1568,9 +1567,6 @@
             }
 
             // 4. 关闭播放器内部抽屉或菜单
-            // 全局单例名是 AppleMediaPlayer（shared/apple-player.js 末尾赋值）。
-            // 此前这里读的 ApplePlayerInstance 全仓库从未被赋值过，整段都是死代码，
-            // 导致物理返回键永远跳过「先收抽屉/关菜单」这两级
             const player = window.AppleMediaPlayer;
             if (player) {
                 if (typeof player.isDrawerOpen === 'function' && player.isDrawerOpen()) {
@@ -1597,8 +1593,7 @@
                 return true;
             }
 
-            // 5. 媒体剧场：目录层级逐级返回（返回上一级文件夹，而不是直接退出视图）。
-            // goUp 返回 false 表示已到剧场顶层，才允许落到第 6/7 级
+            // 5. 媒体剧场：目录层级逐级返回
             const activeViewEl = document.querySelector('.view-section.active');
             if (activeViewEl && activeViewEl.id === 'view-media' &&
                 window.MediaTheaterComponent && typeof window.MediaTheaterComponent.goUp === 'function') {
@@ -1606,8 +1601,6 @@
             }
 
             // 6. 文件浏览器子目录返回上一级
-            // isRoot 是实例字段，静态面上没有它：此前读到的永远是 undefined，
-            // !undefined 恒为真，于是每次返回都无条件 goUp()，抢掉了「回到主视图」那一级
             const explorer = (window.FileExplorerComponent && typeof window.FileExplorerComponent.getInstance === 'function')
                 ? window.FileExplorerComponent.getInstance()
                 : null;
@@ -1641,9 +1634,7 @@
             return true;
         }
 
-        // 注册 Capacitor 原生物理返回键事件
         if (typeof window !== 'undefined') {
-            // 暴露给上方唯一的 popstate 监听器复用，避免两处各写一套返回阶梯
             window.__landiskGlobalBack = handleGlobalBack;
 
             const registerBack = () => {
@@ -1655,10 +1646,126 @@
             };
             registerBack();
             document.addEventListener('deviceready', registerBack);
-
-            // 浏览器/PWA 的历史后退拦截统一由上方那个 popstate 监听器处理，
-            // 这里只压入一条哨兵历史记录，让首次后退有东西可拦
             history.pushState(null, '', window.location.href);
+        }
+    }
+
+    /* ---------- 启动 ---------- */
+    async function init() {
+        hydrateIcons();
+        initTheme();
+        initRadar();
+        bindFilesView();
+        bindClipboard();
+        bindMisc();
+        setupMobileGestures();
+        setupGlobalBackButton();
+
+        window.MediaHubInstance = new MediaHubComponent({
+            imageModal: '#image-modal',
+            imageViewer: '#image-viewer',
+            textModal: '#text-modal',
+            textViewer: '#text-viewer',
+            textTitle: '#text-title'
+        });
+
+        const isAppContainer = typeof window !== 'undefined' && (
+            window.Capacitor ||
+            window.location.protocol === 'file:' ||
+            (window.location.hostname === 'localhost' && window.location.port !== '3000' && window.location.port !== '3001' && window.location.port !== '3002' && window.location.port !== '3003' && window.location.port !== '3999')
+        );
+
+        const currentServer = (auth() && auth().getServerUrl) ? auth().getServerUrl() : (localStorage.getItem('landisk_custom_server') || '');
+
+        // 在独立移动端 App 且尚未绑定任何服务器 IP 时，直接弹出局域网雷达引导
+        if (isAppContainer && !currentServer) {
+            $('#login-overlay').style.display = 'none';
+            if (window.triggerAppRadar) {
+                window.triggerAppRadar();
+            }
+            return;
+        }
+
+        const safeTimeout = (ms) => (global.LanDiskAuth && global.LanDiskAuth.timeoutSignal) ? global.LanDiskAuth.timeoutSignal(ms) : (AbortSignal.timeout ? AbortSignal.timeout(ms) : undefined);
+
+        // 收藏竞速切换：已绑定地址失联时（如出门后局域网 IP 不可达），并行探测常用服务器
+        //（含 Tailscale 远程地址），总耗时约等于单次探测超时，先通者自动接管
+        const failoverToFavorite = async (excludeUrl) => {
+            const norm = (u) => String(u || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
+            const favorites = getSavedServers().filter(s => norm(s.url) !== norm(excludeUrl));
+            if (!favorites.length) return false;
+            const probes = await Promise.all(favorites.map(s =>
+                fetch(`${s.url}/api/ping`, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' },
+                    signal: safeTimeout(3000)
+                }).then(r => (r.ok ? s.url : null)).catch(() => null)
+            ));
+            const winner = probes.find(Boolean);
+            if (winner && window.appConnectToServer) {
+                if (window.LanDiskUI && LanDiskUI.toast) LanDiskUI.toast('原地址失联，已自动切换至可用服务器', 'info', 3000);
+                window.appConnectToServer(winner);
+                return true;
+            }
+            return false;
+        };
+
+        // 静默校验登录态（优先探测免鉴权 ping，再核验免密/PIN）
+        try {
+            const pingRes = await fetch(api('/api/ping'), {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' },
+                signal: safeTimeout(2000)
+            });
+            if (pingRes.ok) {
+                const sInfo = await pingRes.json().catch(() => ({}));
+                if (!sInfo.requiresPin) {
+                    // 免密模式直接直通进入，绝不弹密码框
+                    enterApp();
+                    return;
+                }
+            }
+        } catch (ePing) {}
+
+        try {
+            const res = await fetch(api('/api/verify'), {
+                method: 'GET',
+                headers: auth().authHeaders(),
+                signal: safeTimeout(2500)
+            });
+            if (res.ok) {
+                enterApp();
+            } else if (res.status === 401) {
+                // 服务端明确要求输入密码
+                $('#login-overlay').style.display = 'flex';
+                $('#pin-input').focus();
+            } else {
+                if (isAppContainer) {
+                    const switched = await failoverToFavorite(currentServer);
+                    if (!switched && window.triggerAppRadar) window.triggerAppRadar();
+                } else {
+                    LanDiskUI.toast(`服务响应异常 (${res.status})，请检查网络或点击雷达重新连接`, 'warning', 4000);
+                }
+            }
+        } catch (e) {
+            if (isAppContainer) {
+                const switched = await failoverToFavorite(currentServer);
+                if (!switched && window.triggerAppRadar) window.triggerAppRadar();
+            } else {
+                LanDiskUI.toast('与电脑主服务连接中断，请检查局域网或点击顶栏雷达重新连接', 'warning', 4000);
+            }
+        }
+
+        // PWA 横幅
+        if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) && !window.matchMedia('(display-mode: standalone)').matches && !isAppContainer) {
+            LanDiskUI.toast('添加到主屏幕，获得原生 App 体验', 'info', 4000);
+        }
+
+        // Service Worker：离线与视频秒播缓存
+        if ('serviceWorker' in navigator && !isAppContainer) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').catch(() => {});
+            });
         }
     }
 

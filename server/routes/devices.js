@@ -41,4 +41,25 @@ router.get('/devices', (req, res) => {
     });
 });
 
+// 设置或清除指定 IP 设备的自定义备注别名
+router.post('/devices/alias', (req, res) => {
+    const { ip, alias } = req.body || {};
+    if (!ip) return res.status(400).json({ error: 'IP required' });
+    const clean = getCleanIp(ip);
+    if (!clean) return res.status(400).json({ error: 'Invalid IP' });
+    const trimmed = String(alias || '').trim().slice(0, 30);
+    if (trimmed) {
+        state.deviceAliases[clean] = trimmed;
+        if (state.connectedDevices[clean]) {
+            state.connectedDevices[clean].alias = trimmed;
+        }
+    } else {
+        delete state.deviceAliases[clean];
+        if (state.connectedDevices[clean]) {
+            state.connectedDevices[clean].alias = '';
+        }
+    }
+    res.json({ success: true, ip: clean, alias: trimmed });
+});
+
 module.exports = router;

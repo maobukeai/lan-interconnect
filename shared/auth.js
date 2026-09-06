@@ -88,7 +88,39 @@
         return endpoint;
     }
 
-    global.LanDiskAuth = { getPin, getToken, hasCredentials, authHeaders, authQuery, getServerUrl, setServerUrl, api };
+    function timeoutSignal(ms) {
+        if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+            try {
+                return AbortSignal.timeout(ms);
+            } catch (e) {}
+        }
+        if (typeof AbortController !== 'undefined') {
+            const controller = new AbortController();
+            const timer = setTimeout(() => {
+                try {
+                    controller.abort(new DOMException('The operation timed out.', 'TimeoutError'));
+                } catch (e) {
+                    controller.abort();
+                }
+            }, ms);
+            if (controller.signal && controller.signal.addEventListener) {
+                controller.signal.addEventListener('abort', () => clearTimeout(timer), { once: true });
+            }
+            return controller.signal;
+        }
+        return undefined;
+    }
+
+    // 全局兼容补丁：低版本 Android WebView (Chrome < 103) 无 AbortSignal.timeout
+    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout !== 'function') {
+        try {
+            AbortSignal.timeout = function (ms) {
+                return timeoutSignal(ms);
+            };
+        } catch (e) {}
+    }
+
+    global.LanDiskAuth = { getPin, getToken, hasCredentials, authHeaders, authQuery, getServerUrl, setServerUrl, api, timeoutSignal };
     if (typeof window !== 'undefined' && typeof window.api === 'undefined') {
         window.api = api;
     }

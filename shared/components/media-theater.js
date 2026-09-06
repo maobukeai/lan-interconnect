@@ -141,6 +141,14 @@
                     if (entry) this.playFromEntry(entry);
                     return;
                 }
+                const infoBtn = e.target.closest('.poster-info-btn');
+                if (infoBtn) {
+                    e.stopPropagation();
+                    const idx = parseInt(infoBtn.getAttribute('data-info-idx'), 10);
+                    const item = (this.currentMediaItems && this.currentMediaItems[idx]) || null;
+                    if (item) this.showMediaDetail(item.path, item.name);
+                    return;
+                }
                 const poster = e.target.closest('.poster-card');
                 if (poster) {
                     if (global.LanDiskUI && global.LanDiskUI.Haptic) global.LanDiskUI.Haptic.light();
@@ -194,7 +202,7 @@
                 this._prewarmKey = firstVideo.path;
                 try {
                     const url = this.getApiUrl(`/api/stream?path=${encodeURIComponent(firstVideo.path)}`) + this._authQuery().replace(/^\?/, '&');
-                    fetch(url, { headers: { 'Range': 'bytes=0-' }, cache: 'force-cache' }).catch(() => {});
+                    fetch(url, { headers: { 'Range': 'bytes=0-1048575' }, cache: 'force-cache' }).catch(() => {});
                 } catch (e) {}
             }, 8000);
         }
@@ -931,6 +939,7 @@
                                      src="${thumbUrl}"
                                      loading="lazy">
                             ` : ''}
+                            <button class="poster-info-btn" data-info-idx="${i}" title="查看影视详情">${I('info', 13)}</button>
                             <span class="poster-badge">${isAudio ? I('music', 11) + '音频' : I('video', 11) + '视频'}</span>
                             ${resBadge}
                             ${percentage > 0 ? `<span class="poster-watched-badge">已看 ${percentage}%</span>` : ''}
@@ -1450,6 +1459,124 @@
             // 原生 loading="lazy" 与 onerror fallback 已接管缩略图加载
         }
 
+        async showMediaDetail(filePath, fileName) {
+            let modal = document.getElementById('media-detail-modal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'media-detail-modal';
+                modal.style.cssText = 'display:none; position:fixed; inset:0; z-index:9999; background:rgba(4,6,12,0.92); backdrop-filter:blur(24px); align-items:center; justify-content:center; padding:16px;';
+                document.body.appendChild(modal);
+            }
+
+            modal.style.display = 'flex';
+            modal.innerHTML = `
+                <div class="glass-card media-detail-modal-card" style="width:min(94vw,700px); max-height:85vh; border-radius:20px; overflow:hidden; display:flex; flex-direction:column; padding:0;">
+                    <div style="padding:24px; text-align:center; color:var(--apple-text-muted);">
+                        ${I('refresh', 24)}
+                        <div style="margin-top:10px; font-size:13px;">正在加载影视元数据…</div>
+                    </div>
+                </div>
+            `;
+
+            const getUrl = typeof this.getApiUrl === 'function' ? this.getApiUrl : (p => p);
+            const authHeaders = (global.LanDiskAuth && global.LanDiskAuth.authHeaders) ? global.LanDiskAuth.authHeaders() : {};
+            const authQ = (global.LanDiskAuth && global.LanDiskAuth.authQuery) ? global.LanDiskAuth.authQuery().replace(/^\?/, '&') : '';
+
+            try {
+                const res = await fetch(getUrl(`/api/media/meta?path=${encodeURIComponent(filePath)}${authQ}`), { headers: authHeaders });
+                const meta = await res.json();
+                if (!res.ok || !meta.success) throw new Error(meta.error || '获取元数据失败');
+
+                const actorsHtml = (meta.actors && meta.actors.length) 
+                    ? meta.actors.map(a => `<span class="apple-badge apple-badge-sm apple-badge-secondary" style="font-size:11px;">${escapeHtml(a.name)}${a.role ? ' 饰 ' + escapeHtml(a.role) : ''}</span>`).join(' ')
+                    : '';
+
+                const genresHtml = (meta.genres && meta.genres.length)
+                    ? meta.genres.map(g => `<span class="apple-badge apple-badge-sm apple-badge-info" style="font-size:10.5px;">${escapeHtml(g)}</span>`).join(' ')
+                    : '';
+
+                modal.innerHTML = `
+                    <div class="glass-card media-detail-modal-card" style="width:min(94vw,700px); max-height:88vh; border-radius:20px; overflow:hidden; display:flex; flex-direction:column; padding:0; background:rgba(16,20,32,0.96);">
+                        <!-- 顶部标题与关闭 -->
+                        <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 20px; border-bottom:1px solid var(--apple-border); flex-shrink:0;">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span style="color:var(--apple-blue);">${I('film', 18)}</span>
+                                <span style="font-weight:700; font-size:15px; color:var(--apple-text-main);">影视详情</span>
+                            </div>
+                            <button class="apple-btn-icon" id="btn-media-detail-close" style="width:28px; height:28px;">${I('close', 14)}</button>
+                        </div>
+
+                        <!-- 核心信息区 -->
+                        <div style="padding:20px; overflow-y:auto; flex:1; display:flex; gap:20px; flex-wrap:wrap;">
+                            <!-- 海报区 -->
+                            <div style="width:160px; flex-shrink:0; position:relative;">
+                                <img src="${meta.posterUrl}" alt="" style="width:100%; border-radius:14px; object-fit:cover; aspect-ratio:2/3; box-shadow:0 12px 30px rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.1);">
+                                ${meta.rating ? `<div style="position:absolute; bottom:8px; left:8px; background:rgba(0,0,0,0.75); backdrop-filter:blur(8px); padding:2px 8px; border-radius:8px; font-weight:700; font-size:12px; color:#ffcc00; display:flex; align-items:center; gap:3px;">★ ${meta.rating}</div>` : ''}
+                            </div>
+
+                            <!-- 详情列表 -->
+                            <div style="flex:1; min-width:240px; display:flex; flex-direction:column; gap:8px;">
+                                <div style="font-size:18px; font-weight:700; color:var(--apple-text-main); line-height:1.3;">${escapeHtml(meta.title)}</div>
+                                ${meta.originalTitle && meta.originalTitle !== meta.title ? `<div class="subtle" style="font-size:12px; margin-top:-4px;">${escapeHtml(meta.originalTitle)}</div>` : ''}
+
+                                <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin:4px 0;">
+                                    ${meta.year ? `<span class="apple-badge apple-badge-sm apple-badge-secondary">${meta.year}</span>` : ''}
+                                    <span class="apple-badge apple-badge-sm apple-badge-success">${meta.resolution}</span>
+                                    <span class="apple-badge apple-badge-sm apple-badge-primary">${meta.tag}</span>
+                                    ${genresHtml}
+                                </div>
+
+                                ${meta.director ? `<div style="font-size:12.5px; color:var(--apple-text-muted);"><b style="color:var(--apple-text-main);">导演：</b>${escapeHtml(meta.director)}</div>` : ''}
+                                ${actorsHtml ? `<div style="font-size:12px; color:var(--apple-text-muted); display:flex; flex-direction:column; gap:4px;"><b style="color:var(--apple-text-main);">主要演员：</b><div style="display:flex; flex-wrap:wrap; gap:5px;">${actorsHtml}</div></div>` : ''}
+
+                                <div style="margin-top:6px; font-size:12.5px; color:var(--apple-text-muted); line-height:1.6; max-height:120px; overflow-y:auto; background:rgba(255,255,255,0.03); padding:10px; border-radius:10px; border:1px solid rgba(255,255,255,0.05);">
+                                    <b style="color:var(--apple-text-main);">剧情简介：</b><br>
+                                    ${escapeHtml(meta.plot)}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 底部操作栏 -->
+                        <div style="display:flex; align-items:center; justify-content:flex-end; gap:10px; padding:14px 20px; border-top:1px solid var(--apple-border); background:rgba(255,255,255,0.02); flex-shrink:0;">
+                            <button class="apple-btn apple-btn-glass" id="btn-media-detail-copy" style="height:34px; font-size:13px; gap:6px;">
+                                ${I('copy', 14)} 复制直链
+                            </button>
+                            <button class="apple-btn apple-btn-primary" id="btn-media-detail-play" style="height:34px; font-size:13px; gap:6px; padding:0 18px;">
+                                ${I('play', 14)} 立即播放
+                            </button>
+                        </div>
+                    </div>
+                `;
+
+                const closeBtn = document.getElementById('btn-media-detail-close');
+                const playBtn = document.getElementById('btn-media-detail-play');
+                const copyBtn = document.getElementById('btn-media-detail-copy');
+
+                closeBtn && closeBtn.addEventListener('click', () => { modal.style.display = 'none'; });
+                modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
+
+                playBtn && playBtn.addEventListener('click', () => {
+                    modal.style.display = 'none';
+                    const idx = this.currentMediaItems.findIndex(f => f.path === filePath);
+                    if (idx >= 0) this.playAt(idx);
+                    else this.playMediaFile({ path: filePath, name: fileName });
+                });
+
+                copyBtn && copyBtn.addEventListener('click', () => {
+                    const streamUrl = getUrl(`/api/stream?path=${encodeURIComponent(filePath)}${authQ}`);
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(streamUrl).then(() => {
+                            if (global.LanDiskUI && global.LanDiskUI.toast) global.LanDiskUI.toast('播放直链已复制到剪贴板', 'success');
+                        });
+                    }
+                });
+
+            } catch (err) {
+                if (global.LanDiskUI && global.LanDiskUI.toast) global.LanDiskUI.toast('加载影视信息失败: ' + err.message, 'error');
+                modal.style.display = 'none';
+            }
+        }
+
         playAt(idx) {
             const item = this.currentMediaItems[idx];
             if (!item || !global.AppleMediaPlayer) return;
@@ -1475,8 +1602,8 @@
         instance._bindSortButton();
         return instance;
     };
-    MediaTheater.scan = function () { if (instance) instance.scan(); };
-    MediaTheater.refresh = function () { if (instance) instance.refresh(); };
+    MediaTheater.scan = function () { return instance ? instance.scan() : Promise.resolve(); };
+    MediaTheater.refresh = function () { return instance ? instance.refresh() : Promise.resolve(); };
     MediaTheater.pickFolder = function () { if (instance) instance.pickFolder(); };
     MediaTheater.addFolder = function (p) { if (instance) instance.addFolder(p); };
     MediaTheater.removeFolder = function (t) { if (instance) instance.removeFolder(t); };

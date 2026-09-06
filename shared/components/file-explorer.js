@@ -29,6 +29,7 @@
             this.sortBy = 'name'; // 'name' | 'size' | 'time'
             this.sortOrder = 'asc';
             this.searchQuery = '';
+            this.clipboard = null; // { action: 'copy' | 'cut', path: string, name: string }
 
             this.batchManager = new global.FileBatchManager({
                 getPin: this.getPin.bind(this),
@@ -181,7 +182,13 @@
 
             try {
                 const apiUrl = this.getApiUrl('/api/drives');
-                const res = await fetch(apiUrl, { headers: this._authHeaders() });
+                const timeoutSig = (global.LanDiskAuth && global.LanDiskAuth.timeoutSignal)
+                    ? global.LanDiskAuth.timeoutSignal(8000)
+                    : (AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined);
+                const res = await fetch(apiUrl, {
+                    headers: this._authHeaders(),
+                    signal: timeoutSig
+                });
                 if (!res.ok) throw new Error('无法获取磁盘列表');
                 const drives = await res.json();
 
@@ -193,7 +200,15 @@
                 this.renderDrives(drives);
             } catch (err) {
                 if (this.container) {
-                    this.container.innerHTML = this._emptyState('server', '无法连接服务', '请确认服务已启动');
+                    const safeErr = (global.escapeHtml || String)(err.message || '请确认服务已启动或检查网络连接');
+                    this.container.innerHTML = `
+                        <div class="empty-state">
+                            ${I('server', 36)}
+                            <div style="font-weight:600; color:var(--apple-text-muted); margin-top:10px;">无法连接服务或响应超时</div>
+                            <div style="font-size:12px; color:var(--apple-text-subtle); margin-top:4px;">${safeErr}</div>
+                            <button class="btn btn-sm btn-primary" style="margin-top:16px; border-radius:18px; padding:6px 18px; cursor:pointer;" onclick="window.FileExplorerComponent && window.FileExplorerComponent.getInstance() && window.FileExplorerComponent.getInstance().loadDrives(false)">重新加载磁盘</button>
+                        </div>
+                    `;
                 }
             }
         }
@@ -241,7 +256,13 @@
             try {
                 this.batchManager.clear();
                 const apiUrl = this.getApiUrl(`/api/files?path=${encodeURIComponent(path)}`);
-                const res = await fetch(apiUrl, { headers: this._authHeaders() });
+                const timeoutSig = (global.LanDiskAuth && global.LanDiskAuth.timeoutSignal)
+                    ? global.LanDiskAuth.timeoutSignal(10000)
+                    : (AbortSignal.timeout ? AbortSignal.timeout(10000) : undefined);
+                const res = await fetch(apiUrl, {
+                    headers: this._authHeaders(),
+                    signal: timeoutSig
+                });
                 if (!res.ok) throw new Error('无法访问该路径或没有权限');
                 const data = await res.json();
 
@@ -259,7 +280,26 @@
                 }
             } catch (err) {
                 this._toast(err.message || '加载路径失败', 'error');
-                this.goUp(pushState);
+                const hasSkeletons = this.container && this.container.querySelector('.skeleton');
+                const isEmpty = !this.currentFiles || this.currentFiles.length === 0;
+                if (this.isRoot || hasSkeletons || isEmpty) {
+                    if (this.container) {
+                        const safeMsg = (global.escapeHtml || String)(err.message || '网络连接超时或目标路径不可用');
+                        this.container.innerHTML = `
+                            <div class="empty-state">
+                                ${I('folder', 36)}
+                                <div style="font-weight:600; color:var(--apple-text-muted); margin-top:10px;">加载目录失败</div>
+                                <div style="font-size:12px; color:var(--apple-text-subtle); margin-top:4px;">${safeMsg}</div>
+                                <div style="display:flex; gap:10px; justify-content:center; margin-top:16px;">
+                                    <button class="btn btn-sm btn-primary" style="border-radius:18px; padding:6px 16px; cursor:pointer;" onclick="window.FileExplorerComponent && window.FileExplorerComponent.getInstance() && window.FileExplorerComponent.getInstance().refresh()">点击重新加载</button>
+                                    <button class="btn btn-sm btn-secondary" style="border-radius:18px; padding:6px 16px; cursor:pointer;" onclick="window.FileExplorerComponent && window.FileExplorerComponent.getInstance() && window.FileExplorerComponent.getInstance().loadDrives(false)">返回磁盘列表</button>
+                                </div>
+                            </div>
+                        `;
+                    }
+                } else {
+                    this.goUp(pushState);
+                }
             }
         }
 
@@ -351,6 +391,44 @@
             }
         }
 
+        async newFile() {
+            if (this.isRoot || !this.currentPath) {
+                this._toast('请先进入一个磁盘目录', 'info');
+                return;
+            }
+            const ui = UI();
+            const name = ui
+                ? await ui.promptDialog({ title: '新建文件', message: '在当前目录创建文本/Markdown文件：', placeholder: '例如：notes.txt 或 todo.md', confirmText: '创建' })
+                : global.prompt('请输入新文件名 (如 notes.txt):');
+            if (!name || !name.trim()) return;
+
+            try {
+                const res = await fetch(this.getApiUrl('/api/touch'), {
+                    method: 'POST',
+                    headers: this._authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({ path: this.currentPath, name: name.trim() })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    this._toast('文件已创建', 'success');
+                    await this.loadPath(this.currentPath, false);
+                    if (data.path) {
+                        if (typeof global.openTextEditor === 'function') {
+                            global.openTextEditor(data.path, data.name || name.trim());
+                        } else if (global.MediaHubInstance && typeof global.MediaHubInstance.showTextPreview === 'function') {
+                            global.MediaHubInstance.showTextPreview(data.name || name.trim(), data.path);
+                        } else if (this.onFileClick) {
+                            this.onFileClick({ name: data.name || name.trim(), path: data.path }, 'text');
+                        }
+                    }
+                } else {
+                    this._toast(data.error || '创建失败', 'error');
+                }
+            } catch (e) {
+                this._toast('创建失败：' + e.message, 'error');
+            }
+        }
+
         async renameFile(path, currentName) {
             const ui = UI();
             const newName = ui
@@ -409,11 +487,17 @@
             const modal = ui.openModal(`
                 <div class="modal-title">分享文件</div>
                 <div class="modal-message ellipsis" style="max-width:100%">${(global.escapeHtml || String)(name)}</div>
-                <div class="segmented" style="margin: 0 auto 18px; display:flex" id="share-hours">
+                <div class="segmented" style="margin: 0 auto 14px; display:flex" id="share-hours">
                     <button class="segmented-item" data-h="1">1时</button>
                     <button class="segmented-item active" data-h="6">6时</button>
                     <button class="segmented-item" data-h="24">24时</button>
                     <button class="segmented-item" data-h="168">7天</button>
+                </div>
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; padding:0 4px;">
+                    <span style="font-size:12.5px; color:var(--apple-text-secondary); display:flex; align-items:center; gap:4px;">
+                        ${I('lock', 14)} 4 位提取码保护:
+                    </span>
+                    <input type="text" id="share-pin-input" class="apple-input" placeholder="可选 (如 8888)" maxlength="8" style="width:130px; height:32px; font-size:12.5px; text-align:center; letter-spacing:2px;">
                 </div>
                 <div class="modal-actions">
                     <button class="apple-btn apple-btn-glass" data-act="cancel">取消</button>
@@ -433,36 +517,49 @@
 
             modal.el.querySelector('[data-act="create"]').addEventListener('click', async () => {
                 try {
+                    const pinVal = (modal.el.querySelector('#share-pin-input')?.value || '').trim();
+                    const reqBody = { path, expireHours: hours };
+                    if (pinVal) reqBody.pin = pinVal;
+
                     const res = await fetch(this.getApiUrl('/api/share'), {
                         method: 'POST',
                         headers: this._authHeaders({ 'Content-Type': 'application/json' }),
-                        body: JSON.stringify({ path, expireHours: hours })
+                        body: JSON.stringify(reqBody)
                     });
                     const data = await res.json();
                     if (!data.success) throw new Error(data.error || '生成失败');
 
                     const expires = new Date(data.expiresAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                    const pinHtml = pinVal ? `
+                        <div style="background:rgba(0,122,255,0.1); border:1px solid rgba(0,122,255,0.25); border-radius:10px; padding:6px 12px; margin:8px 0; font-size:13px; color:var(--apple-blue); font-weight:600; display:flex; align-items:center; justify-content:center; gap:8px;">
+                            <span>提取码:</span>
+                            <span style="letter-spacing:4px; font-size:16px;">${pinVal}</span>
+                        </div>
+                    ` : '';
+
                     modal.el.innerHTML = `
                         <div class="modal-title">分享就绪</div>
-                        <div style="display:grid; place-items:center; margin:18px 0 6px">
+                        <div style="display:grid; place-items:center; margin:14px 0 6px">
                             <div class="qr-box"><img src="${data.qrDataUrl}" alt="二维码"></div>
                         </div>
-                        <div class="apple-input-box mono" style="margin:10px 0 4px; font-size:11.5px">
+                        <div class="apple-input-box mono" style="margin:8px 0 4px; font-size:11.5px">
                             <span class="ellipsis" style="flex:1">${(global.escapeHtml || String)(data.shareUrl)}</span>
                         </div>
+                        ${pinHtml}
                         <div class="subtle" style="font-size:11.5px; text-align:center; margin-bottom:16px">
                             扫码或打开链接直接下载 · ${expires} 前有效
                         </div>
                         <div class="modal-actions">
                             <button class="apple-btn apple-btn-glass" data-act="close">关闭</button>
-                            <button class="apple-btn apple-btn-primary" data-act="copy">${I('copy', 16)} 复制链接</button>
+                            <button class="apple-btn apple-btn-primary" data-act="copy">${I('copy', 16)} 复制链接与提取码</button>
                         </div>
                     `;
                     modal.el.querySelector('[data-act="close"]').addEventListener('click', () => modal.close());
                     modal.el.querySelector('[data-act="copy"]').addEventListener('click', async () => {
                         try {
-                            await navigator.clipboard.writeText(data.shareUrl);
-                            this._toast('链接已复制', 'success');
+                            const copyText = pinVal ? `${data.shareUrl} (提取码: ${pinVal})` : data.shareUrl;
+                            await navigator.clipboard.writeText(copyText);
+                            this._toast('链接与提取码已复制', 'success');
                         } catch (e) {
                             this._toast('复制失败，请手动复制', 'error');
                         }
@@ -472,6 +569,100 @@
                     modal.close();
                 }
             });
+        }
+
+        async extractArchive(path, name) {
+            const ui = UI();
+            let password = '';
+            if (ui && ui.openModal) {
+                const modal = ui.openModal(`
+                    <div class="modal-title">解压压缩包</div>
+                    <div class="modal-message ellipsis" style="max-width:100%">${(global.escapeHtml || String)(name)}</div>
+                    <div style="display:flex; flex-direction:column; gap:8px; margin:14px 0;">
+                        <span style="font-size:12px; color:var(--apple-text-secondary);">可选输入密码（若无密码请留空）:</span>
+                        <input type="password" id="archive-pwd-input" class="apple-input" placeholder="解压密码（可选）" style="width:100%; height:34px; font-size:12.5px;">
+                    </div>
+                    <div class="modal-actions">
+                        <button class="apple-btn apple-btn-glass" data-act="cancel">取消</button>
+                        <button class="apple-btn apple-btn-primary" data-act="extract">${I('package', 16)} 开始解压</button>
+                    </div>
+                `, { width: 380 });
+
+                modal.el.querySelector('[data-act="cancel"]').addEventListener('click', () => modal.close());
+                modal.el.querySelector('[data-act="extract"]').addEventListener('click', () => {
+                    password = (modal.el.querySelector('#archive-pwd-input')?.value || '').trim();
+                    modal.close();
+                    this._doExtract(path, password);
+                });
+                return;
+            }
+
+            if (global.confirm(`确定要解压「${name}」到当前文件夹吗？`)) {
+                this._doExtract(path, '');
+            }
+        }
+
+        async _doExtract(path, password) {
+            this._toast('正在解压中，请稍候…', 'info', 4000);
+            try {
+                const res = await fetch(this.getApiUrl('/api/files/extract'), {
+                    method: 'POST',
+                    headers: this._authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({ path, password })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    this._toast('解压完成！', 'success');
+                    this.loadPath(this.currentPath, false);
+                    if (this.onFileChanged) this.onFileChanged('extract');
+                } else {
+                    this._toast(data.error || '解压失败', 'error');
+                }
+            } catch (e) {
+                this._toast('解压失败: ' + e.message, 'error');
+            }
+        }
+
+        setClipboard(action, path, name) {
+            this.clipboard = { action, path, name };
+            const actionName = action === 'cut' ? '剪切' : '复制';
+            this._toast(`已${actionName}「${name}」，前往目标文件夹选择粘贴`, 'info');
+        }
+
+        async pasteClipboard() {
+            if (!this.clipboard || !this.clipboard.path) {
+                this._toast('剪贴板为空', 'info');
+                return;
+            }
+            if (this.isRoot) {
+                this._toast('无法在根目录执行粘贴操作', 'warning');
+                return;
+            }
+
+            const { action, path: srcPath, name } = this.clipboard;
+            const endpoint = action === 'cut' ? '/api/files/move' : '/api/files/copy';
+            const actionName = action === 'cut' ? '移动' : '复制';
+
+            this._toast(`正在${actionName}「${name}」…`, 'info');
+
+            try {
+                const res = await fetch(this.getApiUrl(endpoint), {
+                    method: 'POST',
+                    headers: this._authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({ source: srcPath, destination: this.currentPath })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    this._toast(`${actionName}完成`, 'success');
+                    if (action === 'cut') this.clipboard = null;
+                    this.loadPath(this.currentPath, false);
+                    if (this.onFileChanged) this.onFileChanged(action);
+                } else {
+                    this._toast(data.error || `${actionName}失败`, 'error');
+                }
+            } catch (e) {
+                this._toast(`${actionName}失败: ` + e.message, 'error');
+            }
         }
 
         /* ---------- 渲染 ---------- */
@@ -532,7 +723,9 @@
             if (isDir) {
                 actionBtns += `<button class="apple-btn apple-btn-glass apple-btn-sm btn-action-zip-folder" data-path="${safePath}" data-name="${safeName}" title="打包下载">${I('package', 14)}</button>`;
             } else {
-                if (/\.(mp4|mkv|webm|mov|avi|mp3|wav|flac|aac|m4a)$/i.test(file.name)) {
+                if (/\.(zip|rar|7z|tar|gz|bz2|xz|tgz)$/i.test(file.name)) {
+                    actionBtns += `<button class="apple-btn apple-btn-glass apple-btn-sm btn-action-extract" data-path="${safePath}" data-name="${safeName}" title="解压到当前目录">${I('package', 14)}</button>`;
+                } else if (/\.(mp4|mkv|webm|mov|avi|mp3|wav|flac|aac|m4a)$/i.test(file.name)) {
                     const mediaType = /\.(mp3|wav|flac|aac|m4a)$/i.test(file.name) ? 'audio' : 'video';
                     actionBtns += `<button class="apple-btn apple-btn-glass apple-btn-sm btn-action-play" data-type="${mediaType}" data-path="${safePath}" data-name="${safeName}" title="播放">${I('play', 14)}</button>`;
                 } else if (/\.(jpg|png|gif|webp|svg)$/i.test(file.name)) {
@@ -580,6 +773,12 @@
             const container = this.container;
 
             container.addEventListener('click', (e) => {
+                const extractBtn = e.target.closest('.btn-action-extract');
+                if (extractBtn) {
+                    e.stopPropagation();
+                    this.extractArchive(extractBtn.getAttribute('data-path'), extractBtn.getAttribute('data-name'));
+                    return;
+                }
                 const zipBtn = e.target.closest('.btn-action-zip-folder');
                 if (zipBtn) {
                     e.stopPropagation();
@@ -718,6 +917,9 @@
                 items.push({ icon: 'chevronRight', label: '打开', onClick: () => this.loadPath(path) });
                 items.push({ icon: 'package', label: '打包下载', onClick: () => this.batchManager.downloadZip([path], name || 'folder_download') });
             } else {
+                if (/\.(zip|rar|7z|tar|gz|bz2|xz|tgz)$/i.test(name)) {
+                    items.push({ icon: 'package', label: '解压到当前目录…', onClick: () => this.extractArchive(path, name) });
+                }
                 if (/\.(mp4|mkv|webm|mov|avi|mp3|wav|flac|aac|m4a)$/i.test(name)) {
                     items.push({ icon: 'play', label: '播放', onClick: () => this.openFile(path, name) });
                 } else if (/\.(jpg|png|gif|webp|svg)$/i.test(name)) {
@@ -728,6 +930,12 @@
                 items.push({ icon: 'download', label: '下载', onClick: () => this.handleSingleDownload(path) });
             }
             items.push({ icon: 'qr', label: '分享…', onClick: () => this.shareFile(path, name) });
+            items.push({ icon: 'copy', label: '复制', onClick: () => this.setClipboard('copy', path, name) });
+            items.push({ icon: 'scissors', label: '剪切', onClick: () => this.setClipboard('cut', path, name) });
+            if (this.clipboard) {
+                const actionLabel = this.clipboard.action === 'cut' ? '移动' : '复制';
+                items.push({ icon: 'clipboard', label: `粘贴 (${actionLabel}: ${this.clipboard.name})`, onClick: () => this.pasteClipboard() });
+            }
             items.push({ icon: 'pencil', label: '重命名', onClick: () => this.renameFile(path, name) });
             items.push({
                 icon: 'copy', label: '复制路径', onClick: async () => {
@@ -763,23 +971,36 @@
         }
 
         goUp(pushState = true) {
-            if (this.isRoot) return;
-            const parts = this.currentPath.split(/[\\/]/).filter(p => p);
+            if (this.isRoot) {
+                return this.loadDrives(pushState);
+            }
+            const parts = (this.currentPath || '').split(/[\\/]/).filter(p => p);
             if (parts.length <= 1) {
-                this.loadDrives(pushState);
+                return this.loadDrives(pushState);
             } else {
                 parts.pop();
                 const parentPath = parts.join('\\') + '\\';
-                this.loadPath(parentPath, pushState);
+                return this.loadPath(parentPath, pushState);
             }
         }
 
         refresh() {
             if (this.isRoot) {
-                this.loadDrives(false);
+                return this.loadDrives(false);
             } else {
-                this.loadPath(this.currentPath, false);
+                return this.loadPath(this.currentPath, false);
             }
+        }
+
+        reset() {
+            this.isRoot = true;
+            this.currentPath = '';
+            this.currentFiles = [];
+            if (this.bookmarksManager && typeof this.bookmarksManager.reset === 'function') {
+                this.bookmarksManager.reset();
+            }
+            this.updatePathDisplay();
+            return this.loadDrives(false);
         }
     }
 
@@ -857,16 +1078,18 @@
             });
         instance.loadDrives(false);
     };
-    FileExplorer.loadDrives = function(pushState) { if (instance) instance.loadDrives(pushState); };
-    FileExplorer.loadPath = function(p, pushState) { if (instance) instance.loadPath(p, pushState); };
-    FileExplorer.goUp = function(pushState) { if (instance) instance.goUp(pushState); };
-    FileExplorer.refresh = function() { if (instance) instance.refresh(); };
+    FileExplorer.loadDrives = function(pushState) { if (instance) return instance.loadDrives(pushState); };
+    FileExplorer.loadPath = function(p, pushState) { if (instance) return instance.loadPath(p, pushState); };
+    FileExplorer.goUp = function(pushState) { if (instance) return instance.goUp(pushState); };
+    FileExplorer.refresh = function() { if (instance) return instance.refresh(); };
+    FileExplorer.reset = function() { if (instance) return instance.reset(); };
     FileExplorer.filterFiles = function(kw) { if (instance) instance.filterFiles(kw); };
     FileExplorer.uploadFiles = function(files) { if (instance) instance.uploader.uploadFiles(files, instance.currentPath, instance.isRoot); };
     FileExplorer.addBookmark = function() { if (instance) instance.addBookmark(); };
     FileExplorer.removeBookmark = function(idx) { if (instance) instance.removeBookmark(idx); };
     FileExplorer.loadBookmarks = function() { if (instance) instance.loadBookmarks(); };
     FileExplorer.newFolder = function() { if (instance) return instance.newFolder(); };
+    FileExplorer.newFile = function() { if (instance) return instance.newFile(); };
     FileExplorer.shareFile = function(path, name) { if (instance) return instance.shareFile(path, name); };
     FileExplorer.getInstance = function() { return instance; };
 

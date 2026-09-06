@@ -16,6 +16,8 @@ router.get('/speedtest/ping', (req, res) => {
     });
 });
 
+const PRESET_CHUNK = crypto.randomBytes(64 * 1024); // 64KB 静态预分配 Buffer，零 GC 压测
+
 // 2. 下行测速数据流 (支持自定义大小，默认 10MB)
 router.get('/speedtest/download', (req, res) => {
     const sizeMb = Math.min(50, Math.max(1, parseFloat(req.query.size) || 10));
@@ -28,13 +30,12 @@ router.get('/speedtest/download', (req, res) => {
         'Pragma': 'no-cache'
     });
 
-    const chunk = crypto.randomBytes(64 * 1024); // 64KB chunk
     let sent = 0;
 
     function sendNext() {
         while (sent < totalBytes) {
-            const toSend = Math.min(chunk.length, totalBytes - sent);
-            const buf = toSend === chunk.length ? chunk : chunk.slice(0, toSend);
+            const toSend = Math.min(PRESET_CHUNK.length, totalBytes - sent);
+            const buf = toSend === PRESET_CHUNK.length ? PRESET_CHUNK : PRESET_CHUNK.slice(0, toSend);
             sent += toSend;
             const ok = res.write(buf);
             if (!ok) {

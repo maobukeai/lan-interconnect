@@ -6,9 +6,19 @@ const DIST = path.join(ROOT, 'mobile-dist');
 
 console.log('[Mobile Build] Packaging mobile web distribution to:', DIST);
 
-if (fs.existsSync(DIST)) {
-    fs.rmSync(DIST, { recursive: true, force: true });
+function safeRemove(targetPath) {
+    if (!fs.existsSync(targetPath)) return;
+    try {
+        const stat = fs.lstatSync(targetPath);
+        if (stat.isSymbolicLink()) {
+            fs.unlinkSync(targetPath);
+            return;
+        }
+    } catch (e) {}
+    fs.rmSync(targetPath, { recursive: true, force: true });
 }
+
+safeRemove(DIST);
 fs.mkdirSync(DIST, { recursive: true });
 
 function copyRecursive(src, dest) {

@@ -23,12 +23,22 @@ try {
     records = [];
 }
 
-// 去抖落盘：连续传输（尤其是流式下载切片场景）每 250ms 最多写盘一次
+function safeWriteHistory() {
+    const tmp = HISTORY_FILE + '.tmp';
+    try {
+        fs.writeFileSync(tmp, JSON.stringify(records), 'utf8');
+        fs.renameSync(tmp, HISTORY_FILE);
+    } catch (e) {
+        try { fs.writeFileSync(HISTORY_FILE, JSON.stringify(records), 'utf8'); } catch (e2) {}
+    }
+}
+
+// 去抖落盘：连续传输每 250ms 最多写盘一次
 function persist() {
     if (persistTimer) clearTimeout(persistTimer);
     persistTimer = setTimeout(() => {
         persistTimer = null;
-        try { fs.writeFileSync(HISTORY_FILE, JSON.stringify(records), 'utf8'); } catch (e) {}
+        safeWriteHistory();
     }, 250);
 }
 
@@ -37,7 +47,7 @@ function flushPersist() {
         clearTimeout(persistTimer);
         persistTimer = null;
     }
-    try { fs.writeFileSync(HISTORY_FILE, JSON.stringify(records), 'utf8'); } catch (e) {}
+    safeWriteHistory();
 }
 
 function recordTransfer(kind, { name, size, path: filePath, ip, detail }) {

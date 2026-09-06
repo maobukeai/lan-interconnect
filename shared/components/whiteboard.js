@@ -195,6 +195,13 @@
                 else alert('保存涂鸦失败: ' + err.message);
             }
         }
+        setColor(color) {
+            this.strokeColor = color || '#000000';
+        }
+
+        setLineWidth(w) {
+            this.lineWidth = Math.max(1, Math.min(30, Number(w) || 2));
+        }
     }
 
     let instance = null;
@@ -224,6 +231,16 @@
     Whiteboard.save = function(customPath) {
         const inst = getOrCreateInstance();
         inst.saveImage(customPath);
+    };
+
+    Whiteboard.setColor = function(color) {
+        const inst = getOrCreateInstance();
+        inst.setColor(color);
+    };
+
+    Whiteboard.setLineWidth = function(width) {
+        const inst = getOrCreateInstance();
+        inst.setLineWidth(width);
     };
 
     global.WhiteboardComponent = Whiteboard;

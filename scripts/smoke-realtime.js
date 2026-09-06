@@ -14,7 +14,7 @@ function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function waitPort() {
     for (let i = 0; i < 40; i++) {
-        const m = serverOut.match(/Running on http:\/\/[^:]+:(\d+)/);
+        const m = serverOut.match(/http:\/\/[^:]+:(\d+)/);
         if (m) { PORT = parseInt(m[1], 10); return true; }
         await delay(500);
     }

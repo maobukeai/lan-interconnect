@@ -144,9 +144,77 @@ async function runTests() {
         assert.ok(allData.progressMap[dummyVideo], 'Progress map should contain video entry');
         console.log('Test 7 Passed.');
 
+        // Test 8: Touch Empty File & Device Alias Configuration
+        console.log('Running Test 8: Touch Empty File & Device Alias API...');
+        
+        // 8.1 新建空白文件
+        const res8Touch = await request(`/api/touch?token=${startInfoConflict.token}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dir: testConfig.customDir, name: 'Notes.txt' })
+        });
+        assert.strictEqual(res8Touch.status, 200, 'Touch endpoint should return 200');
+        const touchData = JSON.parse(res8Touch.data);
+        assert.strictEqual(touchData.success, true);
+        const createdFilePath = path.join(testConfig.customDir, 'Notes.txt');
+        assert.ok(fs.existsSync(createdFilePath), 'File Notes.txt should exist on disk');
+
+        // 8.2 重复创建同名文件应拒绝
+        const res8TouchDup = await request(`/api/touch?token=${startInfoConflict.token}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dir: testConfig.customDir, name: 'Notes.txt' })
+        });
+        assert.strictEqual(res8TouchDup.status, 409, 'Duplicate touch should return 409');
+
+        // 8.3 设备别名设置与更新
+        const res8Alias = await request(`/api/devices/alias?token=${startInfoConflict.token}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ip: '192.168.1.88', alias: '我的 MacBook Pro' })
+        });
+        assert.strictEqual(res8Alias.status, 200, 'Device alias POST should return 200');
+        const aliasData = JSON.parse(res8Alias.data);
+        assert.strictEqual(aliasData.success, true);
+        assert.strictEqual(aliasData.alias, '我的 MacBook Pro');
+        console.log('Test 8 Passed.');
+
+        console.log('Running Test 9: Code & Text Instant Editor (/api/read-text & /api/save-text)...');
+        // 9.1 读取刚才创建的 Notes.txt
+        const res9Read = await request(`/api/read-text?path=${encodeURIComponent(createdFilePath)}&token=${startInfoConflict.token}`);
+        assert.strictEqual(res9Read.status, 200, 'read-text should return 200');
+        const readData = JSON.parse(res9Read.data);
+        assert.strictEqual(readData.success, true);
+        assert.strictEqual(readData.content, '');
+
+        // 9.2 保存新文本内容
+        const updatedContent = 'Hello LanDisk Pro!\nconsole.log("Instant Code Studio");';
+        const res9Save = await request(`/api/save-text?token=${startInfoConflict.token}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: createdFilePath, content: updatedContent })
+        });
+        assert.strictEqual(res9Save.status, 200, 'save-text should return 200');
+        const saveData = JSON.parse(res9Save.data);
+        assert.strictEqual(saveData.success, true);
+
+        // 9.3 验证再次读取内容一致
+        const res9Read2 = await request(`/api/read-text?path=${encodeURIComponent(createdFilePath)}&token=${startInfoConflict.token}`);
+        const readData2 = JSON.parse(res9Read2.data);
+        assert.strictEqual(readData2.content, updatedContent);
+
+        // 9.4 非法路径保护拦截
+        const res9SaveForbidden = await request(`/api/save-text?token=${startInfoConflict.token}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: 'C:\\Windows\\System32\\test.txt', content: 'hack' })
+        });
+        assert.strictEqual(res9SaveForbidden.status, 403, 'Saving to protected system dir should return 403');
+        console.log('Test 9 Passed.');
+
         await stopServer();
 
-        console.log('All tests passed successfully (7/7)!');
+        console.log('All tests passed successfully (9/9)!');
     } catch (e) {
         console.error('Test failed:', e);
         process.exit(1);
