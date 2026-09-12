@@ -1,6 +1,6 @@
 {
   "name": "lan-disk",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "猫步互联 - 局域网文件共享与跨设备通信工具",
   "author": "Developer",
   "main": "main.js",
@@ -15,6 +15,7 @@
     "build:tauri": "tauri build",
     "build:android": "node scripts/build-mobile-web.js && npx cap sync android && node scripts/patch-android-java17.js && cd android && gradlew.bat assembleDebug",
     "build:all": "npm run build && npm run build:tauri",
+    "version:set": "node scripts/bump-version.js",
     "rebuild": "electron-rebuild -f -w",
     "clean": "rimraf dist release"
   },
