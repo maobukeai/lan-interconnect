@@ -1,6 +1,6 @@
 {
   "name": "lan-disk",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "description": "猫步互联 - 局域网文件共享与跨设备通信工具",
   "author": "Developer",
   "main": "main.js",
@@ -11,8 +11,10 @@
     "test:all": "node test.js && node test-remote.js && node test-text-renderer.js && node test-study.js && node scripts/smoke-realtime.js",
     "build": "electron-builder --win --x64",
     "build:desktop": "node scripts/build-desktop-web.js",
+    "build:sidecar": "node scripts/build-sidecar.js",
     "build:mobile": "node scripts/build-mobile-web.js",
     "build:tauri": "tauri build",
+    "tauri:dev": "tauri dev",
     "build:android": "node scripts/build-mobile-web.js && npx cap sync android && node scripts/patch-android-java17.js && cd android && gradlew.bat assembleDebug",
     "build:all": "npm run build && npm run build:tauri",
     "version:set": "node scripts/bump-version.js",
@@ -112,9 +114,11 @@
   "devDependencies": {
     "@capacitor/android": "^8.5.0",
     "@capacitor/cli": "^8.5.0",
+    "@tauri-apps/cli": "^2.11.4",
     "electron": "^41.0.3",
     "electron-builder": "^25.1.8",
     "electron-rebuild": "^3.2.9",
+    "esbuild": "^0.28.2",
     "rimraf": "^5.0.0",
     "sharp": "^0.35.4"
   }

@@ -129,13 +129,26 @@ function startServer(config) {
             next();
         });
 
-        const isPackaged = __dirname.includes('app.asar');
-        const publicDir = isPackaged 
-            ? path.join(__dirname.replace('app.asar', 'app.asar.unpacked'), 'public') 
-            : path.join(__dirname, 'public');
-        const sharedDirStatic = isPackaged
-            ? path.join(__dirname.replace('app.asar', 'app.asar.unpacked'), 'shared')
-            : path.join(__dirname, 'shared');
+        function resolveAssetDir(subDir) {
+            const candidates = [
+                path.join(__dirname, subDir),
+                path.join(path.dirname(process.execPath), subDir),
+                path.join(path.dirname(process.execPath), 'resources', subDir),
+                path.join(path.dirname(process.execPath), '_up_', subDir),
+                path.join(path.dirname(process.execPath), '..', '..', subDir),
+                path.join(process.cwd(), subDir),
+            ];
+            if (__dirname.includes('app.asar')) {
+                candidates.unshift(path.join(__dirname.replace('app.asar', 'app.asar.unpacked'), subDir));
+            }
+            for (const c of candidates) {
+                if (fs.existsSync(c)) return c;
+            }
+            return path.join(__dirname, subDir);
+        }
+
+        const publicDir = resolveAssetDir('public');
+        const sharedDirStatic = resolveAssetDir('shared');
             
         // 主页禁止缓存（原先写在挂载于 /api 的 checkAuth 里，req.path 永远匹配不到根路径，从未生效）
         app.use((req, res, next) => {
@@ -313,12 +326,14 @@ function startServer(config) {
                 }
 
                 console.log(`[Node Server] 服务已在 http://${ip}:${currentPort} 成功启动 (绑定: ${bindHost})`);
-                resolve({
+                const readyPayload = {
                     ip,
                     port: currentPort,
                     token,
                     fallbackFromPort: currentPort !== preferredPort ? preferredPort : null
-                });
+                };
+                console.log(`[LAN_DISK_READY]${JSON.stringify(readyPayload)}`);
+                resolve(readyPayload);
             });
 
             server.listen(currentPort, bindHost);
@@ -370,11 +385,60 @@ function stopServer() {
     });
 }
 
-if (require.main === module) {
-    startServer({}).then(({ ip, port }) => {
+function parseArgs() {
+    const args = process.argv.slice(1);
+    const config = {};
+    for (let i = 0; i < args.length; i++) {
+        const arg = args[i];
+        if (arg === '--port' && args[i + 1]) {
+            config.port = parseInt(args[++i], 10);
+        } else if (arg === '--pin' && args[i + 1]) {
+            config.pin = args[++i];
+        } else if (arg === '--mode' && args[i + 1]) {
+            config.mode = args[++i];
+        } else if (arg === '--custom-dir' && args[i + 1]) {
+            config.customDir = args[++i];
+        } else if (arg === '--bind-ip' && args[i + 1]) {
+            config.bindIp = args[++i];
+        }
+    }
+    return config;
+}
+
+let isSea = false;
+try {
+    isSea = require('node:sea').isSea();
+} catch (e) {}
+
+const isMain = Boolean(
+    require.main === module ||
+    isSea ||
+    process.env.LAN_DISK_STANDALONE === 'true' ||
+    (process.argv[0] && process.argv[0].includes('lan-disk-server')) ||
+    (process.argv[1] && (process.argv[1].includes('lan-disk-server') || process.argv[1].includes('server.bundle.js')))
+);
+
+if (isMain) {
+    process.stdout.on('error', (err) => {
+        if (err.code === 'EPIPE') process.exit(0);
+    });
+    process.stderr.on('error', (err) => {
+        if (err.code === 'EPIPE') process.exit(0);
+    });
+    process.on('SIGTERM', async () => {
+        try { await stopServer(); } catch (e) {}
+        process.exit(0);
+    });
+    process.on('SIGINT', async () => {
+        try { await stopServer(); } catch (e) {}
+        process.exit(0);
+    });
+
+    startServer(parseArgs()).then(({ ip, port }) => {
         console.log(`[Node Server] Running on http://${ip}:${port}`);
     }).catch(err => {
         console.error('[Node Server] Failed to start:', err);
+        process.exit(1);
     });
 }
 

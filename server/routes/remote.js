@@ -14,10 +14,31 @@ try {
     }
 } catch (e) {}
 
-const isPackaged = __dirname.includes('app.asar');
-const psScriptPath = isPackaged
-    ? path.join(__dirname.replace('app.asar', 'app.asar.unpacked'), '..', 'services', 'system-control.ps1')
-    : path.join(__dirname, '..', 'services', 'system-control.ps1');
+function resolvePsScript() {
+    const candidates = [
+        path.join(__dirname, '..', 'services', 'system-control.ps1'),
+        path.join(__dirname, 'services', 'system-control.ps1'),
+        path.join(path.dirname(process.execPath), 'services', 'system-control.ps1'),
+        path.join(path.dirname(process.execPath), 'binaries', 'system-control.ps1'),
+        path.join(path.dirname(process.execPath), 'resources', 'binaries', 'system-control.ps1'),
+        path.join(path.dirname(process.execPath), 'resources', 'system-control.ps1'),
+        path.join(path.dirname(process.execPath), '_up_', 'server', 'services', 'system-control.ps1'),
+        path.join(path.dirname(process.execPath), 'system-control.ps1'),
+        path.join(process.cwd(), 'server', 'services', 'system-control.ps1'),
+        path.join(process.cwd(), 'src-tauri', 'binaries', 'system-control.ps1'),
+        path.join(path.dirname(process.execPath), '..', '..', 'server', 'services', 'system-control.ps1'),
+    ];
+    if (__dirname.includes('app.asar')) {
+        candidates.unshift(path.join(__dirname.replace('app.asar', 'app.asar.unpacked'), '..', 'services', 'system-control.ps1'));
+        candidates.unshift(path.join(__dirname.replace('app.asar', 'app.asar.unpacked'), 'services', 'system-control.ps1'));
+    }
+    for (const c of candidates) {
+        if (fs.existsSync(c)) return c;
+    }
+    return path.join(__dirname, '..', 'services', 'system-control.ps1');
+}
+
+const psScriptPath = resolvePsScript();
 
 // 音量与屏幕信息简易缓存，减少频繁轮询开销
 let volumeCache = { value: null, at: 0 };

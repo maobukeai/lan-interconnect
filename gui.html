@@ -868,15 +868,22 @@
             if (closeBtn && !closeBtn._directAttached) {
                 closeBtn._directAttached = true;
                 closeBtn.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    if (typeof window.LanDiskIPC !== 'undefined' && window.LanDiskIPC.close) {
-                        window.LanDiskIPC.close();
-                    } else if (window.api && window.api.closeWindow) {
-                        window.api.closeWindow();
-                    } else if (window.api && window.api.invoke) {
-                        window.api.invoke('close-window');
+                    if (e.defaultPrevented) return;
+                }, false);
+            }
+
+            const titlebar = document.querySelector('.app-titlebar');
+            if (titlebar && !titlebar._tauriAttached) {
+                titlebar._tauriAttached = true;
+                titlebar.setAttribute('data-tauri-drag-region', '');
+                titlebar.addEventListener('mousedown', function(e) {
+                    if (e.target.closest('button, input, a, .titlebar-actions, .ap-mini-player, .win-controls')) return;
+                    if (window.api && window.api.startDragging) {
+                        try { window.api.startDragging(); } catch (err) {}
+                    } else if (window.__TAURI__ && window.__TAURI__.window) {
+                        try { window.__TAURI__.window.getCurrentWindow().startDragging(); } catch (err) {}
                     }
-                }, true);
+                });
             }
         }
         if (document.readyState === 'loading') {

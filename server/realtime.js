@@ -10,6 +10,7 @@
  * 鉴权：upgrade 时 query 传 pin 或 token，校验逻辑与 HTTP 侧 checkRemoteControl 同标准；
  * 免密模式下放行局域网与 Tailscale 私有网段，与宽松版远程控制安全模型一致。
  */
+const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
@@ -19,10 +20,31 @@ const { isAllowedApiOrigin, isLocalRequest } = require('./middleware/auth');
 
 const WS_PATH = '/api/remote/ws';
 
-const isPackaged = __dirname.includes('app.asar');
-const psScriptPath = isPackaged
-    ? path.join(__dirname.replace('app.asar', 'app.asar.unpacked'), 'services', 'system-control.ps1')
-    : path.join(__dirname, 'services', 'system-control.ps1');
+function resolvePsScript() {
+    const candidates = [
+        path.join(__dirname, 'services', 'system-control.ps1'),
+        path.join(__dirname, '..', 'services', 'system-control.ps1'),
+        path.join(path.dirname(process.execPath), 'services', 'system-control.ps1'),
+        path.join(path.dirname(process.execPath), 'binaries', 'system-control.ps1'),
+        path.join(path.dirname(process.execPath), 'resources', 'binaries', 'system-control.ps1'),
+        path.join(path.dirname(process.execPath), 'resources', 'system-control.ps1'),
+        path.join(path.dirname(process.execPath), '_up_', 'server', 'services', 'system-control.ps1'),
+        path.join(path.dirname(process.execPath), 'system-control.ps1'),
+        path.join(process.cwd(), 'server', 'services', 'system-control.ps1'),
+        path.join(process.cwd(), 'src-tauri', 'binaries', 'system-control.ps1'),
+        path.join(path.dirname(process.execPath), '..', '..', 'server', 'services', 'system-control.ps1'),
+    ];
+    if (__dirname.includes('app.asar')) {
+        candidates.unshift(path.join(__dirname.replace('app.asar', 'app.asar.unpacked'), 'services', 'system-control.ps1'));
+        candidates.unshift(path.join(__dirname.replace('app.asar', 'app.asar.unpacked'), '..', 'services', 'system-control.ps1'));
+    }
+    for (const c of candidates) {
+        if (fs.existsSync(c)) return c;
+    }
+    return path.join(__dirname, 'services', 'system-control.ps1');
+}
+
+const psScriptPath = resolvePsScript();
 
 function safeEqual(a, b) {
     const bufA = Buffer.from(String(a));

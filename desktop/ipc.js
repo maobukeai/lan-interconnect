@@ -8,8 +8,63 @@
     'use strict';
 
     // 支持 Electron 与 Tauri 双环境桥接
-    if (typeof window !== 'undefined' && !window.api && window.__TAURI__) {
-        const { invoke } = window.__TAURI__.core;
+    if (typeof window !== 'undefined' && !window.api && (window.__TAURI__ || window.__TAURI_INTERNALS__)) {
+        const invoke = (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke)
+            || (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke);
+
+        const channelToCommand = {
+            'start-server': 'start_server',
+            'stop-server': 'stop_server',
+            'get-server-status': 'get_server_status',
+            'select-folder': 'select_folder',
+            'open-path': 'open_path',
+            'open-root': 'open_root',
+            'open-url': 'open_url',
+            'open-firewall': 'open_firewall',
+            'get-sys-info': 'get_sys_info',
+            'get-network-info': 'get_network_info',
+            'get-home-dir': 'get_home_dir',
+            'schedule-shutdown': 'schedule_shutdown',
+            'get-autostart': 'get_autostart',
+            'set-autostart': 'set_autostart',
+            'minimize-window': 'minimize_window',
+            'maximize-window': 'maximize_window',
+            'start-dragging': 'start_dragging',
+            'close-window': 'close_window',
+            'hide-window': 'hide_window',
+            'quit-app': 'quit_app',
+            'open-dev-tools': 'open_dev_tools'
+        };
+
+        const windowStateListeners = [];
+        const emitWindowState = (st) => {
+            windowStateListeners.forEach(cb => { try { cb(st); } catch (e) {} });
+        };
+
+        window.addEventListener('resize', () => {
+            if (typeof window.isMaximized !== 'undefined') {
+                const isMax = window.innerWidth >= screen.availWidth - 20 && window.innerHeight >= screen.availHeight - 60;
+                if (isMax !== window.isMaximized) {
+                    window.isMaximized = isMax;
+                    emitWindowState({ maximized: isMax });
+                }
+            }
+        });
+
+        const genericInvoke = async (channel, data) => {
+            const cmd = channelToCommand[channel] || channel;
+            try {
+                if (channel === 'start-server') return await invoke('start_server', { cfg: data });
+                if (channel === 'open-path') return await invoke('open_path', { path: data });
+                if (channel === 'open-url') return await invoke('open_url', { url: data });
+                if (channel === 'set-autostart') return await invoke('set_autostart', { enable: !!data });
+                if (channel === 'schedule-shutdown') return await invoke('schedule_shutdown', { minutes: data });
+                return await invoke(cmd, data ? { data } : undefined);
+            } catch (e) {
+                return { success: false, error: String(e) };
+            }
+        };
+
         window.api = {
             startServer: async (cfg) => {
                 try {
@@ -24,6 +79,161 @@
                 } catch (e) {
                     return { success: false, error: String(e) };
                 }
+            },
+            getServerStatus: async () => {
+                try {
+                    return await invoke('get_server_status');
+                } catch (e) {
+                    return { running: false };
+                }
+            },
+            selectFolder: async () => {
+                try {
+                    return await invoke('select_folder');
+                } catch (e) {
+                    return null;
+                }
+            },
+            openPath: async (p) => {
+                try {
+                    return await invoke('open_path', { path: p });
+                } catch (e) {
+                    return { success: false, error: String(e) };
+                }
+            },
+            openRoot: async () => {
+                try {
+                    return await invoke('open_root');
+                } catch (e) {
+                    return { success: false, error: String(e) };
+                }
+            },
+            openUrl: async (url) => {
+                try {
+                    return await invoke('open_url', { url });
+                } catch (e) {
+                    window.open(url, '_blank');
+                    return { success: true };
+                }
+            },
+            openFirewall: async () => {
+                try {
+                    return await invoke('open_firewall');
+                } catch (e) {
+                    return { success: false, error: String(e) };
+                }
+            },
+            getSysInfo: async () => {
+                try {
+                    return await invoke('get_sys_info');
+                } catch (e) {
+                    return null;
+                }
+            },
+            getNetworkInfo: async () => {
+                try {
+                    return await invoke('get_network_info');
+                } catch (e) {
+                    return [];
+                }
+            },
+            getHomeDir: async () => {
+                try {
+                    return await invoke('get_home_dir');
+                } catch (e) {
+                    return 'C:\\';
+                }
+            },
+            getAutostart: async () => {
+                try {
+                    return await invoke('get_autostart');
+                } catch (e) {
+                    return false;
+                }
+            },
+            setAutostart: async (enable) => {
+                try {
+                    return await invoke('set_autostart', { enable: !!enable });
+                } catch (e) {
+                    return { success: false, error: String(e) };
+                }
+            },
+            toggleAutostart: async (enable) => {
+                try {
+                    return await invoke('set_autostart', { enable: !!enable });
+                } catch (e) {
+                    return { success: false, error: String(e) };
+                }
+            },
+            scheduleShutdown: async (minutes) => {
+                try {
+                    return await invoke('schedule_shutdown', { minutes });
+                } catch (e) {
+                    return { success: false, message: String(e) };
+                }
+            },
+            minimizeWindow: async () => {
+                try {
+                    return await invoke('minimize_window');
+                } catch (e) {
+                    return { success: false };
+                }
+            },
+            maximizeWindow: async () => {
+                try {
+                    const isMax = await invoke('maximize_window');
+                    window.isMaximized = isMax;
+                    emitWindowState({ maximized: isMax });
+                    return { success: true, maximized: isMax };
+                } catch (e) {
+                    return { success: false };
+                }
+            },
+            startDragging: async () => {
+                try {
+                    return await invoke('start_dragging');
+                } catch (e) {
+                    return null;
+                }
+            },
+            closeWindow: async () => {
+                try {
+                    return await invoke('close_window');
+                } catch (e) {
+                    return { success: false };
+                }
+            },
+            hideWindow: async () => {
+                try {
+                    return await invoke('hide_window');
+                } catch (e) {
+                    return { success: false };
+                }
+            },
+            quitApp: async () => {
+                try {
+                    return await invoke('quit_app');
+                } catch (e) {
+                    return { success: false };
+                }
+            },
+            openDevTools: async () => {
+                try {
+                    return await invoke('open_dev_tools');
+                } catch (e) {
+                    return { success: false };
+                }
+            },
+            invoke: genericInvoke,
+            on: (channel, callback) => {
+                if (channel === 'window-state-changed') {
+                    windowStateListeners.push(callback);
+                    return () => {
+                        const idx = windowStateListeners.indexOf(callback);
+                        if (idx >= 0) windowStateListeners.splice(idx, 1);
+                    };
+                }
+                return () => {};
             }
         };
     }
@@ -108,9 +318,20 @@
         state.running = true;
         state.url = res.url;
         state.token = res.token;
-        state.qrDataUrl = res.qrDataUrl;
+        state.qrDataUrl = res.qrDataUrl || '';
         state.port = actualPort;
         try { localStorage.setItem('lan_disk_qr_token', res.token); } catch (e) {}
+
+        if (!state.qrDataUrl && state.url) {
+            try {
+                const probeRes = await fetch(`${state.url}/api/control/status`);
+                if (probeRes.ok) {
+                    const d = await probeRes.json();
+                    if (d.qrDataUrl) state.qrDataUrl = d.qrDataUrl;
+                    if (d.qrUrl) state.qrUrl = d.qrUrl;
+                }
+            } catch (e) {}
+        }
         
         if (res.fallbackFromPort && res.fallbackFromPort !== actualPort) {
             addLog(`端口 ${res.fallbackFromPort} 已被占用，已自动切换至空闲端口 ${actualPort} 成功启动`, 'warn');

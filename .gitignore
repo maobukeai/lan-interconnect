@@ -11,6 +11,8 @@ release/
 build/
 mobile-dist/
 desktop-dist/
+dist-server/
+src-tauri/binaries/
 *.exe
 *.apk
 *.aar

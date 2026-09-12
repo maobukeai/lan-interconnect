@@ -18,6 +18,20 @@ function get7zaPath() {
         const unpacked = p.replace('app.asar', 'app.asar.unpacked');
         if (fs.existsSync(unpacked)) return unpacked;
     }
+    if (p && fs.existsSync(p)) return p;
+
+    // 备选路径：生产 Sidecar 部署、Tauri 资源目录或相对 node_modules
+    const candidates = [
+        path.join(path.dirname(process.execPath), '7za.exe'),
+        path.join(path.dirname(process.execPath), 'binaries', '7za.exe'),
+        path.join(path.dirname(process.execPath), 'resources', '7za.exe'),
+        path.join(process.cwd(), 'src-tauri', 'binaries', '7za.exe'),
+        path.join(process.cwd(), 'node_modules', '7zip-bin', 'win', 'x64', '7za.exe'),
+        path.join(__dirname, '..', '..', 'node_modules', '7zip-bin', 'win', 'x64', '7za.exe')
+    ];
+    for (const c of candidates) {
+        if (fs.existsSync(c)) return c;
+    }
     return p;
 }
 
