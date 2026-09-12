@@ -1,0 +1,232 @@
+name: 🚀 Multi-Platform Cloud Build & Release (多端云端自动打包与发布)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag Name (e.g. v2.0.1)'
+        required: true
+        default: 'v2.0.1'
+
+permissions:
+  contents: write
+
+jobs:
+  # -------------------------------------------------------------
+  # Job 1: Build Windows Binaries (Electron + Tauri) & Run Tests
+  # -------------------------------------------------------------
+  build-windows:
+    name: 🪟 Build Windows Packages (Electron & Tauri)
+    runs-on: windows-latest
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 🦀 Setup Rust Toolchain for Tauri
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: 📦 Install Node Dependencies
+        run: npm ci || npm install
+
+      - name: 🧪 Run Physical Tests Suite
+        run: npm test
+
+      - name: 🛠️ Extract Version Number
+        id: get_version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            RAW_TAG="${{ github.event.inputs.tag_name }}"
+          else
+            RAW_TAG="${{ github.ref_name }}"
+          fi
+          VERSION="${RAW_TAG#v}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "TAG_NAME=$RAW_TAG" >> $GITHUB_ENV
+          echo "Version is $VERSION, Tag is $RAW_TAG"
+
+      - name: ⚙️ Sync Version Across Projects
+        run: node scripts/bump-version.js ${{ env.VERSION }}
+
+      - name: 📦 Build Desktop Web Bundle
+        run: node scripts/build-desktop-web.js
+
+      - name: 🦀 Build Tauri Application (x64)
+        run: npx @tauri-apps/cli build
+
+      - name: ⚡ Build Electron Application (x64)
+        run: npm run build
+
+      - name: 📁 Prepare Windows Release Artifacts
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path .\dist_output
+          $v = $env:VERSION
+
+          # 1. Electron 安装版与单文件
+          Copy-Item -Force ".\release\猫步互联 Pro Setup $v.exe" ".\dist_output\LanDisk-Pro-$v-Setup.exe"
+          Copy-Item -Force ".\release\猫步互联 Pro $v.exe" ".\dist_output\LanDisk-Pro-$v-Single-Portable.exe"
+
+          # 2. Tauri 极轻单文件与安装包
+          Copy-Item -Force ".\src-tauri\target\release\lan-disk.exe" ".\dist_output\LanDisk-Pro-$v-Tauri-Portable.exe"
+          Copy-Item -Force ".\src-tauri\target\release\bundle\nsis\猫步互联 Pro_${v}_x64-setup.exe" ".\dist_output\LanDisk-Pro-$v-Tauri-Setup.exe"
+
+          # 3. 免安装绿色压缩包
+          Compress-Archive -Path ".\release\win-unpacked\*" -DestinationPath ".\dist_output\LanDisk-Pro-$v-Green-Portable.zip" -Force
+
+          Get-Item .\dist_output\* | Select-Object Name, Length
+
+      - name: 📤 Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-binaries
+          path: dist_output/*
+          if-no-files-found: error
+
+  # -------------------------------------------------------------
+  # Job 2: Build Android Native APK
+  # -------------------------------------------------------------
+  build-android:
+    name: 📱 Build Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: ☕ Setup Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: 📱 Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: 📦 Install Node Dependencies
+        run: npm ci || npm install
+
+      - name: 🛠️ Extract Version Number
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            RAW_TAG="${{ github.event.inputs.tag_name }}"
+          else
+            RAW_TAG="${{ github.ref_name }}"
+          fi
+          VERSION="${RAW_TAG#v}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "TAG_NAME=$RAW_TAG" >> $GITHUB_ENV
+          echo "Version is $VERSION, Tag is $RAW_TAG"
+
+      - name: ⚙️ Sync Version Across Projects
+        run: node scripts/bump-version.js ${{ env.VERSION }}
+
+      - name: 📦 Build Mobile Web Bundle
+        run: node scripts/build-mobile-web.js
+
+      - name: 🔄 Sync Capacitor Android
+        run: npx cap sync android
+
+      - name: 🔨 Compile Android APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: 📁 Prepare Android Release Artifact
+        run: |
+          mkdir -p dist_output
+          cp android/app/build/outputs/apk/debug/app-debug.apk "dist_output/LanDisk-Pro-${{ env.VERSION }}.apk"
+          ls -la dist_output/
+
+      - name: 📤 Upload Android Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-binaries
+          path: dist_output/*
+          if-no-files-found: error
+
+  # -------------------------------------------------------------
+  # Job 3: Publish GitHub Release with All 6 Artifacts
+  # -------------------------------------------------------------
+  publish-release:
+    name: 🚀 Publish GitHub Release
+    needs: [build-windows, build-android]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🛠️ Extract Version & Tag
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            RAW_TAG="${{ github.event.inputs.tag_name }}"
+          else
+            RAW_TAG="${{ github.ref_name }}"
+          fi
+          VERSION="${RAW_TAG#v}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "TAG_NAME=$RAW_TAG" >> $GITHUB_ENV
+
+      - name: 📥 Download Windows Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-binaries
+          path: release_assets
+
+      - name: 📥 Download Android Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: android-binaries
+          path: release_assets
+
+      - name: 🔍 Inspect Collected Release Assets
+        run: |
+          echo "=== Collected Release Assets for ${{ env.TAG_NAME }} ==="
+          ls -lh release_assets/
+
+      - name: 🚀 Create / Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          name: "猫步互联 Pro ${{ env.TAG_NAME }} - 全矩阵云端自动打包发布"
+          draft: false
+          prerelease: false
+          files: |
+            release_assets/LanDisk-Pro-${{ env.VERSION }}-Setup.exe
+            release_assets/LanDisk-Pro-${{ env.VERSION }}-Green-Portable.zip
+            release_assets/LanDisk-Pro-${{ env.VERSION }}-Single-Portable.exe
+            release_assets/LanDisk-Pro-${{ env.VERSION }}-Tauri-Portable.exe
+            release_assets/LanDisk-Pro-${{ env.VERSION }}-Tauri-Setup.exe
+            release_assets/LanDisk-Pro-${{ env.VERSION }}.apk
+          body: |
+            ### 🚀 猫步互联 Pro ${{ env.TAG_NAME }} 重磅发布说明
+
+            本版本通过 **GitHub Actions 云端虚拟机（Windows + Ubuntu）** 自动化测试并完成全矩阵多平台编译与构建：
+
+            #### ✨ 版本特性：
+            1. 📺 **DLNA 无线大屏投屏**：局域网视频与媒体内容一键无线投屏至智能电视/电视盒子；
+            2. 📚 **智能学习计划与专注打卡**：课时智能扫描、进度跟踪、连续连胜天数与实操任务清单；
+            3. ⚡ **多线程分块并发传输**：独立 Worker 并发上传与极速目录缓存，大文件传输更稳定；
+            4. 📱 **双轨沉浸体验**：Android 原生硬件级全屏 + 手机 Web 纯净沉浸全屏；
+            5. 🛠️ **全矩阵双轨构建更新**：包含 Android 原生 APK (6.8MB)、Windows 极速安装版、绿色单文件与 Tauri 极轻版 (8.7MB)。
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
