@@ -70,23 +70,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 📁 Prepare Windows Release Artifacts
-        shell: powershell
-        run: |
-          New-Item -ItemType Directory -Force -Path .\dist_output
-          $v = $env:VERSION
-
-          # 1. Electron 安装版与单文件
-          Copy-Item -Force ".\release\猫步互联 Pro Setup $v.exe" ".\dist_output\LanDisk-Pro-$v-Setup.exe"
-          Copy-Item -Force ".\release\猫步互联 Pro $v.exe" ".\dist_output\LanDisk-Pro-$v-Single-Portable.exe"
-
-          # 2. Tauri 极轻单文件与安装包
-          Copy-Item -Force ".\src-tauri\target\release\lan-disk.exe" ".\dist_output\LanDisk-Pro-$v-Tauri-Portable.exe"
-          Copy-Item -Force ".\src-tauri\target\release\bundle\nsis\猫步互联 Pro_${v}_x64-setup.exe" ".\dist_output\LanDisk-Pro-$v-Tauri-Setup.exe"
-
-          # 3. 免安装绿色压缩包
-          Compress-Archive -Path ".\release\win-unpacked\*" -DestinationPath ".\dist_output\LanDisk-Pro-$v-Green-Portable.zip" -Force
-
-          Get-Item .\dist_output\* | Select-Object Name, Length
+        run: node scripts/prepare-windows-artifacts.js ${{ env.VERSION }}
 
       - name: 📤 Upload Windows Artifacts
         uses: actions/upload-artifact@v4
