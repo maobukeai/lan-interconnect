@@ -65,7 +65,9 @@ jobs:
         run: npx @tauri-apps/cli build
 
       - name: ⚡ Build Electron Application (x64)
-        run: npm run build
+        run: npx electron-builder --win --x64 --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 📁 Prepare Windows Release Artifacts
         shell: powershell
