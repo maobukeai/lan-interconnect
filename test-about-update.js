@@ -116,6 +116,11 @@ async function run() {
 
     // --- 2. 验证 desktop-dist 构建产物 ---
     console.log('\n--- 2. 验证 desktop-dist 构建产物 ---');
+    const distDir = path.join(__dirname, 'desktop-dist');
+    if (!fs.existsSync(distDir)) {
+        const { execSync } = require('child_process');
+        execSync('node scripts/build-desktop-web.js', { cwd: __dirname, stdio: 'pipe' });
+    }
     const distVersionJson = path.join(__dirname, 'desktop-dist', 'version.json');
     assert(fs.existsSync(distVersionJson), 'desktop-dist/version.json 存在');
     const distContactQr = path.join(__dirname, 'desktop-dist', 'shared', 'assets', 'contact_qr.webp');
