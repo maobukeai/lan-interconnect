@@ -168,11 +168,36 @@
     let isChecking = false;
     let progressTimer = null;
 
+    function formatReleaseNotes(notes) {
+        if (!notes) return '<div style="color:var(--apple-text-secondary); font-size:12px; line-height:1.5;">包含最新性能优化与问题修复，建议立即升级以获得最佳体验。</div>';
+        const lines = String(notes).split('\n').map(l => l.trim()).filter(Boolean);
+        let html = '';
+        lines.forEach(line => {
+            const numMatch = line.match(/^(\d+)[\.、\s](.+)$/);
+            if (numMatch) {
+                html += `
+                    <div class="update-log-item">
+                        <span class="update-log-num">${escapeHtml(numMatch[1])}</span>
+                        <span style="font-size:12px; color:var(--apple-text-main); flex:1;">${escapeHtml(numMatch[2])}</span>
+                    </div>
+                `;
+            } else {
+                html += `
+                    <div class="update-log-item">
+                        <span style="color:var(--apple-system-blue); font-size:13px; line-height:1; margin-top:3px; flex-shrink:0;">•</span>
+                        <span style="font-size:12px; color:var(--apple-text-main); flex:1;">${escapeHtml(line)}</span>
+                    </div>
+                `;
+            }
+        });
+        return html;
+    }
+
     /* ---------- AboutPanelComponent ---------- */
     const AboutPanelComponent = {
         appInfo: {
             name: '猫步互联 Pro',
-            version: '2.3.1',
+            version: '2.3.2',
             author: '猫步可爱 (maobukeai)',
             releaseDate: '2026-09-13',
             releaseNotes: '1. 新增关于页面与技术架构全景展示；\n2. 软件内免限流 CDN 自动检查更新与静默升级；\n3. 新增独立更新模态提醒弹窗与作者互动支持。',
@@ -867,7 +892,7 @@
                             <span class="apple-badge apple-badge-info apple-badge-sm">v${escapeHtml(l.version)}</span>
                         </div>
                         ${l.release_date ? `<div class="subtle" style="font-size:10.5px;">发布日期：${escapeHtml(l.release_date.slice(0, 10))}</div>` : ''}
-                        ${l.release_notes ? `<div style="background:var(--mat-ultrathin); border:1px solid var(--apple-border); border-radius:8px; padding:8px 10px; font-size:11px; color:var(--apple-text-secondary); line-height:1.5; white-space:pre-line; max-height:90px; overflow-y:auto;">${escapeHtml(l.release_notes)}</div>` : ''}
+                        ${l.release_notes ? `<div style="background:var(--mat-ultrathin); border:1px solid var(--apple-border); border-radius:10px; padding:10px 12px; max-height:120px; overflow-y:auto; scrollbar-width:thin;">${formatReleaseNotes(l.release_notes)}</div>` : ''}
 
                         <!-- 进度条挂载容器 -->
                         <div id="about-inline-progress-box" style="display:none;"></div>
@@ -1078,71 +1103,85 @@
                 try { this.activeModal.close(); } catch (e) {}
             }
 
-            const currentVer = (AboutPanelComponent.appInfo && AboutPanelComponent.appInfo.version) || '2.3.1';
+            const currentVer = (AboutPanelComponent.appInfo && AboutPanelComponent.appInfo.version) || '2.3.2';
             let isSilent = localStorage.getItem('landisk_auto_silent_update') === 'true';
 
             const modal = UI.openModal(`
-                <div class="update-modal-dialog" style="display:flex; flex-direction:column; gap:16px;">
+                <div class="update-modal-dialog" style="display:flex; flex-direction:column; gap:16px; user-select:none;">
                     <!-- 模态顶部 -->
                     <div style="display:flex; align-items:flex-start; gap:14px;">
-                        <div style="width:48px; height:48px; border-radius:14px; background:linear-gradient(135deg, rgba(0,122,255,0.2), rgba(88,86,214,0.2)); border:1px solid rgba(0,122,255,0.3); display:grid; place-items:center; font-size:22px; flex-shrink:0;">
+                        <div style="position:relative; width:52px; height:52px; border-radius:16px; background:linear-gradient(135deg, rgba(0,122,255,0.22), rgba(88,86,214,0.26)); border:1px solid rgba(0,122,255,0.38); display:grid; place-items:center; font-size:26px; flex-shrink:0; box-shadow:0 8px 24px rgba(0,122,255,0.18);">
                             🚀
+                            <span style="position:absolute; bottom:-2px; right:-2px; width:12px; height:12px; border-radius:50%; background:#30d158; border:2px solid var(--apple-bg-card, #fff); box-shadow:0 0 8px rgba(48,209,88,0.6);"></span>
                         </div>
                         <div style="flex:1; min-width:0;">
                             <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                                <h3 style="margin:0; font-size:16px; font-weight:700; letter-spacing:-0.02em; color:var(--apple-text-main);">发现新版本可用</h3>
-                                <span class="apple-badge apple-badge-info" style="font-size:11.5px; font-weight:700; font-family:ui-monospace,Consolas,monospace;">v${escapeHtml(latestInfo.version)}</span>
+                                <h3 style="margin:0; font-size:17px; font-weight:700; letter-spacing:-0.02em; color:var(--apple-text-main);">发现新版本可用</h3>
+                                <span class="apple-badge apple-badge-info" style="font-size:11.5px; font-weight:700; font-family:ui-monospace,Consolas,monospace; padding:2px 8px; border-radius:6px;">v${escapeHtml(latestInfo.version)}</span>
                             </div>
-                            <div style="font-size:12px; color:var(--apple-text-secondary); margin-top:3px;">
-                                当前版本: v${escapeHtml(currentVer)} ${latestInfo.release_date ? '· 发布于 ' + escapeHtml(latestInfo.release_date.slice(0, 10)) : ''}
+                            <div style="font-size:12px; color:var(--apple-text-secondary); margin-top:4px; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                                <span>当前版本: <b class="mono" style="color:var(--apple-text-main); font-weight:600;">v${escapeHtml(currentVer)}</b></span>
+                                ${latestInfo.release_date ? `<span>·</span><span>发布于 ${escapeHtml(latestInfo.release_date.slice(0, 10))}</span>` : ''}
                             </div>
                         </div>
                     </div>
 
-                    <!-- 更新日志说明 -->
-                    <div style="background:var(--mat-ultrathin); border:1px solid var(--apple-border); border-radius:12px; padding:12px 14px; max-height:160px; overflow-y:auto;">
-                        <div style="font-size:11.5px; font-weight:700; color:var(--apple-text-secondary); margin-bottom:6px; display:flex; align-items:center; gap:5px;">
-                            ${I('sparkles', 13)} 新版特性与更新说明
+                    <!-- 更新日志说明（结构化美化，自适应呼吸空间，绝不截断） -->
+                    <div style="background:var(--mat-ultrathin); border:1px solid var(--apple-border); border-radius:14px; padding:12px 14px; max-height:175px; overflow-y:auto; scrollbar-width:thin;">
+                        <div style="font-size:11.5px; font-weight:700; color:var(--apple-text-secondary); margin-bottom:10px; display:flex; align-items:center; gap:6px;">
+                            <span style="color:var(--apple-system-blue);">${I('sparkles', 13)}</span>
+                            <span>新版特性与重要更新</span>
                         </div>
-                        <div style="font-size:12px; color:var(--apple-text-main); line-height:1.6; white-space:pre-line;">
-                            ${escapeHtml(latestInfo.release_notes || '包含最新性能优化与问题修复，建议立即升级以获得最佳体验。')}
+                        <div class="update-notes-content" style="user-select:text;">
+                            ${formatReleaseNotes(latestInfo.release_notes)}
                         </div>
                     </div>
 
                     <!-- 静默升级选项 -->
-                    <div class="row-between" style="background:var(--mat-thin); border:1px solid var(--apple-border); border-radius:10px; padding:8px 12px;">
-                        <div>
-                            <div style="font-size:12px; font-weight:600; color:var(--apple-text-main);">全自动静默无感升级</div>
-                            <div style="font-size:10.5px; color:var(--apple-text-subtle);">免手动点击下一步，全自动覆盖并启动</div>
+                    <div class="row-between" style="background:var(--mat-thin); border:1px solid var(--apple-border); border-radius:12px; padding:10px 14px; gap:12px;">
+                        <div style="flex:1; min-width:0;">
+                            <div style="font-size:12.5px; font-weight:600; color:var(--apple-text-main);">全自动静默无感升级 (推荐)</div>
+                            <div style="font-size:11px; color:var(--apple-text-subtle); margin-top:2px;">下载完成后后台全自动平滑覆盖并重启，免除繁琐点击</div>
                         </div>
-                        <label class="apple-switch"><input type="checkbox" id="modal-toggle-silent" ${isSilent ? 'checked' : ''}><span class="apple-slider"></span></label>
+                        <label class="apple-switch" style="flex-shrink:0;"><input type="checkbox" id="modal-toggle-silent" ${isSilent ? 'checked' : ''}><span class="apple-slider"></span></label>
                     </div>
 
-                    <!-- 动态下载进度容器 -->
+                    <!-- 动态下载进度与状态提示容器 -->
                     <div id="modal-update-progress-wrap" style="display:none;">
-                        <div style="background:var(--mat-ultrathin); border:1px solid var(--apple-border); border-radius:10px; padding:10px 12px; display:flex; flex-direction:column; gap:6px;">
-                            <div class="row-between" style="font-size:11.5px;">
-                                <span id="modal-p-stage" style="color:var(--apple-system-blue); font-weight:600;">正在下载安装程序…</span>
-                                <span id="modal-p-percent" class="mono" style="font-weight:700;">0%</span>
+                        <div style="background:var(--mat-ultrathin); border:1px solid var(--apple-border); border-radius:12px; padding:12px 14px; display:flex; flex-direction:column; gap:8px;">
+                            <div class="row-between" style="font-size:12px;">
+                                <span id="modal-p-stage" style="color:var(--apple-system-blue); font-weight:600; display:flex; align-items:center; gap:6px;">
+                                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#007aff;"></span>
+                                    正在下载新版本安装包…
+                                </span>
+                                <span id="modal-p-percent" class="mono" style="font-weight:700; color:var(--apple-system-blue);">0%</span>
                             </div>
-                            <div class="apple-progress-track" style="height:7px;">
-                                <div class="apple-progress-fill" id="modal-p-bar" style="width:0%; background:linear-gradient(90deg, #007aff, #5856d6);"></div>
+                            <div class="apple-progress-track" style="height:7px; border-radius:999px; overflow:hidden; background:rgba(0,122,255,0.12);">
+                                <div class="apple-progress-fill" id="modal-p-bar" style="width:0%; height:100%; border-radius:999px; background:linear-gradient(90deg, #007aff, #5856d6); transition:width 0.2s ease-out;"></div>
                             </div>
-                            <div class="row-between subtle" style="font-size:10.5px;">
+                            <div class="row-between subtle" style="font-size:11px;">
                                 <span id="modal-p-bytes">0 B / 0 B</span>
                                 <span id="modal-p-speed">0 B/s</span>
                             </div>
+                            <div id="modal-p-alert-box" style="display:none;"></div>
                         </div>
                     </div>
 
-                    <!-- 操作按钮 -->
-                    <div class="modal-actions" style="margin-top:4px;">
-                        <button class="apple-btn apple-btn-glass" data-act="later" style="flex:1;">稍后提醒</button>
-                        <button class="apple-btn apple-btn-glass" data-act="browser" style="flex:1;">${I('external', 14)} 浏览器打开</button>
-                        <button class="apple-btn apple-btn-primary" data-act="upgrade" style="flex:1.4; font-weight:700;">⚡ 一键升级</button>
+                    <!-- 底部操作按钮：确保绝对不折行，间距呼吸自然 -->
+                    <div class="modal-actions" style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:4px;">
+                        <button class="apple-btn apple-btn-glass" data-act="later" style="flex:1; white-space:nowrap; height:38px; padding:0 10px; font-size:12.5px; font-weight:500;">
+                            稍后提醒
+                        </button>
+                        <button class="apple-btn apple-btn-glass" data-act="browser" style="flex:1.15; white-space:nowrap; height:38px; padding:0 10px; font-size:12.5px; font-weight:500; display:inline-flex; align-items:center; justify-content:center; gap:5px;">
+                            ${I('external', 13)}
+                            <span>浏览器下载</span>
+                        </button>
+                        <button class="apple-btn apple-btn-primary" data-act="upgrade" style="flex:1.4; white-space:nowrap; height:38px; padding:0 12px; font-size:12.5px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; gap:6px;">
+                            ⚡ 一键升级
+                        </button>
                     </div>
                 </div>
-            `, { width: 440 });
+            `, { width: 480 });
 
             this.activeModal = modal;
 
@@ -1194,14 +1233,16 @@
             }
 
             const pWrap = modal.el.querySelector('#modal-update-progress-wrap');
+            const pAlert = modal.el.querySelector('#modal-p-alert-box');
             const btnUpgrade = modal.el.querySelector('[data-act="upgrade"]');
             const btnLater = modal.el.querySelector('[data-act="later"]');
 
             if (pWrap) pWrap.style.display = 'block';
+            if (pAlert) pAlert.style.display = 'none';
             if (btnLater) btnLater.style.display = 'none';
             if (btnUpgrade) {
                 btnUpgrade.disabled = true;
-                btnUpgrade.innerHTML = '正在下载更新包…';
+                btnUpgrade.innerHTML = '正在准备升级…';
             }
 
             try {
@@ -1243,8 +1284,24 @@
                     if (p.stage === 'done') {
                         clearInterval(progressTimer);
                         progressTimer = null;
-                        if (stageEl) stageEl.textContent = '下载完成，正在启动升级程序并重启…';
-                        if (btnUpgrade) btnUpgrade.innerHTML = '正在完成升级…';
+                        if (pctEl) pctEl.textContent = '100%';
+                        if (barEl) barEl.style.width = '100%';
+                        if (stageEl) {
+                            stageEl.innerHTML = `
+                                <span style="color:var(--apple-system-green); font-weight:600; display:flex; align-items:center; gap:5px;">
+                                    ${I('check', 14)} 下载完成，正在启动安装程序并重启…
+                                </span>
+                            `;
+                        }
+                        if (pAlert && p.isLocalFallback) {
+                            pAlert.style.display = 'block';
+                            pAlert.innerHTML = `
+                                <div style="margin-top:6px; padding:8px 10px; background:rgba(48,209,88,0.08); border:1px solid rgba(48,209,88,0.25); border-radius:8px; font-size:11px; color:var(--apple-system-green);">
+                                    已载入本地安装包，正在执行一键升级测试
+                                </div>
+                            `;
+                        }
+                        if (btnUpgrade) btnUpgrade.innerHTML = '正在启动安装程序…';
 
                         setTimeout(async () => {
                             try {
@@ -1265,10 +1322,32 @@
                     } else if (p.stage === 'error') {
                         clearInterval(progressTimer);
                         progressTimer = null;
-                        if (stageEl) stageEl.textContent = '下载失败: ' + (p.error || '网络错误');
+                        if (stageEl) {
+                            stageEl.innerHTML = `
+                                <span style="color:var(--apple-system-red); font-weight:600; display:flex; align-items:center; gap:5px;">
+                                    ${I('alert', 14)} 下载未完成
+                                </span>
+                            `;
+                        }
+                        if (pAlert) {
+                            pAlert.style.display = 'block';
+                            pAlert.innerHTML = `
+                                <div style="margin-top:6px; padding:10px 12px; background:rgba(255,69,58,0.08); border:1px solid rgba(255,69,58,0.25); border-radius:10px; font-size:11.5px; color:var(--apple-system-red); line-height:1.5;">
+                                    <div style="font-weight:700; margin-bottom:3px;">升级服务提示</div>
+                                    <div>${escapeHtml(p.error || '网络连接异常')}</div>
+                                    <div style="margin-top:6px; color:var(--apple-text-secondary); font-size:11px;">
+                                        建议：您可以点击下方「浏览器下载」前往 Releases 发布页直接获取安装包。
+                                    </div>
+                                </div>
+                            `;
+                        }
                         if (btnUpgrade) {
                             btnUpgrade.disabled = false;
-                            btnUpgrade.innerHTML = '重试下载升级';
+                            btnUpgrade.innerHTML = '重试一键升级';
+                        }
+                        if (btnLater) {
+                            btnLater.style.display = '';
+                            btnLater.textContent = '稍后提醒';
                         }
                     }
                 }, 400);
@@ -1276,9 +1355,22 @@
             } catch (err) {
                 if (btnUpgrade) {
                     btnUpgrade.disabled = false;
-                    btnUpgrade.innerHTML = '重试下载升级';
+                    btnUpgrade.innerHTML = '重试一键升级';
                 }
-                alert('升级失败: ' + err.message);
+                if (btnLater) {
+                    btnLater.style.display = '';
+                }
+                const pAlert = modal.el.querySelector('#modal-p-alert-box');
+                if (pAlert) {
+                    pAlert.style.display = 'block';
+                    pAlert.innerHTML = `
+                        <div style="margin-top:6px; padding:10px 12px; background:rgba(255,69,58,0.08); border:1px solid rgba(255,69,58,0.25); border-radius:10px; font-size:11.5px; color:var(--apple-system-red); line-height:1.5;">
+                            <div style="font-weight:700; margin-bottom:3px;">启动下载遇到问题</div>
+                            <div>${escapeHtml(err.message || '网络连接失败')}</div>
+                            <div style="margin-top:6px; color:var(--apple-text-secondary); font-size:11px;">已为您保留浏览器下载通道，点击下方按钮即可前往。</div>
+                        </div>
+                    `;
+                }
             }
         }
     };

@@ -39,7 +39,10 @@
         backdrop.className = 'modal-backdrop';
         const box = document.createElement('div');
         box.className = 'modal-box';
-        if (width) box.style.width = `min(92vw, ${width}px)`;
+        if (width) {
+            box.style.width = `min(92vw, ${width}px)`;
+            box.style.maxWidth = `min(92vw, ${width}px)`;
+        }
         box.innerHTML = html;
         backdrop.appendChild(box);
         document.body.appendChild(backdrop);

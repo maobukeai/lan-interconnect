@@ -3080,6 +3080,40 @@ body.theme-light .dock-glider {
     margin-top: 20px;
 }
 
+.modal-actions button,
+.modal-actions .apple-btn {
+    white-space: nowrap;
+}
+
+.update-modal-dialog {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.update-log-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 8px;
+    line-height: 1.55;
+}
+
+.update-log-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    background: rgba(0, 122, 255, 0.12);
+    color: var(--apple-system-blue);
+    font-size: 10.5px;
+    font-weight: 700;
+    margin-top: 2px;
+    flex-shrink: 0;
+}
+
 .qr-box {
     padding: 12px;
     background: #ffffff;

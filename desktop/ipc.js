@@ -485,7 +485,7 @@
             } catch (e) {}
             return {
                 name: '猫步互联 Pro',
-                version: '2.3.1',
+                version: '2.3.2',
                 author: '猫步可爱 (maobukeai)',
                 repoUrl: 'https://github.com/maobukeai/lan-interconnect',
                 releasesUrl: 'https://github.com/maobukeai/lan-interconnect/releases'
@@ -537,13 +537,13 @@
 
             return {
                 latest: {
-                    version: '2.3.1',
+                    version: '2.3.2',
                     release_date: '2026-09-13',
                     download_url: 'https://github.com/maobukeai/lan-interconnect/releases',
-                    release_notes: '当前运行的已是最新稳定版本 (v2.3.1)。'
+                    release_notes: '当前运行的已是最新稳定版本 (v2.3.2)。'
                 },
                 has_update: false,
-                current_version: '2.3.1',
+                current_version: '2.3.2',
                 error: null
             };
         },

@@ -1,6 +1,6 @@
 {
   "name": "lan-disk",
-  "version": "2.3.1",
+  "version": "2.3.2",
   "description": "猫步互联 - 局域网文件共享与跨设备通信工具",
   "author": "Developer",
   "scripts": {
