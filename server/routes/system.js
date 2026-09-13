@@ -538,14 +538,32 @@ router.get('/system/check-update', async (req, res) => {
                         release_date: json.release_date || '',
                         download_url: json.download_url || `https://github.com/maobukeai/lan-interconnect/releases/tag/v${ver}`,
                         release_notes: json.release_notes || (hasUpdate ? `发现新版本 v${ver}（免限流高速 CDN 通道）` : '当前已是最新版本'),
-                        assets: Array.isArray(json.assets) && json.assets.length > 0 ? json.assets : [
+                        assets: (Array.isArray(json.assets) && json.assets.length > 0 ? json.assets : [
                             {
-                                name: `猫步互联Pro_${ver}_x64-setup.exe`,
-                                url: `https://github.com/maobukeai/lan-interconnect/releases/download/v${ver}/%E7%8C%AB%E6%AD%A5%E4%BA%92%E8%81%94Pro_${ver}_x64-setup.exe`,
-                                size: 0,
+                                name: `LanDisk-Pro-${ver}-Setup.exe`,
+                                url: `https://github.com/maobukeai/lan-interconnect/releases/download/v${ver}/LanDisk-Pro-${ver}-Setup.exe`,
+                                size: 28248518,
+                                sha256: null
+                            },
+                            {
+                                name: `LanDisk-Pro-${ver}.apk`,
+                                url: `https://github.com/maobukeai/lan-interconnect/releases/download/v${ver}/LanDisk-Pro-${ver}.apk`,
+                                size: 9027600,
                                 sha256: null
                             }
-                        ]
+                        ]).map(a => {
+                            let u = a.url || '';
+                            if (u.includes('%E7%8C%AB%E6%AD%A5%E4%BA%92%E8%81%94Pro_') || u.includes('猫步互联Pro_')) {
+                                u = u.replace(/(?:%E7%8C%AB%E6%AD%A5%E4%BA%92%E8%81%94Pro_|猫步互联Pro_)([\d\.]+)(?:_x64-setup)?\.exe/i, 'LanDisk-Pro-$1-Setup.exe');
+                                u = u.replace(/(?:%E7%8C%AB%E6%AD%A5%E4%BA%92%E8%81%94Pro_|猫步互联Pro_)([\d\.]+)\.apk/i, 'LanDisk-Pro-$1.apk');
+                            }
+                            let name = a.name || '';
+                            if (name.includes('猫步互联Pro_')) {
+                                name = name.replace(/猫步互联Pro_([\d\.]+)(?:_x64-setup)?\.exe/i, 'LanDisk-Pro-$1-Setup.exe');
+                                name = name.replace(/猫步互联Pro_([\d\.]+)\.apk/i, 'LanDisk-Pro-$1.apk');
+                            }
+                            return { ...a, name, url: u };
+                        })
                     },
                     has_update: hasUpdate,
                     current_version: currentVer,
@@ -737,11 +755,36 @@ router.post('/system/download-update', (req, res) => {
             downloadTask.error = '云端发布包尚未在 GitHub Releases 正式上线 (HTTP 404)，请稍后或前往 Releases 页面查看';
         }
 
-        // 整理下载源：优先直连或高速镜像，若发生网络连通故障再尝试备用 CDN
-        const downloadTargets = [url];
-        if (url.includes('github.com') && url.includes('/releases/download/')) {
-            downloadTargets.push('https://ghfast.top/' + url);
-            downloadTargets.push('https://ghproxy.net/' + url);
+        // 自动规范化发布包地址（将历史遗留的中文产物名映射为 GitHub Releases 实际构建产物名）
+        function normalizeReleaseUrl(u) {
+            if (!u || typeof u !== 'string') return u;
+            let decoded = u;
+            try { decoded = decodeURIComponent(u); } catch (e) {}
+
+            const verMatch = decoded.match(/v?(\d+\.\d+\.\d+)/);
+            const ver = verMatch ? verMatch[1] : null;
+            if (ver && (decoded.includes('猫步互联Pro') || decoded.includes('LanDisk-Pro') || decoded.includes('lan-interconnect'))) {
+                if (decoded.endsWith('.apk')) {
+                    return `https://github.com/maobukeai/lan-interconnect/releases/download/v${ver}/LanDisk-Pro-${ver}.apk`;
+                }
+                if (decoded.endsWith('.exe')) {
+                    return `https://github.com/maobukeai/lan-interconnect/releases/download/v${ver}/LanDisk-Pro-${ver}-Setup.exe`;
+                }
+            }
+            return u;
+        }
+
+        const normalizedUrl = normalizeReleaseUrl(url);
+
+        // 整理下载源：国内优先免翻墙 CDN 高速镜像，并保留规范化直连与原地址
+        const downloadTargets = [];
+        if (normalizedUrl.includes('github.com') && normalizedUrl.includes('/releases/download/')) {
+            downloadTargets.push('https://ghfast.top/' + normalizedUrl);
+            downloadTargets.push('https://ghproxy.net/' + normalizedUrl);
+        }
+        downloadTargets.push(normalizedUrl);
+        if (url !== normalizedUrl) {
+            downloadTargets.push(url);
         }
 
         let lastTime = Date.now();

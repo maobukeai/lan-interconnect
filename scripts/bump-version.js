@@ -77,8 +77,8 @@ if (fs.existsSync(versionJsonPath)) {
         vData.release_date = new Date().toISOString().slice(0, 10);
         if (Array.isArray(vData.assets)) {
             vData.assets.forEach(a => {
-                if (a.name) a.name = a.name.replace(/\d+\.\d+\.\d+/g, newVersion);
-                if (a.url) a.url = a.url.replace(/v\d+\.\d+\.\d+/g, 'v' + newVersion).replace(/\d+\.\d+\.\d+/g, newVersion);
+                if (a.name) a.name = a.name.replace(/LanDisk-Pro-[\d\.]+/g, 'LanDisk-Pro-' + newVersion).replace(/\d+\.\d+\.\d+/g, newVersion);
+                if (a.url) a.url = a.url.replace(/v\d+\.\d+\.\d+/g, 'v' + newVersion).replace(/LanDisk-Pro-[\d\.]+/g, 'LanDisk-Pro-' + newVersion).replace(/\d+\.\d+\.\d+/g, newVersion);
             });
         }
         fs.writeFileSync(versionJsonPath, JSON.stringify(vData, null, 2) + '\n', 'utf8');
