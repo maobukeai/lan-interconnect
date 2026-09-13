@@ -172,7 +172,7 @@
     const AboutPanelComponent = {
         appInfo: {
             name: '猫步互联 Pro',
-            version: '2.3.0',
+            version: '2.3.1',
             author: '猫步可爱 (maobukeai)',
             releaseDate: '2026-09-13',
             releaseNotes: '1. 新增关于页面与技术架构全景展示；\n2. 软件内免限流 CDN 自动检查更新与静默升级；\n3. 新增独立更新模态提醒弹窗与作者互动支持。',
@@ -1078,7 +1078,7 @@
                 try { this.activeModal.close(); } catch (e) {}
             }
 
-            const currentVer = (AboutPanelComponent.appInfo && AboutPanelComponent.appInfo.version) || '2.3.0';
+            const currentVer = (AboutPanelComponent.appInfo && AboutPanelComponent.appInfo.version) || '2.3.1';
             let isSilent = localStorage.getItem('landisk_auto_silent_update') === 'true';
 
             const modal = UI.openModal(`
