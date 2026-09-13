@@ -67,4 +67,63 @@ if (fs.existsSync(tauriPath)) {
     console.log(`  ✓ 已更新 src-tauri/tauri.conf.json -> version: "${newVersion}"`);
 }
 
+// 6. version.json
+const versionJsonPath = path.join(ROOT, 'version.json');
+if (fs.existsSync(versionJsonPath)) {
+    try {
+        const vData = JSON.parse(fs.readFileSync(versionJsonPath, 'utf8'));
+        vData.version = newVersion;
+        vData.release_date = new Date().toISOString().slice(0, 10);
+        if (Array.isArray(vData.assets)) {
+            vData.assets.forEach(a => {
+                if (a.name) a.name = a.name.replace(/\d+\.\d+\.\d+/g, newVersion);
+                if (a.url) a.url = a.url.replace(/v\d+\.\d+\.\d+/g, 'v' + newVersion).replace(/\d+\.\d+\.\d+/g, newVersion);
+            });
+        }
+        fs.writeFileSync(versionJsonPath, JSON.stringify(vData, null, 2) + '\n', 'utf8');
+        console.log(`  ✓ 已更新 version.json -> ${newVersion}`);
+    } catch (e) {
+        console.warn(`  ⚠️ 更新 version.json 异常:`, e.message);
+    }
+}
+
+// 7. desktop/ipc.js
+const ipcPath = path.join(ROOT, 'desktop', 'ipc.js');
+if (fs.existsSync(ipcPath)) {
+    let ipc = fs.readFileSync(ipcPath, 'utf8');
+    ipc = ipc.replace(/version:\s*['"]\d+\.\d+\.\d+['"]/g, `version: '${newVersion}'`);
+    ipc = ipc.replace(/current_version:\s*['"]\d+\.\d+\.\d+['"]/g, `current_version: '${newVersion}'`);
+    ipc = ipc.replace(/\(v\d+\.\d+\.\d+\)/g, `(v${newVersion})`);
+    fs.writeFileSync(ipcPath, ipc, 'utf8');
+    console.log(`  ✓ 已更新 desktop/ipc.js -> version: '${newVersion}'`);
+}
+
+// 8. shared/components/about-panel.js
+const aboutPath = path.join(ROOT, 'shared', 'components', 'about-panel.js');
+if (fs.existsSync(aboutPath)) {
+    let about = fs.readFileSync(aboutPath, 'utf8');
+    about = about.replace(/version:\s*['"]\d+\.\d+\.\d+['"]/g, `version: '${newVersion}'`);
+    about = about.replace(/\|\|\s*['"]\d+\.\d+\.\d+['"]/g, `|| '${newVersion}'`);
+    fs.writeFileSync(aboutPath, about, 'utf8');
+    console.log(`  ✓ 已更新 shared/components/about-panel.js -> version: '${newVersion}'`);
+}
+
+// 9. public/index.html
+const indexPath = path.join(ROOT, 'public', 'index.html');
+if (fs.existsSync(indexPath)) {
+    let indexHtml = fs.readFileSync(indexPath, 'utf8');
+    indexHtml = indexHtml.replace(/apple-badge-sm">v\d+\.\d+\.\d+<\/span>/g, `apple-badge-sm">v${newVersion}</span>`);
+    fs.writeFileSync(indexPath, indexHtml, 'utf8');
+    console.log(`  ✓ 已更新 public/index.html -> v${newVersion}`);
+}
+
+// 10. 启动程序.bat
+const batPath = path.join(ROOT, '启动程序.bat');
+if (fs.existsSync(batPath)) {
+    let bat = fs.readFileSync(batPath, 'utf8');
+    bat = bat.replace(/LanDisk-Pro-\d+\.\d+\.\d+-Portable\.exe/g, `LanDisk-Pro-${newVersion}-Portable.exe`);
+    fs.writeFileSync(batPath, bat, 'utf8');
+    console.log(`  ✓ 已更新 启动程序.bat -> LanDisk-Pro-${newVersion}-Portable.exe`);
+}
+
 console.log(`\n🎉 全项目版本号已 100% 同步为 v${newVersion}！`);

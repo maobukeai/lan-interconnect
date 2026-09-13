@@ -43,7 +43,20 @@
 
     function getServerUrl() {
         if (typeof window !== 'undefined') {
+            const isTauri = !!window.isTauri || !!window.__TAURI__ || !!window.__TAURI_INTERNALS__ 
+                || (typeof window.location !== 'undefined' && /(^|\.)localhost$/i.test(window.location.hostname) && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1');
+            const isCapacitor = !!window.Capacitor || (window.location && window.location.protocol === 'capacitor:');
+
+            // 1. 如果在普通网页浏览器中直接通过常规 HTTP/HTTPS 访问（非 Tauri/Capacitor 内壳），
+            // 当前页面的 origin 就是提供服务的后端，绝对优先使用当前 origin，防止被旧的 localStorage 缓存 IP 误导！
+            if (!isTauri && !isCapacitor && (window.location.protocol === 'http:' || window.location.protocol === 'https:')) {
+                window.currentServerUrl = window.location.origin;
+                return window.location.origin;
+            }
+
             if (window.currentServerUrl) return window.currentServerUrl.replace(/\/$/, '');
+
+            // 2. 检查用户配置的服务器地址（主要供移动端 App 容器绑定）
             try {
                 const saved = localStorage.getItem('landisk_custom_server');
                 if (saved) {
@@ -51,14 +64,10 @@
                     return saved.replace(/\/$/, '');
                 }
             } catch (e) {}
-            // 如果在浏览器通过常规 http 访问，默认使用当前 origin
-            if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
-                if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-                    return window.location.origin;
-                }
-                if (window.location.port && window.location.port !== '80' && window.location.port !== '443') {
-                    return window.location.origin;
-                }
+
+            // 3. Tauri 桌面端本地回环
+            if (isTauri) {
+                return 'http://127.0.0.1:3000';
             }
         }
         return '';

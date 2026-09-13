@@ -22,6 +22,14 @@ async function main() {
         const dest = path.join(distOutput, 'LanDisk-Pro-' + version + '-Portable.exe');
         fs.copyFileSync(tauriExe, dest);
         console.log('[Artifacts] 已生成: LanDisk-Pro-' + version + '-Portable.exe (' + (fs.statSync(dest).size / 1024 / 1024).toFixed(2) + ' MB)');
+
+        // 同步复制服务端 Sidecar 至 dist_output，保证便携版脱机自运行
+        const sidecarExe = path.join(ROOT, 'src-tauri', 'binaries', 'lan-disk-server-x86_64-pc-windows-msvc.exe');
+        if (fs.existsSync(sidecarExe)) {
+            const sidecarDest = path.join(distOutput, 'lan-disk-server.exe');
+            fs.copyFileSync(sidecarExe, sidecarDest);
+            console.log('[Artifacts] 已规整: dist_output/lan-disk-server.exe (' + (fs.statSync(sidecarDest).size / 1024 / 1024).toFixed(2) + ' MB)');
+        }
     } else {
         console.error('[Artifacts] 未找到 Tauri 单文件: ' + tauriExe);
     }

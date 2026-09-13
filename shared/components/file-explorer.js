@@ -163,11 +163,20 @@
             return { icon: 'fileText', cls: '' };
         }
 
-        async loadDrives(pushState = true) {
+        async loadDrives(pushState = true, retryCount = 0) {
             this.batchManager.clear();
-            if (typeof window !== 'undefined' && window.location.protocol === 'file:' && !window.isRunning) {
+            const isDesktopClient = typeof window !== 'undefined' && (
+                window.location.protocol === 'file:' || !!window.isTauri || !!window.__TAURI__ || !!window.__TAURI_INTERNALS__ || (window.location && /(^|\.)localhost$/i.test(window.location.hostname))
+            );
+            if (isDesktopClient && !window.isRunning && window.LanDiskIPC) {
                 if (this.container) {
-                    this.container.innerHTML = this._emptyState('server', '服务未启动', '回到主页点击「启动服务」后即可浏览文件');
+                    this.container.innerHTML = `
+                        <div class="empty-state" style="padding:40px 20px;">
+                            <div class="apple-spinner" style="width:28px; height:28px; margin:0 auto 12px; border:3px solid rgba(0,122,255,0.2); border-top-color:var(--apple-primary); border-radius:50%; animation:spin 0.8s linear infinite;"></div>
+                            <div style="font-weight:600; color:var(--apple-text-muted);">正在连接后台服务…</div>
+                            <div style="font-size:12px; color:var(--apple-text-subtle); margin-top:4px;">后台服务就绪后将自动加载磁盘列表</div>
+                        </div>
+                    `;
                 }
                 return;
             }
@@ -199,6 +208,11 @@
 
                 this.renderDrives(drives);
             } catch (err) {
+                // 如果是冷启动网络瞬断或端口尚未就绪，自动重试最多 2 次（间隔 600ms）
+                if (retryCount < 2 && (err.message === 'Failed to fetch' || err.name === 'TypeError' || err.name === 'AbortError')) {
+                    await new Promise(r => setTimeout(r, 600));
+                    return this.loadDrives(pushState, retryCount + 1);
+                }
                 if (this.container) {
                     const safeErr = (global.escapeHtml || String)(err.message || '请确认服务已启动或检查网络连接');
                     this.container.innerHTML = `
@@ -1078,7 +1092,7 @@
             });
         instance.loadDrives(false);
     };
-    FileExplorer.loadDrives = function(pushState) { if (instance) return instance.loadDrives(pushState); };
+    FileExplorer.loadDrives = function(pushState, retryCount) { if (instance) return instance.loadDrives(pushState, retryCount); };
     FileExplorer.loadPath = function(p, pushState) { if (instance) return instance.loadPath(p, pushState); };
     FileExplorer.goUp = function(pushState) { if (instance) return instance.goUp(pushState); };
     FileExplorer.refresh = function() { if (instance) return instance.refresh(); };

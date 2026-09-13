@@ -98,13 +98,32 @@ async function getDiskSpace() {
     return diskSpacePending;
 }
 
+const ROOT_DIR = path.resolve(__dirname, '..', '..');
+function getAppVersion() {
+    try {
+        const pkgPath = path.join(ROOT_DIR, 'package.json');
+        if (fs.existsSync(pkgPath)) {
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+            if (pkg.version) return pkg.version;
+        }
+    } catch (e) {}
+    try {
+        const verPath = path.join(ROOT_DIR, 'version.json');
+        if (fs.existsSync(verPath)) {
+            const ver = JSON.parse(fs.readFileSync(verPath, 'utf8'));
+            if (ver.version) return ver.version;
+        }
+    } catch (e) {}
+    return '2.3.0';
+}
+
 // 局域网服务发现与心跳轻量探针 (无需登录鉴权)
 router.get('/ping', (req, res) => {
     const osType = os.type();
     const osName = osType === 'Windows_NT' ? 'Windows' : (osType === 'Darwin' ? 'macOS' : (osType === 'Linux' ? 'Linux' : osType));
     res.json({
         app: '猫步互联 Pro',
-        version: '2.2.1',
+        version: getAppVersion(),
         hostname: os.hostname(),
         os: osName,
         requiresPin: !!state.currentConfig.pin,
@@ -417,6 +436,314 @@ router.post('/clipboard', (req, res) => {
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ error: 'Failed to set clipboard: ' + e.message });
+    }
+});
+
+/* ---------- 关于信息与自动更新服务 ---------- */
+
+function compareVersions(v1, v2) {
+    const clean1 = String(v1 || '').replace(/^[vV]/, '').trim();
+    const clean2 = String(v2 || '').replace(/^[vV]/, '').trim();
+    const p1 = clean1.split(/[-.]/).map(n => parseInt(n, 10) || 0);
+    const p2 = clean2.split(/[-.]/).map(n => parseInt(n, 10) || 0);
+    const len = Math.max(p1.length, p2.length);
+    for (let i = 0; i < len; i++) {
+        const a = p1[i] || 0;
+        const b = p2[i] || 0;
+        if (a > b) return 1;
+        if (a < b) return -1;
+    }
+    return 0;
+}
+
+router.get('/system/version', (req, res) => {
+    const curVer = getAppVersion();
+    let releaseDate = '2026-09-13';
+    let releaseNotes = '';
+    try {
+        const vJsonPath = path.join(ROOT_DIR, 'version.json');
+        if (fs.existsSync(vJsonPath)) {
+            const vData = JSON.parse(fs.readFileSync(vJsonPath, 'utf8'));
+            if (vData.release_date) releaseDate = vData.release_date;
+            if (vData.release_notes) releaseNotes = vData.release_notes;
+        }
+    } catch (e) {}
+
+    res.json({
+        name: '猫步互联 Pro',
+        version: curVer,
+        author: '猫步可爱 (maobukeai)',
+        releaseDate,
+        releaseNotes,
+        repoUrl: 'https://github.com/maobukeai/lan-interconnect',
+        releasesUrl: 'https://github.com/maobukeai/lan-interconnect/releases'
+    });
+});
+
+// 服务端多源 CDN 探针与版本检查
+router.get('/system/check-update', async (req, res) => {
+    const currentVer = getAppVersion();
+    const cdnUrls = [
+        'https://ghfast.top/https://raw.githubusercontent.com/maobukeai/lan-interconnect/main/version.json',
+        'https://ghproxy.net/https://raw.githubusercontent.com/maobukeai/lan-interconnect/main/version.json',
+        'https://cdn.jsdelivr.net/gh/maobukeai/lan-interconnect@main/version.json',
+        'https://fastly.jsdelivr.net/gh/maobukeai/lan-interconnect@main/version.json',
+        'https://cdn.jsdelivr.net/gh/maobukeai/lan-interconnect@main/package.json',
+        'https://fastly.jsdelivr.net/gh/maobukeai/lan-interconnect@main/package.json'
+    ];
+
+    const https = require('https');
+    const http = require('http');
+
+    function fetchUrl(url, timeoutMs = 6000) {
+        return new Promise((resolve, reject) => {
+            try {
+                const client = url.startsWith('https:') ? https : http;
+                const reqObj = client.get(url, {
+                    headers: { 'User-Agent': 'Mozilla/5.0 LanDiskPro/' + currentVer, 'Accept': 'application/json' },
+                    timeout: timeoutMs
+                }, (resp) => {
+                    if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location) {
+                        return fetchUrl(resp.headers.location, timeoutMs).then(resolve).catch(reject);
+                    }
+                    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+                        return reject(new Error('HTTP ' + resp.statusCode));
+                    }
+                    let data = '';
+                    resp.on('data', chunk => data += chunk);
+                    resp.on('end', () => resolve(data));
+                });
+                reqObj.on('error', reject);
+                reqObj.on('timeout', () => { reqObj.destroy(); reject(new Error('Timeout')); });
+            } catch (err) {
+                reject(err);
+            }
+        });
+    }
+
+    // 1. 尝试多源 CDN
+    for (const cdnUrl of cdnUrls) {
+        try {
+            const body = await fetchUrl(cdnUrl);
+            const trimmed = (body || '').trim();
+            if (!trimmed.startsWith('{')) continue;
+            const json = JSON.parse(trimmed);
+            const ver = String(json.version || '').replace(/^[vV]/, '').trim();
+            if (ver) {
+                const hasUpdate = compareVersions(ver, currentVer) > 0;
+                return res.json({
+                    latest: {
+                        version: ver,
+                        release_date: json.release_date || '',
+                        download_url: json.download_url || `https://github.com/maobukeai/lan-interconnect/releases/tag/v${ver}`,
+                        release_notes: json.release_notes || (hasUpdate ? `发现新版本 v${ver}（免限流高速 CDN 通道）` : '当前已是最新版本'),
+                        assets: Array.isArray(json.assets) && json.assets.length > 0 ? json.assets : [
+                            {
+                                name: `猫步互联Pro_${ver}_x64-setup.exe`,
+                                url: `https://github.com/maobukeai/lan-interconnect/releases/download/v${ver}/%E7%8C%AB%E6%AD%A5%E4%BA%92%E8%81%94Pro_${ver}_x64-setup.exe`,
+                                size: 0,
+                                sha256: null
+                            }
+                        ]
+                    },
+                    has_update: hasUpdate,
+                    current_version: currentVer,
+                    error: null
+                });
+            }
+        } catch (e) {
+            // 继续尝试下一 CDN 镜像
+        }
+    }
+
+    // 2. 备用尝试 GitHub API
+    try {
+        const ghApiUrl = 'https://api.github.com/repos/maobukeai/lan-interconnect/releases/latest';
+        const body = await fetchUrl(ghApiUrl);
+        const trimmed = (body || '').trim();
+        if (!trimmed.startsWith('{')) throw new Error('GitHub API 返回非 JSON 格式');
+        const json = JSON.parse(trimmed);
+        const ver = String(json.tag_name || '').replace(/^[vV]/, '').trim();
+        const hasUpdate = compareVersions(ver, currentVer) > 0;
+        return res.json({
+            latest: {
+                version: ver || currentVer,
+                release_date: json.published_at || '',
+                download_url: json.html_url || 'https://github.com/maobukeai/lan-interconnect/releases',
+                release_notes: json.body || '',
+                assets: (json.assets || []).map(a => ({
+                    name: a.name,
+                    url: a.browser_download_url,
+                    size: a.size || 0,
+                    sha256: null
+                }))
+            },
+            has_update: hasUpdate,
+            current_version: currentVer,
+            error: null
+        });
+    } catch (err) {
+        // 3. 全网探针失败时回退至本地 version.json 元数据
+        try {
+            const vJsonPath = path.join(ROOT_DIR, 'version.json');
+            if (fs.existsSync(vJsonPath)) {
+                const localData = JSON.parse(fs.readFileSync(vJsonPath, 'utf8'));
+                const ver = localData.version || currentVer;
+                return res.json({
+                    latest: localData,
+                    has_update: compareVersions(ver, currentVer) > 0,
+                    current_version: currentVer,
+                    error: null
+                });
+            }
+        } catch (e) {}
+
+        return res.json({
+            latest: null,
+            has_update: false,
+            current_version: currentVer,
+            error: '检查更新超时或网络不可达，请稍后重试或访问 GitHub Releases 页面'
+        });
+    }
+});
+
+// 下载任务全局状态
+let downloadTask = {
+    active: false,
+    percentage: 0,
+    downloadedBytes: 0,
+    totalBytes: 0,
+    speedBytesPerSec: 0,
+    stage: 'idle',
+    error: null,
+    filePath: null
+};
+
+router.get('/system/update-progress', (req, res) => {
+    res.json(downloadTask);
+});
+
+router.post('/system/download-update', (req, res) => {
+    const { url } = req.body || {};
+    if (!url || typeof url !== 'string' || !url.startsWith('http')) {
+        return res.status(400).json({ success: false, error: '缺少有效的安装包下载地址' });
+    }
+
+    if (downloadTask.active) {
+        return res.json({ success: true, message: '已有下载任务进行中', task: downloadTask });
+    }
+
+    const https = require('https');
+    const http = require('http');
+    const targetFile = path.join(os.tmpdir(), `landisk-update-${Date.now()}.exe`);
+
+    downloadTask = {
+        active: true,
+        percentage: 0,
+        downloadedBytes: 0,
+        totalBytes: 0,
+        speedBytesPerSec: 0,
+        stage: 'downloading',
+        error: null,
+        filePath: targetFile
+    };
+
+    res.json({ success: true, message: '下载任务已启动', task: downloadTask });
+
+    // 异步流式下载
+    (async () => {
+        let lastTime = Date.now();
+        let lastDownloaded = 0;
+
+        function startDownload(downloadUrl) {
+            const client = downloadUrl.startsWith('https:') ? https : http;
+            const reqStream = client.get(downloadUrl, {
+                headers: { 'User-Agent': 'Mozilla/5.0 LanDiskPro' }
+            }, (resp) => {
+                if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location) {
+                    return startDownload(resp.headers.location);
+                }
+                if (resp.statusCode < 200 || resp.statusCode >= 300) {
+                    downloadTask.active = false;
+                    downloadTask.stage = 'error';
+                    downloadTask.error = `HTTP ${resp.statusCode}`;
+                    return;
+                }
+
+                downloadTask.totalBytes = parseInt(resp.headers['content-length'], 10) || 0;
+                const fileOut = fs.createWriteStream(targetFile);
+
+                resp.on('data', (chunk) => {
+                    downloadTask.downloadedBytes += chunk.length;
+                    if (downloadTask.totalBytes > 0) {
+                        downloadTask.percentage = parseFloat(((downloadTask.downloadedBytes / downloadTask.totalBytes) * 100).toFixed(1));
+                    }
+                    const now = Date.now();
+                    const diffTime = (now - lastTime) / 1000;
+                    if (diffTime >= 0.5) {
+                        downloadTask.speedBytesPerSec = Math.round((downloadTask.downloadedBytes - lastDownloaded) / diffTime);
+                        lastDownloaded = downloadTask.downloadedBytes;
+                        lastTime = now;
+                    }
+                });
+
+                resp.pipe(fileOut);
+
+                fileOut.on('finish', () => {
+                    fileOut.close(() => {
+                        downloadTask.active = false;
+                        downloadTask.percentage = 100;
+                        downloadTask.stage = 'done';
+                    });
+                });
+
+                fileOut.on('error', (err) => {
+                    try { fs.unlinkSync(targetFile); } catch (e) {}
+                    downloadTask.active = false;
+                    downloadTask.stage = 'error';
+                    downloadTask.error = err.message;
+                });
+            });
+
+            reqStream.on('error', (err) => {
+                downloadTask.active = false;
+                downloadTask.stage = 'error';
+                downloadTask.error = err.message;
+            });
+        }
+
+        startDownload(url);
+    })();
+});
+
+router.post('/system/install-update', (req, res) => {
+    const { filePath, silent } = req.body || {};
+    const target = filePath || downloadTask.filePath;
+    if (!target || !fs.existsSync(target)) {
+        return res.status(400).json({ success: false, error: '安装包不存在或尚未下载完成' });
+    }
+
+    if (process.platform !== 'win32') {
+        return res.status(400).json({ success: false, error: '软件内自动执行升级仅支持 Windows 平台' });
+    }
+
+    const { spawn } = require('child_process');
+    try {
+        const args = silent ? ['/S'] : [];
+        const child = spawn(target, args, {
+            detached: true,
+            stdio: 'ignore'
+        });
+        child.unref();
+
+        res.json({ success: true, message: '升级安装程序已成功启动' });
+
+        // 延时关闭后端服务以便新版覆盖
+        setTimeout(() => {
+            process.exit(0);
+        }, 1500);
+    } catch (err) {
+        res.status(500).json({ success: false, error: '启动安装程序失败: ' + err.message });
     }
 });
 

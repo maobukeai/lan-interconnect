@@ -393,21 +393,7 @@ function verifyUpgrade(req) {
     if (state.blockedIps.has(cleanIp)) return false;
 
     // 来源白名单（浏览器 WS 一定带 Origin）
-    const origin = req.headers.origin;
-    if (origin && origin !== 'null') {
-        try {
-            const o = new URL(origin);
-            const hostname = o.hostname.replace(/^\[|\]$/g, '');
-            const allowed = o.protocol === 'capacitor:' || o.protocol === 'ionic:' || o.protocol === 'file:' || o.protocol === 'app:' || o.protocol === 'vscode-webview:'
-                || hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || /\.local$/i.test(hostname)
-                || /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.|169\.254\.)/.test(hostname)
-                || /^f[cd][0-9a-f]{2}:/.test(hostname) || /^fe[89ab]:/.test(hostname)
-                || o.host === (req.headers.host || '');
-            if (!allowed) return false;
-        } catch (e) {
-            return false;
-        }
-    }
+    if (!isAllowedApiOrigin(req)) return false;
 
     // 凭据：query 的 token 或 pin；免密模式下仅本机可连（与 checkSensitive 同标准）
     const url = new URL(req.url, 'http://localhost');

@@ -40,8 +40,8 @@ copyRecursive(path.join(ROOT, 'public'), DIST);
 // 2. 复制 shared 共享组件库
 copyRecursive(path.join(ROOT, 'shared'), path.join(DIST, 'shared'));
 
-// 3. 复制图标与 PWA 资产
-const assets = ['icon.png', 'icon.ico', 'favicon.png', 'favicon.svg', 'apple-touch-icon.png'];
+// 3. 复制图标与 PWA 资产与版本元数据
+const assets = ['icon.png', 'icon.ico', 'favicon.png', 'favicon.svg', 'apple-touch-icon.png', 'version.json'];
 assets.forEach(a => {
     const p = path.join(ROOT, a);
     if (fs.existsSync(p)) {

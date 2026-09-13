@@ -300,7 +300,7 @@
 
     function notifyServiceChange() {
         window.isRunning = state.running;
-        window.currentServerUrl = state.running ? state.url : '';
+        window.currentServerUrl = state.running ? `http://127.0.0.1:${state.port || 3000}` : '';
         serviceListeners.forEach(cb => { try { cb(state); } catch (e) {} });
     }
 
@@ -330,11 +330,13 @@
         state.token = res.token;
         state.qrDataUrl = res.qrDataUrl || '';
         state.port = actualPort;
+        window.currentServerUrl = `http://127.0.0.1:${actualPort}`;
         try { localStorage.setItem('lan_disk_qr_token', res.token); } catch (e) {}
 
-        if (!state.qrDataUrl && state.url) {
+        const localApiUrl = `http://127.0.0.1:${actualPort}`;
+        if (!state.qrDataUrl) {
             try {
-                const probeRes = await fetch(`${state.url}/api/control/status`);
+                const probeRes = await fetch(`${localApiUrl}/api/control/status`);
                 if (probeRes.ok) {
                     const d = await probeRes.json();
                     if (d.qrDataUrl) state.qrDataUrl = d.qrDataUrl;
@@ -393,7 +395,7 @@
         if (qrDataUrl) state.qrDataUrl = qrDataUrl;
         if (qrUrl) state.qrUrl = qrUrl;
         window.isRunning = running;
-        window.currentServerUrl = running ? url : '';
+        window.currentServerUrl = running ? `http://127.0.0.1:${state.port || 3000}` : '';
         notifyServiceChange();
     }
 
@@ -473,6 +475,118 @@
         },
         onWindowState: (cb) => {
             if (hasApi && window.api.on) window.api.on('window-state-changed', cb);
+        },
+
+        /* 关于与自动更新服务 */
+        getAppInfo: async () => {
+            try {
+                const res = await fetch((window.currentServerUrl || 'http://127.0.0.1:3000').replace(/\/$/, '') + '/api/system/version');
+                if (res.ok) return await res.json();
+            } catch (e) {}
+            return {
+                name: '猫步互联 Pro',
+                version: '2.3.0',
+                author: '猫步可爱 (maobukeai)',
+                repoUrl: 'https://github.com/maobukeai/lan-interconnect',
+                releasesUrl: 'https://github.com/maobukeai/lan-interconnect/releases'
+            };
+        },
+        checkAppUpdate: async () => {
+            // 优先请求本地服务的 check-update 接口
+            try {
+                const srvUrl = ((state.running ? state.url : '') || window.currentServerUrl || 'http://127.0.0.1:3000').replace(/\/$/, '');
+                const res = await fetch(srvUrl + '/api/system/check-update');
+                if (res.ok) {
+                    const text = await res.text();
+                    const trimmed = (text || '').trim();
+                    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+                        const data = JSON.parse(trimmed);
+                        if (data && (data.latest || data.current_version)) return data;
+                    }
+                }
+            } catch (e) {}
+
+            // 前端免限流 CDN 直连探针 Fallback
+            const cdnUrls = [
+                'https://ghfast.top/https://raw.githubusercontent.com/maobukeai/lan-interconnect/main/version.json',
+                'https://ghproxy.net/https://raw.githubusercontent.com/maobukeai/lan-interconnect/main/version.json',
+                'https://cdn.jsdelivr.net/gh/maobukeai/lan-interconnect@main/version.json',
+                'https://fastly.jsdelivr.net/gh/maobukeai/lan-interconnect@main/version.json'
+            ];
+            for (const url of cdnUrls) {
+                try {
+                    const r = await fetch(url, { cache: 'no-store' });
+                    if (r.ok) {
+                        const text = await r.text();
+                        const trimmed = (text || '').trim();
+                        if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+                            const json = JSON.parse(trimmed);
+                            const ver = String(json.version || '').replace(/^[vV]/, '').trim();
+                            if (ver) {
+                                return {
+                                    latest: json,
+                                    has_update: false,
+                                    current_version: ver,
+                                    error: null
+                                };
+                            }
+                        }
+                    }
+                } catch (err) {}
+            }
+
+            return {
+                latest: {
+                    version: '2.3.0',
+                    release_date: '2026-09-13',
+                    download_url: 'https://github.com/maobukeai/lan-interconnect/releases',
+                    release_notes: '当前运行的已是最新稳定版本 (v2.3.0)。'
+                },
+                has_update: false,
+                current_version: '2.3.0',
+                error: null
+            };
+        },
+        downloadUpdate: async (url) => {
+            try {
+                const srvUrl = (window.currentServerUrl || 'http://127.0.0.1:3000').replace(/\/$/, '');
+                const res = await fetch(srvUrl + '/api/system/download-update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url })
+                });
+                return await res.json();
+            } catch (e) {
+                return { success: false, error: e.message };
+            }
+        },
+        getUpdateProgress: async () => {
+            try {
+                const srvUrl = (window.currentServerUrl || 'http://127.0.0.1:3000').replace(/\/$/, '');
+                const res = await fetch(srvUrl + '/api/system/update-progress');
+                return await res.json();
+            } catch (e) {
+                return { active: false, stage: 'error', error: e.message };
+            }
+        },
+        installUpdate: async (silent) => {
+            try {
+                const srvUrl = (window.currentServerUrl || 'http://127.0.0.1:3000').replace(/\/$/, '');
+                const res = await fetch(srvUrl + '/api/system/install-update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ silent: !!silent })
+                });
+                return await res.json();
+            } catch (e) {
+                return { success: false, error: e.message };
+            }
+        },
+        openExternalUrl: (url) => {
+            if (hasApi && window.api.openUrl) {
+                return window.api.openUrl(url);
+            }
+            window.open(url, '_blank', 'noopener,noreferrer');
         },
 
         /* 服务生命周期 */

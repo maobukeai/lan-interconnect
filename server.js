@@ -131,12 +131,15 @@ function startServer(config) {
 
         function resolveAssetDir(subDir) {
             const candidates = [
+                path.join(process.cwd(), subDir),
+                path.join(__dirname, '..', subDir),
                 path.join(__dirname, subDir),
                 path.join(path.dirname(process.execPath), subDir),
+                path.join(path.dirname(process.execPath), '..', '..', '..', subDir),
                 path.join(path.dirname(process.execPath), 'resources', subDir),
+                path.join(path.dirname(process.execPath), 'resources', '_up_', subDir),
                 path.join(path.dirname(process.execPath), '_up_', subDir),
                 path.join(path.dirname(process.execPath), '..', '..', subDir),
-                path.join(process.cwd(), subDir),
             ];
             if (__dirname.includes('app.asar')) {
                 candidates.unshift(path.join(__dirname.replace('app.asar', 'app.asar.unpacked'), subDir));
@@ -150,9 +153,9 @@ function startServer(config) {
         const publicDir = resolveAssetDir('public');
         const sharedDirStatic = resolveAssetDir('shared');
             
-        // 主页禁止缓存（原先写在挂载于 /api 的 checkAuth 里，req.path 永远匹配不到根路径，从未生效）
+        // 主页与核心脚本禁止缓存（保证多端版本升级即刻生效，绝不被浏览器老旧缓存锁死）
         app.use((req, res, next) => {
-            if (req.path === '/' || req.path === '/index.html') {
+            if (req.path === '/' || req.path === '/index.html' || req.path === '/sw.js' || req.path === '/app.js' || req.path === '/shared/auth.js') {
                 res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
                 res.setHeader('Pragma', 'no-cache');
                 res.setHeader('Expires', '0');

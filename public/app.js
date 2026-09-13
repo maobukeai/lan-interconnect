@@ -3,8 +3,11 @@
  * 登录 / 悬浮 Dock 导航 / Bento 大盘 sparkline / 影音剧院 / 剪贴板互通 / 组件接线
  */
 
-(function () {
+(function (global) {
     'use strict';
+
+    const globalObj = typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this);
+    const safeTimeout = (ms) => (globalObj.LanDiskAuth && globalObj.LanDiskAuth.timeoutSignal) ? globalObj.LanDiskAuth.timeoutSignal(ms) : (AbortSignal.timeout ? AbortSignal.timeout(ms) : undefined);
 
     const $ = (sel) => document.querySelector(sel);
     const $$ = (sel) => document.querySelectorAll(sel);
@@ -55,8 +58,38 @@
         if (window.LanDiskUI) LanDiskUI.Theme.apply();
         updateThemeBtn();
         $('#btn-theme').addEventListener('click', () => { LanDiskUI.Theme.toggle(); updateThemeBtn(); });
+        initAboutModal();
     }
     function updateThemeBtn() { $('#btn-theme').innerHTML = I(LanDiskUI.Theme.icon(), 17); }
+
+    function initAboutModal() {
+        const btnAbout = $('#btn-about');
+        const btnDashAbout = $('#btn-dash-open-about');
+        const aboutModal = $('#about-modal');
+        const btnAboutClose = $('#btn-about-modal-close');
+
+        function openModal() {
+            if (!aboutModal) return;
+            aboutModal.style.display = 'flex';
+            if (typeof AboutPanelComponent !== 'undefined' && AboutPanelComponent.init) {
+                AboutPanelComponent.init('web-about-mount');
+            }
+        }
+
+        if (btnAbout) btnAbout.addEventListener('click', openModal);
+        if (btnDashAbout) btnDashAbout.addEventListener('click', openModal);
+
+        if (btnAboutClose) {
+            btnAboutClose.addEventListener('click', () => {
+                if (aboutModal) aboutModal.style.display = 'none';
+            });
+        }
+        if (aboutModal) {
+            aboutModal.addEventListener('click', (e) => {
+                if (e.target === aboutModal) aboutModal.style.display = 'none';
+            });
+        }
+    }
 
     /* ---------- 登录 ---------- */
     const urlParams = new URLSearchParams(window.location.search);
@@ -89,6 +122,10 @@
         IMessageChatComponent.init('chat-messages');
         loadDashboard();
         loadHistoryFeed();
+        // 自动检查更新 (针对 Android 原生 App 与 Web 端)
+        if (typeof AboutPanelComponent !== 'undefined' && AboutPanelComponent.autoCheckOnStartup) {
+            AboutPanelComponent.autoCheckOnStartup();
+        }
     }
 
     /* ---------- 聊天未读角标 ---------- */
@@ -1008,15 +1045,26 @@
             (window.location.hostname === 'localhost' && window.location.port !== '3000' && window.location.port !== '3001' && window.location.port !== '3002' && window.location.port !== '3003' && window.location.port !== '3999')
         );
 
-        let savedServer = (auth() && auth().getServerUrl) ? auth().getServerUrl() : (localStorage.getItem('landisk_custom_server') || '');
-        if (savedServer) {
-            window.currentServerUrl = savedServer;
-            const displayHost = savedServer.replace(/^https?:\/\//, '');
-            if (labelEl) labelEl.textContent = `当前已绑定: ${displayHost}`;
+        let savedServer = '';
+        if (isAppContainer) {
+            savedServer = (auth() && auth().getServerUrl) ? auth().getServerUrl() : (localStorage.getItem('landisk_custom_server') || '');
+            if (savedServer) {
+                window.currentServerUrl = savedServer;
+                const displayHost = savedServer.replace(/^https?:\/\//, '');
+                if (labelEl) labelEl.textContent = `当前已绑定: ${displayHost}`;
+                if (btnLabel) btnLabel.textContent = displayHost.length > 18 ? displayHost.substring(0, 16) + '…' : displayHost;
+            } else {
+                if (labelEl) labelEl.textContent = '未连接电脑 (请扫描雷达或输入 IP)';
+                if (btnLabel) btnLabel.textContent = '雷达连电脑';
+            }
+        } else {
+            // 普通网页端：永远以当前页面的 origin 为后端服务地址，绝对防止被历史缓存的 IP 误导
+            window.currentServerUrl = window.location.origin;
+            savedServer = window.location.origin;
+            const displayHost = window.location.host;
+            if (labelEl) labelEl.textContent = `当前已连通: ${displayHost}`;
             if (btnLabel) btnLabel.textContent = displayHost.length > 18 ? displayHost.substring(0, 16) + '…' : displayHost;
-        } else if (isAppContainer) {
-            if (labelEl) labelEl.textContent = '未连接电脑 (请扫描雷达或输入 IP)';
-            if (btnLabel) btnLabel.textContent = '雷达连电脑';
+            try { localStorage.removeItem('landisk_custom_server'); } catch (e) {}
         }
 
         if (!modal) return;
@@ -1123,6 +1171,12 @@
             }
 
             // 保存服务端配置
+            if (!isAppContainer && (window.location.protocol === 'http:' || window.location.protocol === 'https:')) {
+                if (window.location.origin !== fullUrl) {
+                    window.location.href = fullUrl;
+                    return;
+                }
+            }
             savedServer = fullUrl;
             if (auth() && auth().setServerUrl) {
                 auth().setServerUrl(fullUrl);
@@ -1675,7 +1729,13 @@
             (window.location.hostname === 'localhost' && window.location.port !== '3000' && window.location.port !== '3001' && window.location.port !== '3002' && window.location.port !== '3003' && window.location.port !== '3999')
         );
 
-        const currentServer = (auth() && auth().getServerUrl) ? auth().getServerUrl() : (localStorage.getItem('landisk_custom_server') || '');
+        // 普通网页端：绝对强制锁定当前 origin 为服务端地址，并主动清理历史污染缓存
+        if (!isAppContainer && (window.location.protocol === 'http:' || window.location.protocol === 'https:')) {
+            window.currentServerUrl = window.location.origin;
+            try { localStorage.removeItem('landisk_custom_server'); } catch (e) {}
+        }
+
+        const currentServer = (auth() && auth().getServerUrl) ? auth().getServerUrl() : (window.currentServerUrl || '');
 
         // 在独立移动端 App 且尚未绑定任何服务器 IP 时，直接弹出局域网雷达引导
         if (isAppContainer && !currentServer) {
@@ -1715,7 +1775,7 @@
             const pingRes = await fetch(api('/api/ping'), {
                 method: 'GET',
                 headers: { 'Accept': 'application/json' },
-                signal: safeTimeout(2000)
+                signal: safeTimeout(4000)
             });
             if (pingRes.ok) {
                 const sInfo = await pingRes.json().catch(() => ({}));
@@ -1731,7 +1791,7 @@
             const res = await fetch(api('/api/verify'), {
                 method: 'GET',
                 headers: auth().authHeaders(),
-                signal: safeTimeout(2500)
+                signal: safeTimeout(4500)
             });
             if (res.ok) {
                 enterApp();
@@ -1752,6 +1812,14 @@
                 const switched = await failoverToFavorite(currentServer);
                 if (!switched && window.triggerAppRadar) window.triggerAppRadar();
             } else {
+                try {
+                    await new Promise(r => setTimeout(r, 400));
+                    const retryRes = await fetch(api('/api/ping'), { headers: { 'Accept': 'application/json' }, signal: safeTimeout(4000) });
+                    if (retryRes.ok) {
+                        enterApp();
+                        return;
+                    }
+                } catch (eRetry) {}
                 LanDiskUI.toast('与电脑主服务连接中断，请检查局域网或点击顶栏雷达重新连接', 'warning', 4000);
             }
         }
@@ -1769,5 +1837,9 @@
         }
     }
 
-    document.addEventListener('DOMContentLoaded', init);
-})();
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})(typeof window !== 'undefined' ? window : this);

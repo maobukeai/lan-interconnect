@@ -39,6 +39,7 @@
         $('#btn-explorer-refresh') && ($('#btn-explorer-refresh').innerHTML = I('refresh', 16));
         $('#btn-upload-icon') && ($('#btn-upload-icon').innerHTML = I('upload', 15));
         $('#btn-add-bookmark') && ($('#btn-add-bookmark').innerHTML = I('sparkles', 13) + ' 收藏路径');
+        $('#btn-about') && ($('#btn-about').innerHTML = I('info', 15));
     }
 
     /* ---------- 主题 ---------- */
@@ -102,6 +103,13 @@
         });
         $('#btn-devtools').style.display = IPC.available ? '' : 'none';
         $('#btn-quit') && $('#btn-quit').addEventListener('click', () => doQuitApp());
+
+        const btnAbout = $('#btn-about');
+        if (btnAbout) {
+            btnAbout.addEventListener('click', () => {
+                switchView('about');
+            });
+        }
 
         // 订阅主进程关闭请求 (如窗口关闭事件)
         if (window.api && window.api.on) {
@@ -426,9 +434,16 @@
             }
         }
         if (view === 'chat') { chatUnread = 0; updateChatBadge(); bootChat(); }
-        if (view === 'files' && IPC.state.running && !filesInited) {
-            filesInited = true;
-            FileExplorerComponent.init('file-list', 'current-path');
+        if (view === 'files') {
+            if (!filesInited) {
+                filesInited = true;
+                FileExplorerComponent.init('file-list', 'current-path');
+            } else if (typeof FileExplorerComponent !== 'undefined' && FileExplorerComponent.getInstance()) {
+                const fileList = $('#file-list');
+                if (fileList && fileList.querySelector('.empty-state')) {
+                    FileExplorerComponent.getInstance().loadDrives(false);
+                }
+            }
         }
         if (view === 'media' && !mediaInited) {
             mediaInited = true;
@@ -459,6 +474,11 @@
             initSettingsVisit();
             refreshCurrentSettingsPanel();
         }
+        if (view === 'about') {
+            if (typeof AboutPanelComponent !== 'undefined' && AboutPanelComponent.init) {
+                AboutPanelComponent.init('about-page-mount');
+            }
+        }
     }
 
     function bootChat() {
@@ -488,8 +508,8 @@
         try {
             if (IPC.state.running) {
                 try {
-                    const timeoutSig = (global.LanDiskAuth && global.LanDiskAuth.timeoutSignal)
-                        ? global.LanDiskAuth.timeoutSignal(3000)
+                    const timeoutSig = (window.LanDiskAuth && window.LanDiskAuth.timeoutSignal)
+                        ? window.LanDiskAuth.timeoutSignal(3000)
                         : (AbortSignal.timeout ? AbortSignal.timeout(3000) : undefined);
                     const [sysRes, devRes] = await Promise.all([
                         fetch(api('/api/sys-info'), { headers: auth().authHeaders(), signal: timeoutSig }),
@@ -852,6 +872,11 @@
         else if (p === 'history') refreshSettingsHistory();
         else if (p === 'app') { /* 静态表单 */ }
         else if (p === 'logs') renderLogs();
+        else if (p === 'about') {
+            if (typeof AboutPanelComponent !== 'undefined' && AboutPanelComponent.init) {
+                AboutPanelComponent.init('panel-about');
+            }
+        }
     }
 
     function loadSecurityForm() {
@@ -1283,6 +1308,8 @@
         // 快捷操作
         const qaRemote = $('#qa-remote-control');
         if (qaRemote) qaRemote.addEventListener('click', () => switchView('tools'));
+        const qaAbout = $('#qa-about');
+        if (qaAbout) qaAbout.addEventListener('click', () => switchView('about'));
 
         // 工具页
         $('#btn-terminal-run').addEventListener('click', () => WebTerminalComponent.execute('terminal-input', 'terminal-output'));
@@ -1573,14 +1600,30 @@
             updateServiceUI();
             loadHomeHistory();
             refreshDevices();
-            if (IPC.state.running) bootChat();
+            if (IPC.state.running) {
+                bootChat();
+                if (typeof FileExplorerComponent !== 'undefined') {
+                    if (filesInited && FileExplorerComponent.getInstance()) {
+                        const fileList = $('#file-list');
+                        if (fileList && fileList.querySelector('.empty-state')) {
+                            FileExplorerComponent.getInstance().loadDrives(false);
+                        }
+                    } else if ($('#view-files') && $('#view-files').classList.contains('active')) {
+                        filesInited = true;
+                        FileExplorerComponent.init('file-list', 'current-path');
+                    }
+                }
+                if (mediaInited && typeof MediaTheaterComponent !== 'undefined' && MediaTheaterComponent.scan) {
+                    MediaTheaterComponent.scan();
+                }
+            }
         });
         IPC.onLog(() => {
             if ($('#view-settings').classList.contains('active') && $('#log-view')) renderLogs();
         });
 
         window.isRunning = IPC.state.running;
-        window.currentServerUrl = IPC.state.url;
+        window.currentServerUrl = IPC.state.running ? `http://127.0.0.1:${IPC.state.port || 3000}` : 'http://127.0.0.1:3000';
         updateServiceUI();
         loadSecurityForm();
         pollHome(true);
@@ -1592,6 +1635,10 @@
                     bootChat();
                 }
             }, 500);
+        }
+
+        if (typeof AboutPanelComponent !== 'undefined' && AboutPanelComponent.autoCheckOnStartup) {
+            AboutPanelComponent.autoCheckOnStartup();
         }
 
         IPC.addLog('猫步互联 Pro 桌面端已启动', 'ok');

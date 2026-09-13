@@ -42,8 +42,8 @@ fs.copyFileSync(path.join(ROOT, 'gui.html'), path.join(DIST, 'gui.html'));
 copyRecursive(path.join(ROOT, 'desktop'), path.join(DIST, 'desktop'));
 copyRecursive(path.join(ROOT, 'shared'), path.join(DIST, 'shared'));
 
-// 3. 复制图标
-const assets = ['icon.png', 'icon.ico', 'favicon.png', 'favicon.svg', 'apple-touch-icon.png'];
+// 3. 复制图标与版本元数据
+const assets = ['icon.png', 'icon.ico', 'favicon.png', 'favicon.svg', 'apple-touch-icon.png', 'version.json'];
 assets.forEach(a => {
     const p = path.join(ROOT, a);
     if (fs.existsSync(p)) {

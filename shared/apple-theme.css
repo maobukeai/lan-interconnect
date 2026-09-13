@@ -882,7 +882,7 @@ nav.dock,
     justify-content: space-around;
     gap: 6px;
     padding: 6px 10px;
-    width: min(470px, calc(100vw - 32px));
+    width: min(530px, calc(100vw - 32px));
     box-sizing: border-box;
     background: rgba(18, 22, 34, 0.72);
     backdrop-filter: blur(40px) saturate(210%);
@@ -3383,22 +3383,31 @@ body.theme-light .dock-glider {
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.28);
 }
 
-.apple-switch input:checked + .apple-slider,
-.apple-switch input:checked + .apple-switch-slider {
-    background: var(--apple-system-green, #34c759);
-    border-color: transparent;
-    box-shadow: 0 0 12px var(--apple-glow-green, rgba(48, 209, 88, 0.35));
-}
-
-.apple-switch input:checked + .apple-slider:before,
-.apple-switch input:checked + .apple-switch-slider:before {
-    transform: translateX(20px);
-}
-
+/* 浅色模式下默认关闭状态底色为浅灰 */
 :root[data-theme="light"] .apple-switch .apple-slider,
 :root[data-theme="light"] .apple-switch-slider {
     background: rgba(0, 0, 0, 0.12);
     border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+/* 开启状态（Checked）——无论深色还是浅色模式，均呈现鲜明苹果系统高饱和绿并带精致光晕 */
+.apple-switch input:checked + .apple-slider,
+.apple-switch input:checked + .apple-switch-slider,
+:root[data-theme="light"] .apple-switch input:checked + .apple-slider,
+:root[data-theme="light"] .apple-switch input:checked + .apple-switch-slider {
+    background: #34c759 !important;
+    background: var(--apple-system-green, #34c759) !important;
+    border-color: transparent !important;
+    box-shadow: 0 0 12px var(--apple-glow-green, rgba(52, 199, 89, 0.45)), 0 2px 6px rgba(52, 199, 89, 0.22) !important;
+}
+
+.apple-switch input:checked + .apple-slider:before,
+.apple-switch input:checked + .apple-switch-slider:before,
+:root[data-theme="light"] .apple-switch input:checked + .apple-slider:before,
+:root[data-theme="light"] .apple-switch input:checked + .apple-switch-slider:before {
+    transform: translateX(20px) !important;
+    background: #ffffff !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2) !important;
 }
 
 /* Apple 风格原生范围滑块 (Range Slider) */

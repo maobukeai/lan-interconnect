@@ -25,6 +25,7 @@
     <script src="shared/components/web-terminal.js"></script>
     <script src="shared/components/remote-control.js?v=20260831_v46"></script>
     <script src="shared/components/study-plan.js?v=20260831_v46"></script>
+    <script src="shared/components/about-panel.js"></script>
     <style>
                 /* ---------- 自定义标题栏与窗体圆角 ---------- */
         html, body {
@@ -281,6 +282,7 @@
         <span class="titlebar-title-text">猫步互联 Pro</span>
     </div>
     <div class="titlebar-actions">
+        <button class="apple-btn-icon" id="btn-about" title="关于与版本更新"><span data-icon="info" data-icon-size="15"></span></button>
         <button class="apple-btn-icon" id="btn-theme" title="深浅主题"></button>
         <button class="apple-btn-icon" id="btn-devtools" title="开发者调试工具 (F12)"><span data-icon="terminal" data-icon-size="15"></span></button>
     </div>
@@ -403,6 +405,7 @@
             <button class="apple-btn apple-btn-glass" id="qa-firewall"><span data-icon="shield" data-icon-size="15"></span>防火墙设置</button>
             <button class="apple-btn apple-btn-glass" id="qa-shutdown"><span data-icon="clock" data-icon-size="15"></span>定时关机</button>
             <button class="apple-btn apple-btn-glass" id="qa-copy-link"><span data-icon="copy" data-icon-size="15"></span>复制访问地址</button>
+            <button class="apple-btn apple-btn-glass" id="qa-about"><span data-icon="info" data-icon-size="15"></span>关于与更新</button>
         </div>
 
         <div class="glass-card">
@@ -636,6 +639,7 @@
             <button class="apple-btn apple-btn-glass apple-btn-sm" data-panel="history"><span data-icon="history" data-icon-size="14"></span>传输记录</button>
             <button class="apple-btn apple-btn-glass apple-btn-sm" data-panel="app"><span data-icon="settings" data-icon-size="14"></span>应用</button>
             <button class="apple-btn apple-btn-glass apple-btn-sm" data-panel="logs"><span data-icon="list" data-icon-size="14"></span>日志</button>
+            <button class="apple-btn apple-btn-glass apple-btn-sm" data-panel="about"><span data-icon="info" data-icon-size="14"></span>关于</button>
         </div>
 
         <!-- 服务与安全 -->
@@ -756,6 +760,14 @@
             </div>
             <div class="log-view" id="log-view"></div>
         </div>
+
+        <!-- 关于 -->
+        <div class="settings-panel glass-card" data-panel="about" id="panel-about"></div>
+    </section>
+
+    <!-- 7. 关于与系统信息 (一级全景视图) -->
+    <section id="view-about" class="view-section">
+        <div id="about-page-mount"></div>
     </section>
 
 </div>
@@ -771,6 +783,7 @@
     <button class="dock-item" data-view="chat"><span data-icon="chat" data-icon-size="22"></span><span class="dock-tip">消息</span></button>
     <button class="dock-item" data-view="tools"><span data-icon="tools" data-icon-size="22"></span><span class="dock-tip">工具</span></button>
     <button class="dock-item" data-view="settings"><span data-icon="settings" data-icon-size="22"></span><span class="dock-tip">设置</span></button>
+    <button class="dock-item" data-view="about"><span data-icon="info" data-icon-size="22"></span><span class="dock-tip">关于</span></button>
 </nav>
 
 <!-- 传输抽屉 -->

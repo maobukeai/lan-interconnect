@@ -1,5 +1,5 @@
-const STATIC_CACHE_NAME = 'lan-disk-static-v5';
-const VIDEO_CACHE_NAME = 'lan-disk-video-cache-v5';
+const STATIC_CACHE_NAME = 'lan-disk-static-v7';
+const VIDEO_CACHE_NAME = 'lan-disk-video-cache-v7';
 
 const PRECACHE_ASSETS = [
     '/',

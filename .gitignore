@@ -12,6 +12,7 @@ build/
 mobile-dist/
 desktop-dist/
 dist-server/
+dist_output/
 src-tauri/binaries/
 *.exe
 *.apk

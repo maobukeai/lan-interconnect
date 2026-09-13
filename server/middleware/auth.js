@@ -125,7 +125,7 @@ function isAllowedApiOrigin(req) {
         if (o.protocol !== 'http:' && o.protocol !== 'https:') return false;
         if (o.host === (req.headers.host || '')) return true;
         const hostname = o.hostname.replace(/^\[|\]$/g, '');
-        if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || /\.local$/i.test(hostname)) return true;
+        if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || /(^|\.)localhost$/i.test(hostname) || /\.local$/i.test(hostname)) return true;
         if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.|169\.254\.)/.test(hostname)) return true;
         // IPv6 唯一本地地址 (fc00::/7) 与链路本地地址 (fe80::/10)
         if (/^f[cd][0-9a-f]{2}:/.test(hostname) || /^fe[89ab]:/.test(hostname)) return true;
