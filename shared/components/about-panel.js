@@ -1029,8 +1029,11 @@
                     if (p.stage === 'done') {
                         clearInterval(progressTimer);
                         progressTimer = null;
-                        if (stageEl) stageEl.textContent = '下载完成，正在自动启动安装升级…';
-                        if (btnUpgrade) btnUpgrade.innerHTML = '正在启动升级程序…';
+                        if (stageEl) stageEl.textContent = '下载完成，正在自动启动安装升级并重启…';
+                        if (btnUpgrade) {
+                            btnUpgrade.disabled = true;
+                            btnUpgrade.innerHTML = '正在完成升级并重启…';
+                        }
                         const silent = localStorage.getItem('landisk_auto_silent_update') === 'true';
 
                         setTimeout(async () => {
@@ -1044,11 +1047,28 @@
                                         body: JSON.stringify({ silent })
                                     });
                                 }
-                                if (UI && UI.toast) UI.toast('升级程序已成功启动，当前程序即将退出', 'success');
+                                if (UI && UI.toast) UI.toast('升级程序已成功启动，软件即将退出并自动重启', 'success');
+
+                                // 主动退出当前客户端窗口，彻底释放文件锁让安装程序覆盖并自动拉起新版本
+                                setTimeout(async () => {
+                                    try {
+                                        if (IPC && typeof IPC.quit === 'function') {
+                                            await IPC.quit();
+                                        } else if (window.api && typeof window.api.quitApp === 'function') {
+                                            await window.api.quitApp();
+                                        } else if (window.__TAURI__ && window.__TAURI__.core) {
+                                            await window.__TAURI__.core.invoke('quit_app');
+                                        } else {
+                                            window.close();
+                                        }
+                                    } catch (e) {
+                                        window.close();
+                                    }
+                                }, 800);
                             } catch (e) {
                                 alert('自动启动升级失败: ' + e.message + '\n已为您打开文件目录');
                             }
-                        }, 800);
+                        }, 600);
                     } else if (p.stage === 'error') {
                         clearInterval(progressTimer);
                         progressTimer = null;
@@ -1301,7 +1321,10 @@
                                 </div>
                             `;
                         }
-                        if (btnUpgrade) btnUpgrade.innerHTML = '正在启动安装程序…';
+                        if (btnUpgrade) {
+                            btnUpgrade.disabled = true;
+                            btnUpgrade.innerHTML = '正在完成升级并重启…';
+                        }
 
                         setTimeout(async () => {
                             try {
@@ -1314,11 +1337,28 @@
                                         body: JSON.stringify({ silent: isSilent })
                                     });
                                 }
-                                if (UI && UI.toast) UI.toast('升级程序已启动，软件即将关闭重启', 'success');
+                                if (UI && UI.toast) UI.toast('升级程序已启动，软件即将关闭并自动重启', 'success');
+
+                                // 主动优雅退出当前客户端，彻底释放文件锁让安装程序覆盖并自动拉起新版本
+                                setTimeout(async () => {
+                                    try {
+                                        if (IPC && typeof IPC.quit === 'function') {
+                                            await IPC.quit();
+                                        } else if (window.api && typeof window.api.quitApp === 'function') {
+                                            await window.api.quitApp();
+                                        } else if (window.__TAURI__ && window.__TAURI__.core) {
+                                            await window.__TAURI__.core.invoke('quit_app');
+                                        } else {
+                                            window.close();
+                                        }
+                                    } catch (e) {
+                                        window.close();
+                                    }
+                                }, 800);
                             } catch (e) {
                                 alert('启动升级程序失败: ' + e.message);
                             }
-                        }, 800);
+                        }, 600);
                     } else if (p.stage === 'error') {
                         clearInterval(progressTimer);
                         progressTimer = null;

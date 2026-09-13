@@ -936,21 +936,84 @@ router.post('/system/install-update', (req, res) => {
 
     const { spawn } = require('child_process');
     try {
-        const args = silent ? ['/S'] : [];
-        const child = spawn(target, args, {
+        // 检测当前正在运行的应用路径，优先定位同目录下的 lan-disk.exe
+        let runningExePath = '';
+        if (process.execPath && process.execPath.toLowerCase().endsWith('lan-disk-server.exe')) {
+            const siblingExe = path.join(path.dirname(process.execPath), 'lan-disk.exe');
+            if (fs.existsSync(siblingExe)) runningExePath = siblingExe;
+        }
+
+        // 生成专用的独立脱壳升级与自动重启批处理脚本
+        const updaterBat = path.join(os.tmpdir(), `landisk-updater-${Date.now()}.bat`);
+        const isSilent = silent ? '1' : '0';
+        const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+        const defaultInstalledExe = path.join(localAppData, '猫步互联 Pro', 'lan-disk.exe');
+        const programFilesExe = path.join(process.env['ProgramFiles'] || 'C:\\Program Files', '猫步互联 Pro', 'lan-disk.exe');
+
+        const batLines = [
+            '@echo off',
+            'chcp 65001 >nul',
+            'title 猫步互联 Pro 升级安装与自动重启服务',
+            'echo ==================================================',
+            'echo   正在执行 猫步互联 Pro 自动升级与自动重启...',
+            'echo ==================================================',
+            '',
+            ':: 1. 等待主窗口优雅关闭，并清理残留进程以解除文件锁',
+            'timeout /t 2 /nobreak >nul',
+            'taskkill /f /im lan-disk.exe >nul 2>&1',
+            'taskkill /f /im lan-disk-server.exe >nul 2>&1',
+            'taskkill /f /im LanDisk-Pro*.exe >nul 2>&1',
+            'timeout /t 1 /nobreak >nul',
+            '',
+            ':: 2. 执行安装程序',
+            `echo [Updater] 正在运行安装包: "${target}"`,
+            `if "${isSilent}"=="1" (`,
+            `    start /wait "" "${target}" /S`,
+            `) else (`,
+            `    start /wait "" "${target}"`,
+            `)`,
+            '',
+            ':: 3. 等待 1 秒确保磁盘写入完成，并自动启动新版本客户端',
+            'timeout /t 1 /nobreak >nul',
+            'set "TARGET_LAUNCH="',
+            runningExePath ? `if exist "${runningExePath}" set "TARGET_LAUNCH=${runningExePath}"` : '',
+            `if not defined TARGET_LAUNCH if exist "${defaultInstalledExe}" set "TARGET_LAUNCH=${defaultInstalledExe}"`,
+            `if not defined TARGET_LAUNCH if exist "${programFilesExe}" set "TARGET_LAUNCH=${programFilesExe}"`,
+            '',
+            ':: 防止重复拉起：若新版尚未处于运行中则立即拉起',
+            'tasklist /fi "imagename eq lan-disk.exe" 2^>nul | findstr /i "lan-disk.exe" >nul || (',
+            '    if defined TARGET_LAUNCH (',
+            '        echo [Updater] 成功启动新版客户端: %TARGET_LAUNCH%',
+            '        start "" "%TARGET_LAUNCH%"',
+            '    ) else (',
+            `        start "" "${defaultInstalledExe}"`,
+            '    )',
+            ')',
+            '',
+            ':: 4. 延迟清理自身批处理脚本与临时安装包',
+            'timeout /t 3 /nobreak >nul',
+            `del /f /q "${target}" >nul 2>&1`,
+            '(goto) 2>nul & del "%~f0" >nul 2>&1',
+            'exit /b 0'
+        ].filter(line => line !== undefined && line !== null);
+
+        fs.writeFileSync(updaterBat, batLines.join('\r\n'), 'utf8');
+
+        // 独立脱壳启动升级批处理，脱离当前进程生命周期
+        const child = spawn('cmd.exe', ['/c', updaterBat], {
             detached: true,
             stdio: 'ignore'
         });
         child.unref();
 
-        res.json({ success: true, message: '升级安装程序已成功启动' });
+        res.json({ success: true, message: '升级安装与重启服务已成功启动，软件即将关闭并自动重新开启新版本' });
 
-        // 延时关闭后端服务以便新版覆盖
+        // 延时让出资源给批处理脚本
         setTimeout(() => {
             process.exit(0);
-        }, 1500);
+        }, 1200);
     } catch (err) {
-        res.status(500).json({ success: false, error: '启动安装程序失败: ' + err.message });
+        res.status(500).json({ success: false, error: '启动自动升级重启服务失败: ' + err.message });
     }
 });
 

@@ -420,11 +420,20 @@
             if (typeof window.api.invoke === 'function') return window.api.invoke('close-window');
         },
         quit: async () => {
-            if (state.running) await stopService();
-            if (hasApi) {
-                if (typeof window.api.quitApp === 'function') return window.api.quitApp();
-                if (typeof window.api.invoke === 'function') return window.api.invoke('quit-app');
-            }
+            try {
+                if (state.running) await stopService();
+            } catch (e) {}
+            try {
+                if (hasApi && typeof window.api.quitApp === 'function') return await window.api.quitApp();
+                if (hasApi && typeof window.api.invoke === 'function') return await window.api.invoke('quit-app');
+                if (window.__TAURI__ && window.__TAURI__.core && typeof window.__TAURI__.core.invoke === 'function') {
+                    return await window.__TAURI__.core.invoke('quit_app');
+                }
+                if (window.__TAURI_INTERNALS__ && typeof window.__TAURI_INTERNALS__.invoke === 'function') {
+                    return await window.__TAURI_INTERNALS__.invoke('quit_app');
+                }
+            } catch (e) {}
+            try { window.close(); } catch (e) {}
         },
         openDevTools: async () => {
             if (hasApi && typeof window.api.openDevTools === 'function') return await window.api.openDevTools();
