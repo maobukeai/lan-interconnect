@@ -1,36 +1,36 @@
 {
-  "version": "2.3.5",
+  "version": "2.3.6",
   "name": "猫步互联 Pro",
   "author": "猫步可爱 (maobukeai)",
   "release_date": "2026-09-13",
   "download_url": "https://github.com/maobukeai/lan-interconnect/releases",
-  "release_notes": "1. 界面升级：新增高审美 Liquid Glass 质感关于页面与技术架构全景展示；\n2. 自动更新：集成软件内免限流 CDN 自动检查更新与静默升级服务；\n3. 体验增强：新增独立更新模态提醒弹窗与作者互动支持；\n4. 核心优化：提升局域网千兆极速互传与多端协同稳定性。",
+  "release_notes": "1. 升级体验深度优化：实现独立脱壳升级批处理脚本，在升级安装时主动优雅退出客户端释放文件锁，安装完成后自动静默重新拉起新版本，实现真正的一键平滑无感升级；\n2. 界面与交互增强：更新升级模态窗口状态流转提示，新增退出与重启友好反馈；\n3. 稳定性提升：强化多端协同与局域网文件互传可靠性。",
   "assets": [
     {
-      "name": "LanDisk-Pro-2.3.5-Setup.exe",
+      "name": "LanDisk-Pro-2.3.6-Setup.exe",
       "platform": "windows",
-      "url": "https://github.com/maobukeai/lan-interconnect/releases/download/v2.3.5/LanDisk-Pro-2.3.5-Setup.exe",
+      "url": "https://github.com/maobukeai/lan-interconnect/releases/download/v2.3.6/LanDisk-Pro-2.3.6-Setup.exe",
       "size": 28248518,
       "sha256": null
     },
     {
-      "name": "LanDisk-Pro-2.3.5-Setup.msi",
+      "name": "LanDisk-Pro-2.3.6-Setup.msi",
       "platform": "windows",
-      "url": "https://github.com/maobukeai/lan-interconnect/releases/download/v2.3.5/LanDisk-Pro-2.3.5-Setup.msi",
+      "url": "https://github.com/maobukeai/lan-interconnect/releases/download/v2.3.6/LanDisk-Pro-2.3.6-Setup.msi",
       "size": 26000000,
       "sha256": null
     },
     {
-      "name": "LanDisk-Pro-2.3.5-Portable.exe",
+      "name": "LanDisk-Pro-2.3.6-Portable.exe",
       "platform": "windows",
-      "url": "https://github.com/maobukeai/lan-interconnect/releases/download/v2.3.5/LanDisk-Pro-2.3.5-Portable.exe",
+      "url": "https://github.com/maobukeai/lan-interconnect/releases/download/v2.3.6/LanDisk-Pro-2.3.6-Portable.exe",
       "size": 10996224,
       "sha256": null
     },
     {
-      "name": "LanDisk-Pro-2.3.5.apk",
+      "name": "LanDisk-Pro-2.3.6.apk",
       "platform": "android",
-      "url": "https://github.com/maobukeai/lan-interconnect/releases/download/v2.3.5/LanDisk-Pro-2.3.5.apk",
+      "url": "https://github.com/maobukeai/lan-interconnect/releases/download/v2.3.6/LanDisk-Pro-2.3.6.apk",
       "size": 9027600,
       "sha256": null
     }
