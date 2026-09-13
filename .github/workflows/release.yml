@@ -7,19 +7,19 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release Tag Name (e.g. v2.0.1)'
+        description: 'Release Tag Name (e.g. v2.1.1)'
         required: true
-        default: 'v2.0.1'
+        default: 'v2.1.1'
 
 permissions:
   contents: write
 
 jobs:
   # -------------------------------------------------------------
-  # Job 1: Build Windows Binaries (Electron + Tauri) & Run Tests
+  # Job 1: Build Windows Binaries (Tauri 2.0 Native) & Run Tests
   # -------------------------------------------------------------
   build-windows:
-    name: 🪟 Build Windows Packages (Electron & Tauri)
+    name: 🪟 Build Windows Packages (Tauri 2.0 Native)
     runs-on: windows-latest
     steps:
       - name: 📥 Checkout Repository
@@ -58,16 +58,8 @@ jobs:
       - name: ⚙️ Sync Version Across Projects
         run: node scripts/bump-version.js ${{ env.VERSION }}
 
-      - name: 📦 Build Desktop Web Bundle
-        run: node scripts/build-desktop-web.js
-
       - name: 🦀 Build Tauri Application (x64)
         run: npx @tauri-apps/cli build
-
-      - name: ⚡ Build Electron Application (x64)
-        run: npx electron-builder --win --x64 --publish never
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 📁 Prepare Windows Release Artifacts
         run: node scripts/prepare-windows-artifacts.js ${{ env.VERSION }}
@@ -148,7 +140,7 @@ jobs:
           if-no-files-found: error
 
   # -------------------------------------------------------------
-  # Job 3: Publish GitHub Release with All 6 Artifacts
+  # Job 3: Publish GitHub Release with All Native Artifacts
   # -------------------------------------------------------------
   publish-release:
     name: 🚀 Publish GitHub Release
@@ -191,26 +183,24 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG_NAME }}
-          name: "猫步互联 Pro ${{ env.TAG_NAME }} - 全矩阵云端自动打包发布"
+          name: "猫步互联 Pro ${{ env.TAG_NAME }} - 纯原生轻量新架构发布"
           draft: false
           prerelease: false
           files: |
             release_assets/LanDisk-Pro-${{ env.VERSION }}-Setup.exe
-            release_assets/LanDisk-Pro-${{ env.VERSION }}-Green-Portable.zip
-            release_assets/LanDisk-Pro-${{ env.VERSION }}-Single-Portable.exe
-            release_assets/LanDisk-Pro-${{ env.VERSION }}-Tauri-Portable.exe
-            release_assets/LanDisk-Pro-${{ env.VERSION }}-Tauri-Setup.exe
+            release_assets/LanDisk-Pro-${{ env.VERSION }}-Portable.exe
             release_assets/LanDisk-Pro-${{ env.VERSION }}.apk
           body: |
-            ### 🚀 猫步互联 Pro ${{ env.TAG_NAME }} 重磅发布说明
+            ### 🚀 猫步互联 Pro ${{ env.TAG_NAME }} 全新纯原生轻量架构发布说明
 
-            本版本通过 **GitHub Actions 云端虚拟机（Windows + Ubuntu）** 自动化测试并完成全矩阵多平台编译与构建：
+            本版本已彻底移除历史 Electron 依赖，全面升级为 **Tauri 2.0 (Rust) + Node.js SEA 独立单二进制架构**，安装包体积由原先的 150MB+ 大幅瘦身 **87%** 至约 **25MB**！
 
-            #### ✨ 版本特性：
-            1. 📺 **DLNA 无线大屏投屏**：局域网视频与媒体内容一键无线投屏至智能电视/电视盒子；
-            2. 📚 **智能学习计划与专注打卡**：课时智能扫描、进度跟踪、连续连胜天数与实操任务清单；
-            3. ⚡ **多线程分块并发传输**：独立 Worker 并发上传与极速目录缓存，大文件传输更稳定；
-            4. 📱 **双轨沉浸体验**：Android 原生硬件级全屏 + 手机 Web 纯净沉浸全屏；
-            5. 🛠️ **全矩阵双轨构建更新**：包含 Android 原生 APK (6.8MB)、Windows 极速安装版、绿色单文件与 Tauri 极轻版 (8.7MB)。
+            #### ✨ 核心特性与亮点：
+            1. 🦀 **全新 Tauri 2.0 纯原生宿主**：无边框玻璃拟态毛玻璃窗口、系统级原生托盘控制、开机自启动与原生极轻渲染；
+            2. ⚡ **Node.js SEA 独立单二进制服务端**：零环境依赖运行，无需额外安装 Node 环境，秒开启动；
+            3. 📱 **全平台跨端矩阵**：Android 原生 APK (约 6.8MB)、Windows 便携免安装版 (约 9.2MB)、Windows NSIS 极速安装程序 (约 25MB)；
+            4. 📺 **DLNA 无线大屏投屏**：局域网视频与多媒体一键投屏至电视盒子；
+            5. 📚 **智能学习计划与专注打卡**：课时智能扫描、进度跟踪与实操考核；
+            6. 🎛️ **跨端遥控与屏幕镜像**：系统音量控制、电源管理（睡眠/锁屏/定时关机）与屏幕低延迟流式镜像。
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
