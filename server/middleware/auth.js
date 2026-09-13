@@ -117,11 +117,11 @@ function isLocalRequest(req) {
 function isAllowedApiOrigin(req) {
     const origin = req.headers.origin;
     if (!origin) return true; // 无 Origin（curl / 原生客户端 / 媒体播放器）
-    if (origin === 'null') return true; // file:// 桌面端 (Electron 壳)
+    if (origin === 'null') return true; // file:// 桌面端或原生 WebView 壳
     try {
         const o = new URL(origin);
         // 打包壳内协商方案（Capacitor iOS/Tauri 等），均为应用自己持有的受限上下文
-        if (o.protocol === 'capacitor:' || o.protocol === 'ionic:' || o.protocol === 'file:' || o.protocol === 'app:' || o.protocol === 'vscode-webview:') return true;
+        if (o.protocol === 'capacitor:' || o.protocol === 'ionic:' || o.protocol === 'file:' || o.protocol === 'app:' || o.protocol === 'tauri:' || o.protocol === 'vscode-webview:') return true;
         if (o.protocol !== 'http:' && o.protocol !== 'https:') return false;
         if (o.host === (req.headers.host || '')) return true;
         const hostname = o.hostname.replace(/^\[|\]$/g, '');

@@ -8,7 +8,10 @@
     'use strict';
 
     // 支持 Electron 与 Tauri 双环境桥接
-    if (typeof window !== 'undefined' && !window.api && (window.__TAURI__ || window.__TAURI_INTERNALS__)) {
+    const isTauriEnv = typeof window !== 'undefined' && (!!window.isTauri || !!window.__TAURI__ || !!window.__TAURI_INTERNALS__);
+    const hasExistingDesktopApi = typeof window !== 'undefined' && !!window.api && typeof window.api.startServer === 'function';
+
+    if (isTauriEnv && !hasExistingDesktopApi) {
         const invoke = (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke)
             || (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke);
 
@@ -65,7 +68,13 @@
             }
         };
 
-        window.api = {
+        function desktopApi(endpoint) {
+            return (window.LanDiskAuth && typeof window.LanDiskAuth.api === 'function')
+                ? window.LanDiskAuth.api(endpoint)
+                : (typeof endpoint === 'string' ? endpoint : '');
+        }
+
+        Object.assign(desktopApi, {
             startServer: async (cfg) => {
                 try {
                     return await invoke('start_server', { cfg });
@@ -235,10 +244,11 @@
                 }
                 return () => {};
             }
-        };
+        });
+        window.api = desktopApi;
     }
 
-    const hasApi = typeof window !== 'undefined' && !!window.api;
+    const hasApi = typeof window !== 'undefined' && !!window.api && typeof window.api.startServer === 'function';
 
     /* ---------- 运行日志（内存 + localStorage，上限 200 条） ---------- */
     let logs = [];
