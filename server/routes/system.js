@@ -99,7 +99,7 @@ async function getDiskSpace() {
 }
 
 const ROOT_DIR = path.resolve(__dirname, '..', '..');
-const APP_VERSION = '2.3.4';
+const APP_VERSION = '2.3.5';
 function getAppVersion() {
     try {
         const pkgPath = path.join(ROOT_DIR, 'package.json');

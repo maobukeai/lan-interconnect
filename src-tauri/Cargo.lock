@@ -2001,7 +2001,7 @@ dependencies = [
 
 [[package]]
 name = "lan-disk"
-version = "2.3.0"
+version = "2.3.4"
 dependencies = [
  "log",
  "rfd",

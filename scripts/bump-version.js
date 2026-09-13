@@ -75,12 +75,37 @@ if (fs.existsSync(versionJsonPath)) {
         const vData = JSON.parse(fs.readFileSync(versionJsonPath, 'utf8'));
         vData.version = newVersion;
         vData.release_date = new Date().toISOString().slice(0, 10);
-        if (Array.isArray(vData.assets)) {
-            vData.assets.forEach(a => {
-                if (a.name) a.name = a.name.replace(/LanDisk-Pro-[\d\.]+/g, 'LanDisk-Pro-' + newVersion).replace(/\d+\.\d+\.\d+/g, newVersion);
-                if (a.url) a.url = a.url.replace(/v\d+\.\d+\.\d+/g, 'v' + newVersion).replace(/LanDisk-Pro-[\d\.]+/g, 'LanDisk-Pro-' + newVersion).replace(/\d+\.\d+\.\d+/g, newVersion);
-            });
-        }
+        vData.download_url = 'https://github.com/maobukeai/lan-interconnect/releases';
+        vData.assets = [
+            {
+                name: `LanDisk-Pro-${newVersion}-Setup.exe`,
+                platform: 'windows',
+                url: `https://github.com/maobukeai/lan-interconnect/releases/download/v${newVersion}/LanDisk-Pro-${newVersion}-Setup.exe`,
+                size: 28248518,
+                sha256: null
+            },
+            {
+                name: `LanDisk-Pro-${newVersion}-Setup.msi`,
+                platform: 'windows',
+                url: `https://github.com/maobukeai/lan-interconnect/releases/download/v${newVersion}/LanDisk-Pro-${newVersion}-Setup.msi`,
+                size: 26000000,
+                sha256: null
+            },
+            {
+                name: `LanDisk-Pro-${newVersion}-Portable.exe`,
+                platform: 'windows',
+                url: `https://github.com/maobukeai/lan-interconnect/releases/download/v${newVersion}/LanDisk-Pro-${newVersion}-Portable.exe`,
+                size: 10996224,
+                sha256: null
+            },
+            {
+                name: `LanDisk-Pro-${newVersion}.apk`,
+                platform: 'android',
+                url: `https://github.com/maobukeai/lan-interconnect/releases/download/v${newVersion}/LanDisk-Pro-${newVersion}.apk`,
+                size: 9027600,
+                sha256: null
+            }
+        ];
         fs.writeFileSync(versionJsonPath, JSON.stringify(vData, null, 2) + '\n', 'utf8');
         console.log(`  ✓ 已更新 version.json -> ${newVersion}`);
     } catch (e) {
