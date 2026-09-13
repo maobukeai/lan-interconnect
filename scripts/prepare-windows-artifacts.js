@@ -43,6 +43,23 @@ async function main() {
         console.error('[Artifacts] 未找到 Tauri NSIS 目录: ' + nsisDir);
     }
 
+    // 3. Tauri WiX MSI 安装包
+    const msiDir = path.join(ROOT, 'src-tauri', 'target', 'release', 'bundle', 'msi');
+    if (fs.existsSync(msiDir)) {
+        const msiFiles = fs.readdirSync(msiDir);
+        const tauriMsi = msiFiles.find(f => f.endsWith('.msi'));
+        if (tauriMsi) {
+            const src = path.join(msiDir, tauriMsi);
+            const dest = path.join(distOutput, 'LanDisk-Pro-' + version + '-Setup.msi');
+            fs.copyFileSync(src, dest);
+            console.log('[Artifacts] 已生成: LanDisk-Pro-' + version + '-Setup.msi (' + (fs.statSync(dest).size / 1024 / 1024).toFixed(2) + ' MB)');
+        } else {
+            console.warn('[Artifacts] 未在 msi 目录下找到 .msi 文件');
+        }
+    } else {
+        console.warn('[Artifacts] msi 目录不存在: ' + msiDir);
+    }
+
     console.log('=== dist_output 内容清单 ===');
     const outputs = fs.readdirSync(distOutput);
     for (const f of outputs) {
