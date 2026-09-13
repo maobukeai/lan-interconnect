@@ -44,6 +44,7 @@ if (fs.existsSync(gradlePath)) {
 const sysPath = path.join(ROOT, 'server', 'routes', 'system.js');
 if (fs.existsSync(sysPath)) {
     let sys = fs.readFileSync(sysPath, 'utf8');
+    sys = sys.replace(/const APP_VERSION = ['"][^'"]+['"];/g, `const APP_VERSION = '${newVersion}';`);
     sys = sys.replace(/version:\s*['"][^'"]+['"]/g, `version: '${newVersion}'`);
     fs.writeFileSync(sysPath, sys, 'utf8');
     console.log(`  ✓ 已更新 server/routes/system.js -> version: '${newVersion}'`);

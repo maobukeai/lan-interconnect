@@ -99,6 +99,7 @@ async function getDiskSpace() {
 }
 
 const ROOT_DIR = path.resolve(__dirname, '..', '..');
+const APP_VERSION = '2.3.3';
 function getAppVersion() {
     try {
         const pkgPath = path.join(ROOT_DIR, 'package.json');
@@ -114,7 +115,7 @@ function getAppVersion() {
             if (ver.version) return ver.version;
         }
     } catch (e) {}
-    return '2.3.0';
+    return APP_VERSION;
 }
 
 // 局域网服务发现与心跳轻量探针 (无需登录鉴权)
