@@ -683,10 +683,22 @@ router.post('/system/download-update', (req, res) => {
                 if (!fs.existsSync(dir)) continue;
                 try {
                     const files = fs.readdirSync(dir);
-                    const setupFile = files.find(f => f.toLowerCase().endsWith('-setup.exe') || f.toLowerCase().endsWith('setup.exe'));
-                    if (setupFile) return path.join(dir, setupFile);
-                    const anyExe = files.find(f => f.toLowerCase().endsWith('.exe') && !f.toLowerCase().includes('server'));
-                    if (anyExe) return path.join(dir, anyExe);
+                    const setupFiles = files
+                        .filter(f => f.toLowerCase().endsWith('-setup.exe') || f.toLowerCase().endsWith('setup.exe'))
+                        .sort((a, b) => {
+                            try {
+                                return fs.statSync(path.join(dir, b)).mtimeMs - fs.statSync(path.join(dir, a)).mtimeMs;
+                            } catch (e) { return 0; }
+                        });
+                    if (setupFiles.length > 0) return path.join(dir, setupFiles[0]);
+                    const anyExes = files
+                        .filter(f => f.toLowerCase().endsWith('.exe') && !f.toLowerCase().includes('server'))
+                        .sort((a, b) => {
+                            try {
+                                return fs.statSync(path.join(dir, b)).mtimeMs - fs.statSync(path.join(dir, a)).mtimeMs;
+                            } catch (e) { return 0; }
+                        });
+                    if (anyExes.length > 0) return path.join(dir, anyExes[0]);
                 } catch (e) {}
             }
             return null;
@@ -973,29 +985,36 @@ router.post('/system/install-update', (req, res) => {
             `    start /wait "" "${target}"`,
             `)`,
             '',
-            ':: 3. 等待 1 秒确保磁盘写入完成，并自动启动新版本客户端',
+            ':: 3. 等待确保磁盘写入完成并清理可能被安装包带起的旧进程',
             'timeout /t 1 /nobreak >nul',
-            'set "TARGET_LAUNCH="',
-            runningExePath ? `if exist "${runningExePath}" set "TARGET_LAUNCH=${runningExePath}"` : '',
-            `if not defined TARGET_LAUNCH if exist "${defaultInstalledExe}" set "TARGET_LAUNCH=${defaultInstalledExe}"`,
-            `if not defined TARGET_LAUNCH if exist "${programFilesExe}" set "TARGET_LAUNCH=${programFilesExe}"`,
+            'taskkill /f /im lan-disk.exe >nul 2>&1',
+            'taskkill /f /im lan-disk-server.exe >nul 2>&1',
+            'timeout /t 1 /nobreak >nul',
             '',
-            ':: 防止重复拉起：若新版尚未处于运行中则立即拉起',
-            'tasklist /fi "imagename eq lan-disk.exe" 2^>nul | findstr /i "lan-disk.exe" >nul || (',
-            '    if defined TARGET_LAUNCH (',
-            '        echo [Updater] 成功启动新版客户端: %TARGET_LAUNCH%',
-            '        start "" "%TARGET_LAUNCH%"',
-            '    ) else (',
-            `        start "" "${defaultInstalledExe}"`,
-            '    )',
-            ')',
+            ':: 4. 自动重启新版本客户端',
+            runningExePath ? `if exist "${runningExePath}" (` : '',
+            runningExePath ? `    echo [Updater] 成功启动新版客户端: "${runningExePath}"` : '',
+            runningExePath ? `    start "" "${runningExePath}"` : '',
+            runningExePath ? `    goto :cleanup` : '',
+            runningExePath ? `)` : '',
+            `if exist "${defaultInstalledExe}" (`,
+            `    echo [Updater] 成功启动新版客户端: "${defaultInstalledExe}"`,
+            `    start "" "${defaultInstalledExe}"`,
+            `    goto :cleanup`,
+            `)`,
+            `if exist "${programFilesExe}" (`,
+            `    echo [Updater] 成功启动新版客户端: "${programFilesExe}"`,
+            `    start "" "${programFilesExe}"`,
+            `    goto :cleanup`,
+            `)`,
             '',
-            ':: 4. 延迟清理自身批处理脚本与临时安装包',
+            ':cleanup',
+            ':: 5. 延迟清理自身批处理脚本与临时安装包',
             'timeout /t 3 /nobreak >nul',
             `del /f /q "${target}" >nul 2>&1`,
             '(goto) 2>nul & del "%~f0" >nul 2>&1',
             'exit /b 0'
-        ].filter(line => line !== undefined && line !== null);
+        ].filter(line => line !== undefined && line !== null && line !== '');
 
         fs.writeFileSync(updaterBat, batLines.join('\r\n'), 'utf8');
 

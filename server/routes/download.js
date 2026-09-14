@@ -48,7 +48,18 @@ router.post('/download/batch', (req, res) => {
     });
 
     const archive = archiver('zip', { zlib: { level: 1 } });
-    res.attachment(`${(folderName || 'batch_download').replace(/[/\\?%*:|"<>]/g, '-')}.zip`);
+    const safeBase = (folderName || 'batch_download').replace(/[/\\?%*:|"<>]/g, '-');
+    const encodedName = encodeURIComponent(safeBase);
+    res.setHeader('Content-Disposition', `attachment; filename="${encodedName}.zip"; filename*=UTF-8''${encodedName}.zip`);
+    res.setHeader('Content-Type', 'application/zip');
+
+    archive.on('warning', (err) => {
+        if (err.code === 'ENOENT') {
+            console.warn('[Download] Archiver warning:', err);
+        } else {
+            throw err;
+        }
+    });
 
     archive.on('error', (err) => {
         if (res.headersSent) {
@@ -60,9 +71,11 @@ router.post('/download/batch', (req, res) => {
 
     archive.pipe(res);
 
-    // 客户端中途断开时中止打包，避免 archiver 继续读完全部文件写向已销毁的 socket
-    req.on('close', () => {
-        try { archive.abort(); } catch (e) {}
+    // 仅在客户端底层连接断开且响应尚未写完时，中止打包以释放资源
+    req.socket.on('close', () => {
+        if (!res.writableEnded) {
+            try { archive.abort(); } catch (e) {}
+        }
     });
 
     for (const file of files) {

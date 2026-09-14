@@ -796,7 +796,7 @@
                 const zipBtn = e.target.closest('.btn-action-zip-folder');
                 if (zipBtn) {
                     e.stopPropagation();
-                    this.batchManager.downloadZip(zipBtn.getAttribute('data-path'), zipBtn.getAttribute('data-name') || 'folder_download');
+                    this.batchManager.downloadZip([zipBtn.getAttribute('data-path')], zipBtn.getAttribute('data-name') || 'folder_download');
                     return;
                 }
                 const playBtn = e.target.closest('.btn-action-play');

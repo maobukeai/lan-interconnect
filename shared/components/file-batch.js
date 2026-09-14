@@ -122,8 +122,17 @@
         }
 
         downloadZip(customFilesArr = null, customFolderName = 'batch_download') {
-            const filesArr = customFilesArr || Array.from(this.selectedFiles);
-            if (!filesArr || filesArr.length === 0) return;
+            let filesArr = customFilesArr || Array.from(this.selectedFiles);
+            if (!filesArr) return;
+            if (typeof filesArr === 'string') {
+                filesArr = [filesArr];
+            } else if (filesArr instanceof Set) {
+                filesArr = Array.from(filesArr);
+            } else if (!Array.isArray(filesArr)) {
+                try { filesArr = Array.from(filesArr); } catch (e) { filesArr = [filesArr]; }
+            }
+            filesArr = filesArr.filter(f => typeof f === 'string' && f.trim());
+            if (filesArr.length === 0) return;
 
             try {
                 let authQ = '';
@@ -139,10 +148,20 @@
                 const apiUrl = this.getApiUrl('/api/download/batch') + (authQ ? ('?' + authQ.replace(/^&/, '')) : '');
 
                 // 原生 Form POST 流式下载：无需将数 GB 的 ZIP 二进制 Blob 驻留于 JS 堆内存中，
-                // 直接由浏览器内核流式落盘到下载目录，杜绝移动端/Safari 内存暴涨崩溃
+                // 挂载独立隐藏 iframe 作为 target，既不刷新/离开当前页面，又能直接由浏览器内核落盘到下载目录
+                let iframe = document.getElementById('hidden_batch_download_frame');
+                if (!iframe) {
+                    iframe = document.createElement('iframe');
+                    iframe.id = 'hidden_batch_download_frame';
+                    iframe.name = 'hidden_batch_download_frame';
+                    iframe.style.display = 'none';
+                    document.body.appendChild(iframe);
+                }
+
                 const form = document.createElement('form');
                 form.method = 'POST';
                 form.action = apiUrl;
+                form.target = 'hidden_batch_download_frame';
                 form.style.display = 'none';
 
                 const inputFolder = document.createElement('input');

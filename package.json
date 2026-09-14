@@ -6,8 +6,8 @@
   "scripts": {
     "start": "tauri dev",
     "server": "node server.js",
-    "test": "node test.js && node test-remote.js && node test-text-renderer.js && node test-study.js && node test-about-update.js",
-    "test:all": "node test.js && node test-remote.js && node test-text-renderer.js && node test-study.js && node scripts/smoke-realtime.js",
+    "test": "node test.js && node test-remote.js && node test-text-renderer.js && node test-study.js && node test-about-update.js && node test-batch-dl.js",
+    "test:all": "node test.js && node test-remote.js && node test-text-renderer.js && node test-study.js && node test-about-update.js && node test-batch-dl.js && node scripts/smoke-realtime.js",
     "build": "npm run build:tauri",
     "build:desktop": "node scripts/build-desktop-web.js",
     "build:sidecar": "node scripts/build-sidecar.js",
