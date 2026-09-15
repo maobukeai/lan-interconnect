@@ -348,8 +348,11 @@ const sendThumb = (filePath, req, res) => {
         stream.on('error', (err) => {
             if (!res.headersSent) res.status(500).send('Error reading thumbnail');
         });
-        // 客户端断开时销毁读取流，避免 fd 泄漏
-        req.on('close', () => stream.destroy());
+        const cleanup = () => {
+            if (!res.writableEnded) stream.destroy();
+        };
+        req.socket?.on('close', cleanup);
+        res.on('close', cleanup);
         stream.pipe(res);
     } catch (e) {
         if (!res.headersSent) res.status(500).send(e.message);
@@ -430,7 +433,11 @@ const handleThumbnail = async (req, res) => {
         if (IMAGE_EXT_RE.test(targetPath)) {
             res.setHeader('Cache-Control', 'public, max-age=604800');
             const stream = fs.createReadStream(targetPath);
-            req.on('close', () => stream.destroy());
+            const cleanup = () => {
+                if (!res.writableEnded) stream.destroy();
+            };
+            req.socket?.on('close', cleanup);
+            res.on('close', cleanup);
             return stream.pipe(res);
         }
 

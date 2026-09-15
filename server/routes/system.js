@@ -948,9 +948,13 @@ router.post('/system/install-update', (req, res) => {
 
     const { spawn } = require('child_process');
     try {
-        // 检测当前正在运行的应用路径，优先定位同目录下的 lan-disk.exe
+        // 检测当前正在运行的应用路径，按优先级：客户端传参 > 环境变量 > Sidecar同级 > 标准安装路径
         let runningExePath = '';
-        if (process.execPath && process.execPath.toLowerCase().endsWith('lan-disk-server.exe')) {
+        if (req.body && req.body.currentExe && typeof req.body.currentExe === 'string' && fs.existsSync(req.body.currentExe)) {
+            runningExePath = req.body.currentExe;
+        } else if (process.env.LAN_DISK_MAIN_EXE && fs.existsSync(process.env.LAN_DISK_MAIN_EXE)) {
+            runningExePath = process.env.LAN_DISK_MAIN_EXE;
+        } else if (process.execPath && process.execPath.toLowerCase().includes('lan-disk-server')) {
             const siblingExe = path.join(path.dirname(process.execPath), 'lan-disk.exe');
             if (fs.existsSync(siblingExe)) runningExePath = siblingExe;
         }
@@ -958,9 +962,12 @@ router.post('/system/install-update', (req, res) => {
         // 生成专用的独立脱壳升级与自动重启批处理脚本
         const updaterBat = path.join(os.tmpdir(), `landisk-updater-${Date.now()}.bat`);
         const isSilent = silent ? '1' : '0';
+        const targetExeName = path.basename(target);
         const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
         const defaultInstalledExe = path.join(localAppData, '猫步互联 Pro', 'lan-disk.exe');
+        const programsInstalledExe = path.join(localAppData, 'Programs', '猫步互联 Pro', 'lan-disk.exe');
         const programFilesExe = path.join(process.env['ProgramFiles'] || 'C:\\Program Files', '猫步互联 Pro', 'lan-disk.exe');
+        const programFilesX86Exe = path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', '猫步互联 Pro', 'lan-disk.exe');
 
         const batLines = [
             '@echo off',
@@ -970,14 +977,14 @@ router.post('/system/install-update', (req, res) => {
             'echo   正在执行 猫步互联 Pro 自动升级与自动重启...',
             'echo ==================================================',
             '',
-            ':: 1. 等待主窗口优雅关闭，并清理残留进程以解除文件锁',
+            ':: 1. 等待主窗口优雅关闭，并清理残留进程以彻底释放文件锁',
             'timeout /t 2 /nobreak >nul',
             'taskkill /f /im lan-disk.exe >nul 2>&1',
             'taskkill /f /im lan-disk-server.exe >nul 2>&1',
             'taskkill /f /im LanDisk-Pro*.exe >nul 2>&1',
             'timeout /t 1 /nobreak >nul',
             '',
-            ':: 2. 执行安装程序',
+            ':: 2. 执行安装程序并确保其完全退出',
             `echo [Updater] 正在运行安装包: "${target}"`,
             `if "${isSilent}"=="1" (`,
             `    start /wait "" "${target}" /S`,
@@ -985,31 +992,50 @@ router.post('/system/install-update', (req, res) => {
             `    start /wait "" "${target}"`,
             `)`,
             '',
-            ':: 3. 等待确保磁盘写入完成并清理可能被安装包带起的旧进程',
-            'timeout /t 1 /nobreak >nul',
-            'taskkill /f /im lan-disk.exe >nul 2>&1',
-            'taskkill /f /im lan-disk-server.exe >nul 2>&1',
-            'timeout /t 1 /nobreak >nul',
+            ':: 循环等待安装程序子进程完全结束（防 NSIS 提权解包未完成）',
+            `:wait_installer`,
+            `timeout /t 1 /nobreak >nul`,
+            `tasklist /fi "imagename eq ${targetExeName}" 2>nul | find /i "${targetExeName}" >nul`,
+            `if not errorlevel 1 goto :wait_installer`,
             '',
-            ':: 4. 自动重启新版本客户端',
+            ':: 等待磁盘写入与文件句柄释放',
+            'timeout /t 2 /nobreak >nul',
+            '',
+            ':: 3. 智能拉起新版本客户端（若安装程序已勾选直接运行则无需重复启动）',
+            'tasklist /fi "imagename eq lan-disk.exe" 2>nul | find /i "lan-disk.exe" >nul',
+            'if not errorlevel 1 (',
+            '    echo [Updater] 新版本客户端已在运行中，无需重复拉起。',
+            '    goto :cleanup',
+            ')',
+            '',
             runningExePath ? `if exist "${runningExePath}" (` : '',
             runningExePath ? `    echo [Updater] 成功启动新版客户端: "${runningExePath}"` : '',
-            runningExePath ? `    start "" "${runningExePath}"` : '',
+            runningExePath ? `    start "" /D "${path.dirname(runningExePath)}" "${runningExePath}"` : '',
             runningExePath ? `    goto :cleanup` : '',
             runningExePath ? `)` : '',
             `if exist "${defaultInstalledExe}" (`,
             `    echo [Updater] 成功启动新版客户端: "${defaultInstalledExe}"`,
-            `    start "" "${defaultInstalledExe}"`,
+            `    start "" /D "${path.dirname(defaultInstalledExe)}" "${defaultInstalledExe}"`,
+            `    goto :cleanup`,
+            `)`,
+            `if exist "${programsInstalledExe}" (`,
+            `    echo [Updater] 成功启动新版客户端: "${programsInstalledExe}"`,
+            `    start "" /D "${path.dirname(programsInstalledExe)}" "${programsInstalledExe}"`,
             `    goto :cleanup`,
             `)`,
             `if exist "${programFilesExe}" (`,
             `    echo [Updater] 成功启动新版客户端: "${programFilesExe}"`,
-            `    start "" "${programFilesExe}"`,
+            `    start "" /D "${path.dirname(programFilesExe)}" "${programFilesExe}"`,
+            `    goto :cleanup`,
+            `)`,
+            `if exist "${programFilesX86Exe}" (`,
+            `    echo [Updater] 成功启动新版客户端: "${programFilesX86Exe}"`,
+            `    start "" /D "${path.dirname(programFilesX86Exe)}" "${programFilesX86Exe}"`,
             `    goto :cleanup`,
             `)`,
             '',
             ':cleanup',
-            ':: 5. 延迟清理自身批处理脚本与临时安装包',
+            ':: 4. 延迟清理自身批处理脚本与临时安装包',
             'timeout /t 3 /nobreak >nul',
             `del /f /q "${target}" >nul 2>&1`,
             '(goto) 2>nul & del "%~f0" >nul 2>&1',

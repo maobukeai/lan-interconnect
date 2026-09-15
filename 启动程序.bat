@@ -11,18 +11,19 @@ echo ==================================================
 taskkill /f /im lan-disk.exe >nul 2>&1
 taskkill /f /im lan-disk-server.exe >nul 2>&1
 taskkill /f /im LanDisk-Pro*.exe >nul 2>&1
+timeout /t 1 /nobreak >nul
 
 :: 优先启动 Release 最新编译产物
 if exist "src-tauri\target\release\lan-disk.exe" (
     echo [LanDisk] 启动 Release 客户端...
-    start "" "src-tauri\target\release\lan-disk.exe"
+    start "" /D "src-tauri\target\release" "lan-disk.exe"
     exit /b 0
 )
 
 :: 其次动态启动 dist_output 中最新的便携版
 for /f "delims=" %%f in ('dir /b /o-d "dist_output\LanDisk-Pro-*-Portable.exe" 2^>nul') do (
     echo [LanDisk] 启动最新便携版: %%f...
-    start "" "dist_output\%%f"
+    start "" /D "dist_output" "%%f"
     exit /b 0
 )
 

@@ -81,6 +81,67 @@ impl Drop for JobObjectGuard {
     }
 }
 
+pub struct SingleInstanceGuard {
+    #[cfg(target_os = "windows")]
+    handle: HANDLE,
+}
+
+unsafe impl Send for SingleInstanceGuard {}
+unsafe impl Sync for SingleInstanceGuard {}
+
+impl Drop for SingleInstanceGuard {
+    fn drop(&mut self) {
+        #[cfg(target_os = "windows")]
+        unsafe {
+            if !self.handle.is_null() {
+                CloseHandle(self.handle);
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn acquire_single_instance_or_focus() -> Option<SingleInstanceGuard> {
+    unsafe {
+        use windows_sys::Win32::System::Threading::CreateMutexW;
+        use windows_sys::Win32::Foundation::ERROR_ALREADY_EXISTS;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            FindWindowW, SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOW,
+        };
+
+        let wide_name: Vec<u16> = "Global\\LanDisk_SingleInstance_Mutex_v2\0".encode_utf16().collect();
+        let mutex = CreateMutexW(std::ptr::null(), 1, wide_name.as_ptr());
+        if mutex.is_null() {
+            return None;
+        }
+
+        if windows_sys::Win32::Foundation::GetLastError() == ERROR_ALREADY_EXISTS {
+            let title: Vec<u16> = "猫步互联 Pro\0".encode_utf16().collect();
+            let hwnd = FindWindowW(std::ptr::null(), title.as_ptr());
+            if !hwnd.is_null() {
+                ShowWindow(hwnd, SW_RESTORE);
+                ShowWindow(hwnd, SW_SHOW);
+                SetForegroundWindow(hwnd);
+                CloseHandle(mutex);
+                return None;
+            } else {
+                let cur_pid = std::process::id();
+                use std::os::windows::process::CommandExt;
+                let _ = Command::new("powershell")
+                    .args(["-NoProfile", "-Command", &format!(
+                        "Get-Process -Name lan-disk -ErrorAction SilentlyContinue | Where-Object {{ $_.Id -ne {} }} | Stop-Process -Force",
+                        cur_pid
+                    )])
+                    .creation_flags(0x08000000)
+                    .status();
+                std::thread::sleep(std::time::Duration::from_millis(300));
+            }
+        }
+
+        Some(SingleInstanceGuard { handle: mutex })
+    }
+}
+
 #[derive(Default)]
 pub struct AppState {
     pub child: Mutex<Option<Child>>,
@@ -252,6 +313,9 @@ fn start_server(state: State<'_, AppState>, cfg: Option<ServerConfig>) -> StartR
                 cmd.arg("--bind-ip").arg(b);
             }
         }
+    }
+    if let Ok(cur_exe) = std::env::current_exe() {
+        cmd.env("LAN_DISK_MAIN_EXE", cur_exe);
     }
     cmd.current_dir(&cwd);
     cmd.stdout(std::process::Stdio::piped());
@@ -749,6 +813,11 @@ fn quit_app(app: tauri::AppHandle) {
 }
 
 #[tauri::command]
+fn get_app_path() -> Option<String> {
+    std::env::current_exe().map(|p| p.to_string_lossy().to_string()).ok()
+}
+
+#[tauri::command]
 fn open_dev_tools(window: tauri::WebviewWindow) -> DevToolsResult {
     if window.is_devtools_open() {
         window.close_devtools();
@@ -761,6 +830,12 @@ fn open_dev_tools(window: tauri::WebviewWindow) -> DevToolsResult {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "windows")]
+    let _single_instance_guard = match acquire_single_instance_or_focus() {
+        Some(guard) => guard,
+        None => return,
+    };
+
     let app_state = AppState {
         child: Mutex::new(None),
         job: Mutex::new(JobObjectGuard::new()),
@@ -790,6 +865,7 @@ pub fn run() {
             close_window,
             hide_window,
             quit_app,
+            get_app_path,
             open_dev_tools
         ])
         .setup(|app| {

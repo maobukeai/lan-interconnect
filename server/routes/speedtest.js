@@ -46,6 +46,10 @@ router.get('/speedtest/download', (req, res) => {
         res.end();
     }
 
+    res.on('close', () => {
+        sent = totalBytes;
+    });
+
     sendNext();
 });
 

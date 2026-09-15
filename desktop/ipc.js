@@ -580,11 +580,19 @@
         },
         installUpdate: async (silent) => {
             try {
+                let currentExe = null;
+                try {
+                    if (window.__TAURI__ && window.__TAURI__.core) {
+                        currentExe = await window.__TAURI__.core.invoke('get_app_path');
+                    } else if (window.__TAURI_INTERNALS__) {
+                        currentExe = await window.__TAURI_INTERNALS__.invoke('get_app_path');
+                    }
+                } catch (e) {}
                 const srvUrl = (window.currentServerUrl || 'http://127.0.0.1:3000').replace(/\/$/, '');
                 const res = await fetch(srvUrl + '/api/system/install-update', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ silent: !!silent })
+                    body: JSON.stringify({ silent: !!silent, currentExe })
                 });
                 return await res.json();
             } catch (e) {

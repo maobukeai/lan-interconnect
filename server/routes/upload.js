@@ -334,8 +334,9 @@ router.post('/upload/merge', async (req, res) => {
 
         writeStream.end();
         await new Promise((resolve, reject) => {
-            writeStream.on('finish', resolve);
-            writeStream.on('error', reject);
+            if (writeStream.writableFinished) return resolve();
+            writeStream.once('finish', resolve);
+            writeStream.once('error', reject);
         });
 
         try {

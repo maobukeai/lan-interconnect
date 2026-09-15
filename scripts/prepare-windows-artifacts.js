@@ -41,13 +41,19 @@ async function main() {
     // 2. Tauri NSIS 安装包
     const nsisDir = path.join(ROOT, 'src-tauri', 'target', 'release', 'bundle', 'nsis');
     if (fs.existsSync(nsisDir)) {
-        const nsisFiles = fs.readdirSync(nsisDir);
-        const tauriSetup = nsisFiles.find(f => f.endsWith('.exe') && f.toLowerCase().includes('setup'));
-        if (tauriSetup) {
-            const src = path.join(nsisDir, tauriSetup);
+        const nsisFiles = fs.readdirSync(nsisDir)
+            .filter(f => f.endsWith('.exe') && f.toLowerCase().includes('setup'))
+            .map(f => ({ name: f, stat: fs.statSync(path.join(nsisDir, f)) }));
+        // 优先精准匹配当前版本号，其次取修改时间最新的
+        const matched = nsisFiles.find(f => f.name.includes(version)) || nsisFiles.sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs)[0];
+        if (matched) {
+            if (!matched.name.includes(version)) {
+                console.warn(`[Artifacts] ⚠️ 警告: 未找到匹配版本 ${version} 的 NSIS 安装包，使用最新可用文件: ${matched.name}`);
+            }
+            const src = path.join(nsisDir, matched.name);
             const dest = path.join(distOutput, 'LanDisk-Pro-' + version + '-Setup.exe');
             fs.copyFileSync(src, dest);
-            console.log('[Artifacts] 已生成: LanDisk-Pro-' + version + '-Setup.exe (' + (fs.statSync(dest).size / 1024 / 1024).toFixed(2) + ' MB)');
+            console.log('[Artifacts] 已生成: LanDisk-Pro-' + version + '-Setup.exe (源文件: ' + matched.name + ', ' + (fs.statSync(dest).size / 1024 / 1024).toFixed(2) + ' MB)');
         } else {
             console.error('[Artifacts] 未找到 Tauri NSIS 安装包！');
         }
@@ -58,13 +64,18 @@ async function main() {
     // 3. Tauri WiX MSI 安装包
     const msiDir = path.join(ROOT, 'src-tauri', 'target', 'release', 'bundle', 'msi');
     if (fs.existsSync(msiDir)) {
-        const msiFiles = fs.readdirSync(msiDir);
-        const tauriMsi = msiFiles.find(f => f.endsWith('.msi'));
-        if (tauriMsi) {
-            const src = path.join(msiDir, tauriMsi);
+        const msiFiles = fs.readdirSync(msiDir)
+            .filter(f => f.endsWith('.msi'))
+            .map(f => ({ name: f, stat: fs.statSync(path.join(msiDir, f)) }));
+        const matched = msiFiles.find(f => f.name.includes(version)) || msiFiles.sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs)[0];
+        if (matched) {
+            if (!matched.name.includes(version)) {
+                console.warn(`[Artifacts] ⚠️ 警告: 未找到匹配版本 ${version} 的 MSI 安装包，使用最新可用文件: ${matched.name}`);
+            }
+            const src = path.join(msiDir, matched.name);
             const dest = path.join(distOutput, 'LanDisk-Pro-' + version + '-Setup.msi');
             fs.copyFileSync(src, dest);
-            console.log('[Artifacts] 已生成: LanDisk-Pro-' + version + '-Setup.msi (' + (fs.statSync(dest).size / 1024 / 1024).toFixed(2) + ' MB)');
+            console.log('[Artifacts] 已生成: LanDisk-Pro-' + version + '-Setup.msi (源文件: ' + matched.name + ', ' + (fs.statSync(dest).size / 1024 / 1024).toFixed(2) + ' MB)');
         } else {
             console.warn('[Artifacts] 未在 msi 目录下找到 .msi 文件');
         }

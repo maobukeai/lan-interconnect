@@ -16,7 +16,16 @@ router.get('/download', (req, res) => {
     if (!isSafePath(targetPath)) return res.status(403).send('Forbidden');
 
     let size = 0;
-    try { size = fs.statSync(targetPath).size; } catch (e) {}
+    try {
+        const stats = fs.statSync(targetPath);
+        if (stats.isDirectory()) {
+            return res.status(400).json({ error: '不能直接下载整个目录，请使用打包下载功能' });
+        }
+        size = stats.size;
+    } catch (e) {
+        return res.status(500).send('File access error: ' + e.message);
+    }
+
     historyService.recordTransfer('download', {
         name: path.basename(targetPath),
         size,
@@ -24,7 +33,11 @@ router.get('/download', (req, res) => {
         ip: getCleanIp(req.ip || req.socket?.remoteAddress)
     });
 
-    res.download(targetPath);
+    res.download(targetPath, path.basename(targetPath), (err) => {
+        if (err && !res.headersSent) {
+            res.status(500).send('Download failed: ' + err.message);
+        }
+    });
 });
 
 // 批量打包下载
@@ -40,16 +53,38 @@ router.post('/download/batch', (req, res) => {
         return res.status(400).json({ error: 'No files specified' });
     }
 
+    // 预检并过滤出合法且存在的文件/目录
+    const validFiles = [];
+    for (const file of files) {
+        if (!isSafePath(file)) continue;
+        if (fs.existsSync(file)) {
+            validFiles.push(file);
+        }
+    }
+
+    if (validFiles.length === 0) {
+        return res.status(404).json({ error: '所选的文件或文件夹不存在或无权访问' });
+    }
+
+    // 智能解析压缩包文件名
+    let cleanName = (folderName || '').replace(/[/\\?%*:|"<>]/g, '-').trim();
+    if (!cleanName || cleanName === 'batch_download') {
+        if (validFiles.length === 1) {
+            cleanName = path.basename(validFiles[0]);
+        } else {
+            cleanName = `batch_download_${validFiles.length}_items`;
+        }
+    }
+
     historyService.recordTransfer('download', {
-        name: `${(folderName || 'batch_download').replace(/[/\\?%*:|"<>]/g, '-')}.zip (${files.length} 项打包)`,
+        name: `${cleanName}.zip (${validFiles.length} 项打包)`,
         size: 0,
-        detail: `${files.length} 项`,
+        detail: `${validFiles.length} 项`,
         ip: getCleanIp(req.ip || req.socket?.remoteAddress)
     });
 
     const archive = archiver('zip', { zlib: { level: 1 } });
-    const safeBase = (folderName || 'batch_download').replace(/[/\\?%*:|"<>]/g, '-');
-    const encodedName = encodeURIComponent(safeBase);
+    const encodedName = encodeURIComponent(cleanName);
     res.setHeader('Content-Disposition', `attachment; filename="${encodedName}.zip"; filename*=UTF-8''${encodedName}.zip`);
     res.setHeader('Content-Type', 'application/zip');
 
@@ -71,23 +106,22 @@ router.post('/download/batch', (req, res) => {
 
     archive.pipe(res);
 
-    // 仅在客户端底层连接断开且响应尚未写完时，中止打包以释放资源
-    req.socket.on('close', () => {
+    // 仅在底层网络连接中断且响应尚未完成时，中止归档以释放资源
+    const abortArchive = () => {
         if (!res.writableEnded) {
             try { archive.abort(); } catch (e) {}
         }
-    });
+    };
+    req.socket.on('close', abortArchive);
+    res.on('close', abortArchive);
 
-    for (const file of files) {
-        if (!isSafePath(file)) continue;
-        if (fs.existsSync(file)) {
-            const stats = fs.statSync(file);
-            const name = path.basename(file);
-            if (stats.isDirectory()) {
-                archive.directory(file, name);
-            } else {
-                archive.file(file, { name: name });
-            }
+    for (const file of validFiles) {
+        const stats = fs.statSync(file);
+        const name = path.basename(file);
+        if (stats.isDirectory()) {
+            archive.directory(file, name);
+        } else {
+            archive.file(file, { name: name });
         }
     }
 
@@ -209,9 +243,13 @@ const handleStream = (req, res, isHead = false) => {
             else res.destroy();
         });
 
-        req.on('close', () => {
-            stream.destroy();
-        });
+        const cleanupStream = () => {
+            if (!res.writableEnded) {
+                try { stream.destroy(); } catch (e) {}
+            }
+        };
+        req.socket.on('close', cleanupStream);
+        res.on('close', cleanupStream);
 
         stream.pipe(res);
     } else {
@@ -228,9 +266,13 @@ const handleStream = (req, res, isHead = false) => {
             else res.destroy();
         });
 
-        req.on('close', () => {
-            stream.destroy();
-        });
+        const cleanupFullStream = () => {
+            if (!res.writableEnded) {
+                try { stream.destroy(); } catch (e) {}
+            }
+        };
+        req.socket.on('close', cleanupFullStream);
+        res.on('close', cleanupFullStream);
 
         stream.pipe(res);
     }
@@ -329,12 +371,14 @@ const handleTranscodeStream = (req, res, isHead = false) => {
         if (!res.headersSent) res.status(500).send('FFmpeg error: ' + err.message);
     });
 
-    req.on('close', () => {
-        if (proc) {
+    const killProc = () => {
+        if (proc && !res.writableEnded) {
             try { proc.kill('SIGKILL'); } catch (e) {}
             proc = null;
         }
-    });
+    };
+    req.socket.on('close', killProc);
+    res.on('close', killProc);
 };
 
 router.head('/stream', (req, res) => {

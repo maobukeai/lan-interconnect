@@ -134,6 +134,16 @@
             filesArr = filesArr.filter(f => typeof f === 'string' && f.trim());
             if (filesArr.length === 0) return;
 
+            // 智能确定压缩包名
+            let resolvedFolderName = customFolderName;
+            if (!resolvedFolderName || resolvedFolderName === 'batch_download') {
+                if (filesArr.length === 1) {
+                    resolvedFolderName = filesArr[0].split(/[\\/]/).filter(Boolean).pop() || 'batch_download';
+                } else {
+                    resolvedFolderName = `batch_download_${filesArr.length}_items`;
+                }
+            }
+
             try {
                 let authQ = '';
                 if (window.LanDiskAuth && typeof window.LanDiskAuth.authQuery === 'function') {
@@ -148,26 +158,25 @@
                 const apiUrl = this.getApiUrl('/api/download/batch') + (authQ ? ('?' + authQ.replace(/^&/, '')) : '');
 
                 // 原生 Form POST 流式下载：无需将数 GB 的 ZIP 二进制 Blob 驻留于 JS 堆内存中，
-                // 挂载独立隐藏 iframe 作为 target，既不刷新/离开当前页面，又能直接由浏览器内核落盘到下载目录
-                let iframe = document.getElementById('hidden_batch_download_frame');
-                if (!iframe) {
-                    iframe = document.createElement('iframe');
-                    iframe.id = 'hidden_batch_download_frame';
-                    iframe.name = 'hidden_batch_download_frame';
-                    iframe.style.display = 'none';
-                    document.body.appendChild(iframe);
-                }
+                // 挂载动态独立隐藏 iframe 作为 target，既不刷新/离开当前页面，又能直接由浏览器内核落盘到下载目录，
+                // 支持多任务并发下载且互不冲突
+                const frameName = 'batch_dl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+                const iframe = document.createElement('iframe');
+                iframe.id = frameName;
+                iframe.name = frameName;
+                iframe.style.display = 'none';
+                document.body.appendChild(iframe);
 
                 const form = document.createElement('form');
                 form.method = 'POST';
                 form.action = apiUrl;
-                form.target = 'hidden_batch_download_frame';
+                form.target = frameName;
                 form.style.display = 'none';
 
                 const inputFolder = document.createElement('input');
                 inputFolder.type = 'hidden';
                 inputFolder.name = 'folderName';
-                inputFolder.value = customFolderName;
+                inputFolder.value = resolvedFolderName;
                 form.appendChild(inputFolder);
 
                 filesArr.forEach(f => {
@@ -189,8 +198,9 @@
                 document.body.appendChild(form);
                 form.submit();
                 setTimeout(() => {
-                    if (form.parentNode) document.body.removeChild(form);
-                }, 3000);
+                    try { if (form.parentNode) form.parentNode.removeChild(form); } catch (e) {}
+                    try { if (iframe.parentNode) iframe.parentNode.removeChild(iframe); } catch (e) {}
+                }, 60000);
 
                 if (typeof global.LanDiskUI !== 'undefined' && global.LanDiskUI.toast) {
                     global.LanDiskUI.toast('正在流式打包并开始下载...', 'info');
